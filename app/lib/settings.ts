@@ -1,15 +1,18 @@
 import { useState, useEffect, useCallback } from "react";
 
 export type Theme = "light" | "dark" | "system";
+export type ReaderLayout = "single" | "spread" | "scroll";
 
 export interface Settings {
   theme: Theme;
+  readerLayout: ReaderLayout;
 }
 
 const STORAGE_KEY = "app-settings";
 
 const defaultSettings: Settings = {
   theme: "system",
+  readerLayout: "single",
 };
 
 export function getSettings(): Settings {

@@ -144,9 +144,9 @@ export function BookReader({ book }: BookReaderProps) {
   return (
     <div className="flex h-full flex-col">
       <div ref={containerRef} className="flex-1 overflow-hidden" />
-      <div className="flex items-center justify-center gap-4 border-t p-2">
+      <div className="relative flex items-center justify-center border-t p-2">
         {!isScrollMode && (
-          <>
+          <div className="flex items-center gap-4">
             <Button variant="ghost" size="icon" onClick={handlePrev}>
               <ChevronLeft className="size-4" />
               <span className="sr-only">Previous page</span>
@@ -155,12 +155,14 @@ export function BookReader({ book }: BookReaderProps) {
               <ChevronRight className="size-4" />
               <span className="sr-only">Next page</span>
             </Button>
-          </>
+          </div>
         )}
-        <ReaderSettingsMenu
-          settings={settings}
-          onUpdateSettings={handleUpdateSettings}
-        />
+        <div className="absolute right-2">
+          <ReaderSettingsMenu
+            settings={settings}
+            onUpdateSettings={handleUpdateSettings}
+          />
+        </div>
       </div>
     </div>
   );

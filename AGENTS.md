@@ -18,11 +18,14 @@ Ebook reader web app. Users drag-and-drop `.epub` files, which are persisted in 
 ## Key Architecture Decisions
 
 ### Epub iframe isolation
+
 epubjs renders content inside an iframe. The iframe is a separate document that does NOT inherit:
+
 - Parent page CSS (including Tailwind dark mode classes)
 - Parent page font imports (Google Fonts `<link>` tags)
 
 To style epub content, inject directly into the iframe via `rendition.hooks.content.register()`:
+
 - Inject `<link>` tags for Google Fonts
 - Inject `<style>` tags with `@font-face` declarations for self-hosted fonts
 - Inject `<style>` tags with typography CSS (`font-family`, `font-size`, `line-height`) using `!important`
@@ -31,11 +34,13 @@ To style epub content, inject directly into the iframe via `rendition.hooks.cont
 Do NOT use `rendition.themes.override()` for typography — it is unreliable and gets reset by `themes.select()`.
 
 ### Settings persistence
+
 All reader settings (theme, layout mode, font, size, line height) are stored in localStorage via a shared `useSettings()` hook in `app/lib/settings.ts`.
 
 Reading positions (CFI strings) are stored per-book in IndexedDB using a separate database from the book data.
 
 ### Client-side only
+
 All epub parsing, IndexedDB access, and rendering must happen client-side. Use `clientLoader` (not `loader`) in React Router routes. epubjs and IndexedDB APIs are not available during SSR.
 
 ## Coding Conventions
@@ -46,4 +51,3 @@ All epub parsing, IndexedDB access, and rendering must happen client-side. Use `
 - shadcn components use Base UI (not Radix) — check component APIs accordingly (e.g., `DropdownMenuLabel` must be inside `DropdownMenuGroup`)
 - When adding shadcn components: `pnpx shadcn@latest add <component>`
 - Prefer self-hosted fonts over CDN when font files are available locally
-

@@ -9,6 +9,7 @@ export interface Book {
 }
 
 const bookStore = createStore("ebook-reader-db", "books");
+const positionStore = createStore("ebook-reader-positions", "positions");
 
 export async function saveBook(book: Book): Promise<void> {
   await set(book.id, book, bookStore);
@@ -35,3 +36,14 @@ export async function deleteBook(id: string): Promise<void> {
   await del(id, bookStore);
 }
 
+export async function savePosition(
+  bookId: string,
+  cfi: string,
+): Promise<void> {
+  await set(bookId, cfi, positionStore);
+}
+
+export async function getPosition(bookId: string): Promise<string | null> {
+  const cfi = await get<string>(bookId, positionStore);
+  return cfi ?? null;
+}

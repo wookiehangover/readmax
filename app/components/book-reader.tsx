@@ -1,16 +1,47 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import ePub from "epubjs";
 import type EpubBook from "epubjs/types/book";
 import type Rendition from "epubjs/types/rendition";
 import { Button } from "~/components/ui/button";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { Book } from "~/lib/book-store";
+import { savePosition, getPosition } from "~/lib/book-store";
 import { useSettings, resolveTheme } from "~/lib/settings";
 import type { ReaderLayout } from "~/lib/settings";
 import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
+import { RadialProgress } from "~/components/radial-progress";
 
 interface BookReaderProps {
   book: Book;
+}
+
+function getFontFallback(fontFamily: string): string {
+  if (fontFamily === "Geist") return "sans-serif";
+  if (fontFamily === "Geist Mono") return "monospace";
+  return "serif";
+}
+
+function getTypographyCss(fontFamily: string, fontSize: number, lineHeight: number): string {
+  const fallback = getFontFallback(fontFamily);
+  return `
+    @font-face {
+      font-family: "Geist";
+      src: url("/fonts/Geist[wght].woff2") format("woff2");
+      font-weight: 100 900;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Geist Mono";
+      src: url("/fonts/GeistMono[wght].woff2") format("woff2");
+      font-weight: 100 900;
+      font-display: swap;
+    }
+    * {
+      font-family: "${fontFamily}", ${fallback} !important;
+      font-size: ${fontSize}% !important;
+      line-height: ${lineHeight} !important;
+    }
+  `;
 }
 
 function getRenditionOptions(layout: ReaderLayout) {
@@ -31,6 +62,11 @@ export function BookReader({ book }: BookReaderProps) {
   const renditionRef = useRef<Rendition | null>(null);
   const [settings, updateSettings] = useSettings();
   const layoutRef = useRef(settings.readerLayout);
+  const typographyRef = useRef({ fontFamily: settings.fontFamily, fontSize: settings.fontSize, lineHeight: settings.lineHeight });
+  typographyRef.current = { fontFamily: settings.fontFamily, fontSize: settings.fontSize, lineHeight: settings.lineHeight };
+  const [chapterProgress, setChapterProgress] = useState(0);
+  const [bookProgress, setBookProgress] = useState(0);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Keep layoutRef in sync
   layoutRef.current = settings.readerLayout;
@@ -51,6 +87,22 @@ export function BookReader({ book }: BookReaderProps) {
     });
     renditionRef.current = rendition;
 
+    // Inject Google Fonts and typography CSS into the epub iframe
+    rendition.hooks.content.register((contents: any) => {
+      const doc = contents.document;
+      const link = doc.createElement("link");
+      link.rel = "stylesheet";
+      link.href =
+        "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Literata:wght@400;500;600;700&family=Lora:wght@400;500;600;700&family=Merriweather:wght@400;700&family=Source+Serif+4:wght@400;500;600;700&display=swap";
+      doc.head.appendChild(link);
+
+      // Typography style injection
+      const style = doc.createElement("style");
+      style.id = "reader-typography";
+      style.textContent = getTypographyCss(typographyRef.current.fontFamily, typographyRef.current.fontSize, typographyRef.current.lineHeight);
+      doc.head.appendChild(style);
+    });
+
     // Register light and dark themes for epub iframe content
     rendition.themes.register("light", {
       body: { color: "#1a1a1a !important", background: "#ffffff !important" },
@@ -61,16 +113,53 @@ export function BookReader({ book }: BookReaderProps) {
       a: { color: "inherit !important" },
     });
 
-    // Select the appropriate theme
-    const effectiveTheme = resolveTheme(settings.theme);
-    rendition.themes.select(effectiveTheme);
+    // Async setup: ensure proper ordering of book ready, display, themes, and locations
+    (async () => {
+      await epubBook.ready;
 
-    // Apply typography overrides
-    rendition.themes.override("font-family", `"${settings.fontFamily}", serif`);
-    rendition.themes.override("font-size", `${settings.fontSize}%`);
-    rendition.themes.override("line-height", `${settings.lineHeight}`);
+      const savedCfi = await getPosition(book.id);
+      await rendition.display(savedCfi || undefined);
 
-    rendition.display();
+      // Apply theme and typography AFTER content is rendered
+      const effectiveTheme = resolveTheme(settings.theme);
+      rendition.themes.select(effectiveTheme);
+
+      // Generate locations in background for progress tracking
+      try {
+        epubBook.locations.generate(1024);
+      } catch {
+        // locations generation can fail silently — progress will show 0%
+      }
+
+      // Track progress and save position on navigation
+      rendition.on(
+        "relocated",
+        (location: {
+          start: {
+            cfi: string;
+            percentage: number;
+            displayed: { page: number; total: number };
+          };
+        }) => {
+          if (!renditionRef.current) return;
+
+          // Chapter progress
+          const { page, total } = location.start.displayed;
+          setChapterProgress(total > 0 ? (page / total) * 100 : 0);
+
+          // Overall book progress (available once locations are generated)
+          setBookProgress(location.start.percentage * 100);
+
+          // Debounce-save position to IndexedDB
+          if (saveTimerRef.current) {
+            clearTimeout(saveTimerRef.current);
+          }
+          saveTimerRef.current = setTimeout(() => {
+            savePosition(book.id, location.start.cfi);
+          }, 1000);
+        },
+      );
+    })();
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (layoutRef.current === "scroll") return;
@@ -85,6 +174,9 @@ export function BookReader({ book }: BookReaderProps) {
 
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+      }
       rendition.destroy();
       epubBook.destroy();
       bookRef.current = null;
@@ -100,13 +192,25 @@ export function BookReader({ book }: BookReaderProps) {
     rendition.themes.select(effectiveTheme);
   }, [settings.theme]);
 
-  // React to typography changes without recreating the rendition
+  // React to typography changes by updating injected style tags in rendered iframes
   useEffect(() => {
     const rendition = renditionRef.current;
     if (!rendition) return;
-    rendition.themes.override("font-family", `"${settings.fontFamily}", serif`);
-    rendition.themes.override("font-size", `${settings.fontSize}%`);
-    rendition.themes.override("line-height", `${settings.lineHeight}`);
+    const css = getTypographyCss(settings.fontFamily, settings.fontSize, settings.lineHeight);
+
+    // Update style in all currently rendered content views
+    const contents = (rendition as any).getContents() as any[];
+    contents.forEach((content: any) => {
+      const doc = content.document;
+      if (!doc) return;
+      let style = doc.getElementById("reader-typography");
+      if (!style) {
+        style = doc.createElement("style");
+        style.id = "reader-typography";
+        doc.head.appendChild(style);
+      }
+      style.textContent = css;
+    });
   }, [settings.fontFamily, settings.fontSize, settings.lineHeight]);
 
   const handlePrev = useCallback(() => {
@@ -145,6 +249,10 @@ export function BookReader({ book }: BookReaderProps) {
     <div className="flex h-full flex-col">
       <div ref={containerRef} className="flex-1 overflow-hidden" />
       <div className="relative flex items-center justify-center border-t p-2">
+        <div className="absolute left-2 flex items-center gap-1.5">
+          <RadialProgress value={chapterProgress} label="Chapter" />
+          <RadialProgress value={bookProgress} label="Overall" />
+        </div>
         {!isScrollMode && (
           <div className="flex items-center gap-4">
             <Button variant="ghost" size="icon" onClick={handlePrev}>

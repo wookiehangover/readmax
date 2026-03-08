@@ -1,9 +1,17 @@
-import { MoreHorizontal, Check, Minus, Plus } from "lucide-react";
+import { MoreHorizontal, Minus, Plus } from "lucide-react";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "~/components/ui/popover";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
 import type { ReaderLayout, Settings } from "~/lib/settings";
 
 interface ReaderSettingsMenuProps {
@@ -18,13 +26,13 @@ const layoutOptions: { value: ReaderLayout; label: string }[] = [
 ];
 
 const fontOptions = [
+  { value: "Geist", label: "Geist" },
+  { value: "Geist Mono", label: "Geist Mono" },
   { value: "Literata", label: "Literata" },
   { value: "Merriweather", label: "Merriweather" },
   { value: "Inter", label: "Inter" },
   { value: "Lora", label: "Lora" },
   { value: "Source Serif 4", label: "Source Serif 4" },
-  { value: "Geist", label: "Geist" },
-  { value: "Geist Mono", label: "Geist Mono" },
 ];
 
 export function ReaderSettingsMenu({
@@ -32,58 +40,55 @@ export function ReaderSettingsMenu({
   onUpdateSettings,
 }: ReaderSettingsMenuProps) {
   return (
-    <Popover>
-      <PopoverTrigger className="inline-flex h-9 w-9 items-center justify-center rounded-md text-sm font-medium hover:bg-accent hover:text-accent-foreground">
+    <DropdownMenu>
+      <DropdownMenuTrigger className="inline-flex h-9 w-9 items-center justify-center rounded-md text-sm font-medium hover:bg-accent hover:text-accent-foreground">
         <MoreHorizontal className="size-4" />
         <span className="sr-only">Reader settings</span>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-52 p-1">
-        <div className="px-2 py-1 text-xs font-medium text-muted-foreground">
-          Layout
-        </div>
-        {layoutOptions.map((option) => (
-          <button
-            key={option.value}
-            onClick={() => onUpdateSettings({ readerLayout: option.value })}
-            className="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-sm hover:bg-accent hover:text-accent-foreground"
-          >
-            <span className="w-4">
-              {settings.readerLayout === option.value && (
-                <Check className="size-4" />
-              )}
-            </span>
-            {option.label}
-          </button>
-        ))}
-
-        <div className="my-0.5 border-t" />
-
-        <div className="px-2 py-1 text-xs font-medium text-muted-foreground">
-          Font
-        </div>
-        {fontOptions.map((option) => (
-          <button
-            key={option.value}
-            onClick={() => onUpdateSettings({ fontFamily: option.value })}
-            className="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-sm hover:bg-accent hover:text-accent-foreground"
-          >
-            <span className="w-4">
-              {settings.fontFamily === option.value && (
-                <Check className="size-4" />
-              )}
-            </span>
-            <span style={{ fontFamily: `"${option.value}", ${option.value === "Geist" ? "sans-serif" : option.value === "Geist Mono" ? "monospace" : "serif"}` }}>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-52">
+        <DropdownMenuLabel>Layout</DropdownMenuLabel>
+        <DropdownMenuRadioGroup
+          value={settings.readerLayout}
+          onValueChange={(value) =>
+            onUpdateSettings({ readerLayout: value as ReaderLayout })
+          }
+        >
+          {layoutOptions.map((option) => (
+            <DropdownMenuRadioItem key={option.value} value={option.value}>
               {option.label}
-            </span>
-          </button>
-        ))}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
 
-        <div className="my-0.5 border-t" />
+        <DropdownMenuSeparator />
 
-        <div className="px-2 py-1 text-xs font-medium text-muted-foreground">
-          Size & Spacing
-        </div>
-        <div className="flex items-center justify-between px-2 py-1">
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            Font: {settings.fontFamily}
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            <DropdownMenuRadioGroup
+              value={settings.fontFamily}
+              onValueChange={(value) =>
+                onUpdateSettings({ fontFamily: value as string })
+              }
+            >
+              {fontOptions.map((option) => (
+                <DropdownMenuRadioItem key={option.value} value={option.value}>
+                  {option.label}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+
+        <DropdownMenuSeparator />
+
+        <DropdownMenuLabel>Size &amp; Spacing</DropdownMenuLabel>
+        <DropdownMenuItem
+          closeOnClick={false}
+          className="flex items-center justify-between"
+        >
           <span className="text-sm">Size</span>
           <div className="flex items-center gap-1">
             <button
@@ -112,8 +117,11 @@ export function ReaderSettingsMenu({
               <Plus className="size-3" />
             </button>
           </div>
-        </div>
-        <div className="flex items-center justify-between px-2 py-1">
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          closeOnClick={false}
+          className="flex items-center justify-between"
+        >
           <span className="text-sm">Spacing</span>
           <div className="flex items-center gap-1">
             <button
@@ -148,9 +156,9 @@ export function ReaderSettingsMenu({
               <Plus className="size-3" />
             </button>
           </div>
-        </div>
-      </PopoverContent>
-    </Popover>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

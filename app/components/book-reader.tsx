@@ -3,13 +3,20 @@ import ePub from "epubjs";
 import type EpubBook from "epubjs/types/book";
 import type Rendition from "epubjs/types/rendition";
 import { Button } from "~/components/ui/button";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, NotebookPen } from "lucide-react";
 import type { Book } from "~/lib/book-store";
 import { savePosition, getPosition } from "~/lib/book-store";
 import { useSettings, resolveTheme } from "~/lib/settings";
 import type { ReaderLayout } from "~/lib/settings";
 import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
 import { RadialProgress } from "~/components/radial-progress";
+import { AnnotationsPanel } from "~/components/annotations-panel";
+import {
+  saveHighlight,
+  getHighlightsByBook,
+  type Highlight,
+} from "~/lib/annotations-store";
+import { HighlightPopover } from "~/components/highlight-popover";
 
 interface BookReaderProps {
   book: Book;
@@ -67,6 +74,18 @@ export function BookReader({ book }: BookReaderProps) {
   const [chapterProgress, setChapterProgress] = useState(0);
   const [bookProgress, setBookProgress] = useState(0);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [annotationsPanelOpen, setAnnotationsPanelOpen] = useState(false);
+
+  const navigateToCfi = useCallback((cfi: string) => {
+    renditionRef.current?.display(cfi);
+  }, []);
+
+  // Highlight selection state
+  const [selectionPopover, setSelectionPopover] = useState<{
+    position: { x: number; y: number };
+    cfiRange: string;
+    text: string;
+  } | null>(null);
 
   // Keep layoutRef in sync
   layoutRef.current = settings.readerLayout;
@@ -101,6 +120,17 @@ export function BookReader({ book }: BookReaderProps) {
       style.id = "reader-typography";
       style.textContent = getTypographyCss(typographyRef.current.fontFamily, typographyRef.current.fontSize, typographyRef.current.lineHeight);
       doc.head.appendChild(style);
+
+      // Highlight overlay styles
+      const highlightStyle = doc.createElement("style");
+      highlightStyle.id = "reader-highlights";
+      highlightStyle.textContent = `
+        .epubjs-hl {
+          background-color: rgba(255, 213, 79, 0.4) !important;
+          cursor: pointer;
+        }
+      `;
+      doc.head.appendChild(highlightStyle);
     });
 
     // Register light and dark themes for epub iframe content
@@ -123,6 +153,43 @@ export function BookReader({ book }: BookReaderProps) {
       // Apply theme and typography AFTER content is rendered
       const effectiveTheme = resolveTheme(settings.theme);
       rendition.themes.select(effectiveTheme);
+
+      // Load and re-apply existing highlights
+      try {
+        const existingHighlights = await getHighlightsByBook(book.id);
+        for (const hl of existingHighlights) {
+          rendition.annotations.highlight(
+            hl.cfiRange,
+            {},
+            undefined,
+            "epubjs-hl",
+            { fill: hl.color || "rgba(255, 213, 79, 0.4)" },
+          );
+        }
+      } catch {
+        // Highlight loading can fail silently
+      }
+
+      // Listen for text selection in the epub iframe
+      rendition.on("selected", (cfiRange: string, contents: any) => {
+        if (!renditionRef.current) return;
+
+        // Get the selected text
+        const range = contents.range(cfiRange);
+        const text = range?.toString() || "";
+        if (!text.trim()) return;
+
+        // Calculate position relative to the parent window
+        const iframe = contents.document?.defaultView?.frameElement;
+        if (!iframe) return;
+        const iframeRect = iframe.getBoundingClientRect();
+        const rangeRect = range.getBoundingClientRect();
+
+        const x = iframeRect.left + rangeRect.left + rangeRect.width / 2;
+        const y = iframeRect.top + rangeRect.bottom;
+
+        setSelectionPopover({ position: { x, y }, cfiRange, text });
+      });
 
       // Generate locations in background for progress tracking
       try {
@@ -245,6 +312,50 @@ export function BookReader({ book }: BookReaderProps) {
 
   const isScrollMode = settings.readerLayout === "scroll";
 
+  const handleSaveHighlight = useCallback(
+    async (note: string) => {
+      if (!selectionPopover || !renditionRef.current) return;
+
+      const { cfiRange, text } = selectionPopover;
+      const color = "rgba(255, 213, 79, 0.4)";
+
+      const highlight: Highlight = {
+        id: crypto.randomUUID(),
+        bookId: book.id,
+        cfiRange,
+        text,
+        note,
+        color,
+        createdAt: Date.now(),
+      };
+
+      await saveHighlight(highlight);
+
+      // Render the highlight in the epub
+      renditionRef.current.annotations.highlight(
+        cfiRange,
+        {},
+        undefined,
+        "epubjs-hl",
+        { fill: color },
+      );
+
+      setSelectionPopover(null);
+
+      // Clear the selection in the iframe
+      const contents = (renditionRef.current as any).getContents() as any[];
+      contents.forEach((content: any) => {
+        const win = content.document?.defaultView;
+        if (win) win.getSelection()?.removeAllRanges();
+      });
+    },
+    [selectionPopover, book.id],
+  );
+
+  const handleDismissPopover = useCallback(() => {
+    setSelectionPopover(null);
+  }, []);
+
   return (
     <div className="flex h-full flex-col">
       <div ref={containerRef} className="flex-1 overflow-hidden" />
@@ -272,6 +383,14 @@ export function BookReader({ book }: BookReaderProps) {
           />
         </div>
       </div>
+      {selectionPopover && (
+        <HighlightPopover
+          position={selectionPopover.position}
+          selectedText={selectionPopover.text}
+          onSave={handleSaveHighlight}
+          onDismiss={handleDismissPopover}
+        />
+      )}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
-import { X, BookMarked } from "lucide-react";
+import { X, BookMarked, Download } from "lucide-react";
 import { TiptapEditor } from "~/components/tiptap-editor";
 import {
   getNotebook,
@@ -11,9 +11,11 @@ import {
 } from "~/lib/annotations-store";
 import type { HighlightReferenceAttrs } from "~/lib/tiptap-highlight-node";
 import type { JSONContent } from "@tiptap/react";
+import { tiptapJsonToMarkdown } from "~/lib/tiptap-to-markdown";
 
 interface AnnotationsPanelProps {
   bookId: string;
+  bookTitle?: string;
   isOpen: boolean;
   onClose: () => void;
   onNavigateToCfi: (cfi: string) => void;
@@ -21,6 +23,7 @@ interface AnnotationsPanelProps {
 
 export function AnnotationsPanel({
   bookId,
+  bookTitle,
   isOpen,
   onClose,
   onNavigateToCfi,
@@ -73,6 +76,23 @@ export function AnnotationsPanel({
     };
   }, []);
 
+  const handleExportMarkdown = useCallback(() => {
+    if (!content) return;
+    const markdown = tiptapJsonToMarkdown(content);
+    const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const filename = bookTitle
+      ? `${bookTitle}-annotations.md`
+      : "annotations.md";
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [content, bookTitle]);
+
   const handleInsertHighlight = useCallback(
     (highlight: Highlight) => {
       const attrs: HighlightReferenceAttrs = {
@@ -114,6 +134,15 @@ export function AnnotationsPanel({
                   <BookMarked className="size-3.5" />
                 </Button>
               )}
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={handleExportMarkdown}
+                title="Export as Markdown"
+                disabled={!content}
+              >
+                <Download className="size-3.5" />
+              </Button>
               <Button variant="ghost" size="icon-xs" onClick={onClose}>
                 <X className="size-3.5" />
               </Button>

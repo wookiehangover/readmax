@@ -404,6 +404,7 @@ export function BookReader({ book }: BookReaderProps) {
       </div>
       <AnnotationsPanel
         bookId={book.id}
+        bookTitle={book.title}
         isOpen={annotationsPanelOpen}
         onClose={() => setAnnotationsPanelOpen(false)}
         onNavigateToCfi={navigateToCfi}

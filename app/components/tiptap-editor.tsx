@@ -89,15 +89,17 @@ export function TiptapEditor({
   useEffect(() => {
     if (!editor) return;
     const handler = (e: Event) => {
-      const attrs = (e as CustomEvent).detail as HighlightReferenceAttrs;
+      const detail = (e as CustomEvent).detail;
+      const { note, ...attrs } = detail;
+      const nodes: any[] = [
+        { type: "highlightReference", attrs },
+        {
+          type: "paragraph",
+          content: note ? [{ type: "text", text: note }] : [],
+        },
+      ];
       const endPos = editor.state.doc.content.size;
-      editor
-        .chain()
-        .insertContentAt(endPos, {
-          type: "highlightReference",
-          attrs,
-        })
-        .run();
+      editor.chain().focus().insertContentAt(endPos, nodes).run();
     };
     window.addEventListener("append-highlight-reference", handler);
     return () =>

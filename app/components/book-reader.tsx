@@ -179,12 +179,16 @@ export function BookReader({ book }: BookReaderProps) {
               const stored = highlightsRef.current.get(hl.cfiRange);
               if (!stored) return;
 
-              // Calculate position for the edit popover
+              // Calculate position using the highlight element's bounding rect
+              const target = e.target as HTMLElement;
+              const hlElement = target.closest(".epubjs-hl") || target;
               const iframe = containerRef.current?.querySelector("iframe");
               if (!iframe) return;
               const iframeRect = iframe.getBoundingClientRect();
-              const x = iframeRect.left + e.clientX;
-              const y = iframeRect.top + e.clientY;
+              const hlRect = hlElement.getBoundingClientRect();
+              // hlRect is relative to the iframe viewport
+              const x = iframeRect.left + hlRect.left + hlRect.width / 2;
+              const y = iframeRect.top + hlRect.bottom;
 
               setEditPopover({
                 position: { x, y },
@@ -372,13 +376,16 @@ export function BookReader({ book }: BookReaderProps) {
         (e: MouseEvent) => {
           const stored = highlightsRef.current.get(cfiRange);
           if (!stored) return;
+          const target = e.target as HTMLElement;
+          const hlElement = target.closest(".epubjs-hl") || target;
           const iframe = containerRef.current?.querySelector("iframe");
           if (!iframe) return;
           const iframeRect = iframe.getBoundingClientRect();
+          const hlRect = hlElement.getBoundingClientRect();
           setEditPopover({
             position: {
-              x: iframeRect.left + e.clientX,
-              y: iframeRect.top + e.clientY,
+              x: iframeRect.left + hlRect.left + hlRect.width / 2,
+              y: iframeRect.top + hlRect.bottom,
             },
             highlight: stored,
           });
@@ -404,6 +411,7 @@ export function BookReader({ book }: BookReaderProps) {
             highlightId: highlight.id,
             cfiRange: highlight.cfiRange,
             text: highlight.text,
+            note,
           },
         }),
       );

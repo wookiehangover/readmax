@@ -35,6 +35,21 @@ export function AnnotationsPanel({
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editorRef = useRef<any>(null);
 
+  // Collect highlightIds from notebook JSON content
+  const collectHighlightIds = useCallback((doc: JSONContent): Set<string> => {
+    const ids = new Set<string>();
+    function walk(node: JSONContent) {
+      if (node.type === "highlightReference" && node.attrs?.highlightId) {
+        ids.add(node.attrs.highlightId as string);
+      }
+      if (node.content) {
+        for (const child of node.content) walk(child);
+      }
+    }
+    walk(doc);
+    return ids;
+  }, []);
+
   // Load notebook and highlights on mount
   useEffect(() => {
     let cancelled = false;
@@ -44,15 +59,40 @@ export function AnnotationsPanel({
         getHighlightsByBook(bookId),
       ]);
       if (cancelled) return;
-      if (notebook?.content) {
-        setContent(notebook.content);
+      const notebookContent = notebook?.content;
+      if (notebookContent) {
+        setContent(notebookContent);
       }
       setHighlights(bookHighlights);
       setLoaded(true);
+
+      // Reconcile: append any highlights missing from the notebook
+      const existingIds = notebookContent
+        ? collectHighlightIds(notebookContent)
+        : new Set<string>();
+      const missing = bookHighlights.filter((h) => !existingIds.has(h.id));
+      if (missing.length > 0) {
+        // Delay to let the editor mount before dispatching
+        requestAnimationFrame(() => {
+          if (cancelled) return;
+          for (const h of missing) {
+            window.dispatchEvent(
+              new CustomEvent("append-highlight-reference", {
+                detail: {
+                  highlightId: h.id,
+                  cfiRange: h.cfiRange,
+                  text: h.text,
+                  note: h.note || "",
+                },
+              }),
+            );
+          }
+        });
+      }
     }
     load();
     return () => { cancelled = true; };
-  }, [bookId]);
+  }, [bookId, collectHighlightIds]);
 
   // Refresh highlights list when a highlight is deleted or changed
   useEffect(() => {

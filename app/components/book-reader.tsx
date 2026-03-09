@@ -357,40 +357,57 @@ export function BookReader({ book }: BookReaderProps) {
   }, []);
 
   return (
-    <div className="flex h-full flex-col">
-      <div ref={containerRef} className="flex-1 overflow-hidden" />
-      <div className="relative flex items-center justify-center border-t p-2">
-        <div className="absolute left-2 flex items-center gap-1.5">
-          <RadialProgress value={chapterProgress} label="Chapter" />
-          <RadialProgress value={bookProgress} label="Overall" />
-        </div>
-        {!isScrollMode && (
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={handlePrev}>
-              <ChevronLeft className="size-4" />
-              <span className="sr-only">Previous page</span>
-            </Button>
-            <Button variant="ghost" size="icon" onClick={handleNext}>
-              <ChevronRight className="size-4" />
-              <span className="sr-only">Next page</span>
-            </Button>
+    <div className="flex h-full">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div ref={containerRef} className="flex-1 overflow-hidden" />
+        <div className="relative flex items-center justify-center border-t p-2">
+          <div className="absolute left-2 flex items-center gap-1.5">
+            <RadialProgress value={chapterProgress} label="Chapter" />
+            <RadialProgress value={bookProgress} label="Overall" />
           </div>
-        )}
-        <div className="absolute right-2">
-          <ReaderSettingsMenu
-            settings={settings}
-            onUpdateSettings={handleUpdateSettings}
-          />
+          {!isScrollMode && (
+            <div className="flex items-center gap-4">
+              <Button variant="ghost" size="icon" onClick={handlePrev}>
+                <ChevronLeft className="size-4" />
+                <span className="sr-only">Previous page</span>
+              </Button>
+              <Button variant="ghost" size="icon" onClick={handleNext}>
+                <ChevronRight className="size-4" />
+                <span className="sr-only">Next page</span>
+              </Button>
+            </div>
+          )}
+          <div className="absolute right-2 flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setAnnotationsPanelOpen(!annotationsPanelOpen)}
+              title="Toggle notebook"
+            >
+              <NotebookPen className="size-4" />
+              <span className="sr-only">Toggle notebook</span>
+            </Button>
+            <ReaderSettingsMenu
+              settings={settings}
+              onUpdateSettings={handleUpdateSettings}
+            />
+          </div>
         </div>
+        {selectionPopover && (
+          <HighlightPopover
+            position={selectionPopover.position}
+            selectedText={selectionPopover.text}
+            onSave={handleSaveHighlight}
+            onDismiss={handleDismissPopover}
+          />
+        )}
       </div>
-      {selectionPopover && (
-        <HighlightPopover
-          position={selectionPopover.position}
-          selectedText={selectionPopover.text}
-          onSave={handleSaveHighlight}
-          onDismiss={handleDismissPopover}
-        />
-      )}
+      <AnnotationsPanel
+        bookId={book.id}
+        isOpen={annotationsPanelOpen}
+        onClose={() => setAnnotationsPanelOpen(false)}
+        onNavigateToCfi={navigateToCfi}
+      />
     </div>
   );
 }

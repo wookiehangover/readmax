@@ -6,6 +6,7 @@ import { cn } from "~/lib/utils";
 
 interface BookListProps {
   books: Book[];
+  collapsed?: boolean;
 }
 
 function BookCover({ coverImage }: { coverImage: Blob }) {
@@ -28,30 +29,35 @@ function BookCover({ coverImage }: { coverImage: Blob }) {
   );
 }
 
-export function BookList({ books }: BookListProps) {
+export function BookList({ books, collapsed = false }: BookListProps) {
   if (books.length === 0) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
-        <p className="text-sm text-muted-foreground">No books yet</p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Drop an .epub file to get started
-        </p>
+        {!collapsed && (
+          <>
+            <p className="text-sm text-muted-foreground">No books yet</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Drop an .epub file to get started
+            </p>
+          </>
+        )}
       </div>
     );
   }
 
   return (
     <ScrollArea className="flex-1">
-      <div className="flex flex-col gap-1 p-2">
+      <div className={cn("flex flex-col gap-1", collapsed ? "items-center p-1" : "p-2")}>
         {books.map((book) => (
           <NavLink
             key={book.id}
             to={`/books/${book.id}`}
             className={({ isActive }) =>
               cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors",
+                "flex items-center rounded-lg transition-colors",
                 "hover:bg-accent",
-                isActive && "bg-accent"
+                isActive && "bg-accent",
+                collapsed ? "justify-center p-1.5" : "gap-3 px-3 py-2 text-left"
               )
             }
           >
@@ -62,12 +68,14 @@ export function BookList({ books }: BookListProps) {
                 <span className="text-xs text-muted-foreground">📖</span>
               </div>
             )}
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium">{book.title}</p>
-              <p className="truncate text-xs text-muted-foreground">
-                {book.author}
-              </p>
-            </div>
+            {!collapsed && (
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{book.title}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {book.author}
+                </p>
+              </div>
+            )}
           </NavLink>
         ))}
       </div>

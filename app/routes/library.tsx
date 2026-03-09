@@ -1,7 +1,8 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Outlet } from "react-router";
 import type { Route } from "./+types/library";
 import { getBooks, type Book } from "~/lib/book-store";
+import { useSettings } from "~/lib/settings";
 import { DropZone } from "~/components/drop-zone";
 import { BookList } from "~/components/book-list";
 
@@ -29,20 +30,39 @@ export function HydrateFallback() {
 
 export default function LibraryLayout({ loaderData }: Route.ComponentProps) {
   const [books, setBooks] = useState<Book[]>(loaderData.books);
+  const [settings, updateSettings] = useSettings();
+  const collapsed = settings.sidebarCollapsed;
 
   const handleBookAdded = useCallback((book: Book) => {
     setBooks((prev) => [...prev, book]);
   }, []);
 
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "b") {
+        e.preventDefault();
+        updateSettings({ sidebarCollapsed: !collapsed });
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [collapsed, updateSettings]);
+
   return (
     <DropZone onBookAdded={handleBookAdded}>
       <div className="flex h-screen">
         {/* Sidebar */}
-        <aside className="flex w-[300px] shrink-0 flex-col border-r bg-card">
+        <aside
+          className={`flex shrink-0 flex-col border-r bg-card transition-[width] duration-200 ease-in-out ${
+            collapsed ? "w-14" : "w-[300px]"
+          }`}
+        >
           <div className="border-b px-4 py-3">
-            <h1 className="text-lg font-semibold">Library</h1>
+            {!collapsed && (
+              <h1 className="text-lg font-semibold">Library</h1>
+            )}
           </div>
-          <BookList books={books} />
+          <BookList books={books} collapsed={collapsed} />
         </aside>
 
         {/* Main content */}

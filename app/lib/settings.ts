@@ -9,6 +9,7 @@ export interface Settings {
   fontFamily: string;
   fontSize: number;
   lineHeight: number;
+  sidebarCollapsed: boolean;
 }
 
 const STORAGE_KEY = "app-settings";
@@ -19,6 +20,7 @@ const defaultSettings: Settings = {
   fontFamily: "Literata",
   fontSize: 100,
   lineHeight: 1.6,
+  sidebarCollapsed: false,
 };
 
 export function getSettings(): Settings {

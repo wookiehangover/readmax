@@ -23,12 +23,25 @@ const defaultSettings: Settings = {
   sidebarCollapsed: false,
 };
 
+function normalizeLegacyFontSize(fontSize: unknown): number {
+  if (typeof fontSize !== "number" || Number.isNaN(fontSize)) {
+    return defaultSettings.fontSize;
+  }
+
+  return fontSize <= 40 ? Math.round(fontSize / 0.16) : fontSize;
+}
+
 export function getSettings(): Settings {
   if (typeof window === "undefined") return defaultSettings;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaultSettings;
-    return { ...defaultSettings, ...JSON.parse(raw) };
+    const parsed = JSON.parse(raw) as Partial<Settings>;
+    return {
+      ...defaultSettings,
+      ...parsed,
+      fontSize: normalizeLegacyFontSize(parsed.fontSize),
+    };
   } catch {
     return defaultSettings;
   }

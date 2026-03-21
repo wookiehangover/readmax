@@ -23,6 +23,7 @@ interface BookReaderProps {
 function getFontFallback(fontFamily: string): string {
   if (fontFamily === "Geist") return "sans-serif";
   if (fontFamily === "Geist Mono") return "monospace";
+  if (fontFamily === "Berkeley Mono") return "monospace";
   return "serif";
 }
 
@@ -38,6 +39,12 @@ function getTypographyCss(fontFamily: string, fontSize: number, lineHeight: numb
     @font-face {
       font-family: "Geist Mono";
       src: url("/fonts/GeistMono[wght].woff2") format("woff2");
+      font-weight: 100 900;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Berkeley Mono";
+      src: url("/fonts/BerkeleyMonoVariable.woff2") format("woff2");
       font-weight: 100 900;
       font-display: swap;
     }
@@ -227,7 +234,11 @@ export function BookReader({ book }: BookReaderProps) {
   useEffect(() => {
     const rendition = renditionRef.current;
     if (!rendition) return;
-    const css = getTypographyCss(settings.fontFamily, settings.fontSize, settings.lineHeight);
+    const css = getTypographyCss(
+      settings.fontFamily,
+      settings.fontSize,
+      settings.lineHeight,
+    );
     const contents = (rendition as any).getContents() as any[];
     contents.forEach((content: any) => {
       const doc = content.document;

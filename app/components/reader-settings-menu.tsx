@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { MoreHorizontal, Minus, Plus } from "lucide-react";
 import {
   DropdownMenu,
@@ -26,15 +27,31 @@ const layoutOptions: { value: ReaderLayout; label: string }[] = [
   { value: "scroll", label: "Continuous Scroll" },
 ];
 
-const fontOptions = [
-  { value: "Geist", label: "Geist" },
-  { value: "Geist Mono", label: "Geist Mono" },
-  { value: "Literata", label: "Literata" },
-  { value: "Merriweather", label: "Merriweather" },
-  { value: "Inter", label: "Inter" },
-  { value: "Lora", label: "Lora" },
-  { value: "Source Serif 4", label: "Source Serif 4" },
-];
+const fontSections = [
+  {
+    label: "Serif",
+    options: [
+      { value: "Literata", label: "Literata" },
+      { value: "Merriweather", label: "Merriweather" },
+      { value: "Lora", label: "Lora" },
+      { value: "Source Serif 4", label: "Source Serif 4" },
+    ],
+  },
+  {
+    label: "Sans-serif",
+    options: [
+      { value: "Geist", label: "Geist" },
+      { value: "Inter", label: "Inter" },
+    ],
+  },
+  {
+    label: "Monospace",
+    options: [
+      { value: "Geist Mono", label: "Geist Mono" },
+      { value: "Berkeley Mono", label: "Berkeley Mono" },
+    ],
+  },
+] as const;
 
 export function ReaderSettingsMenu({ settings, onUpdateSettings }: ReaderSettingsMenuProps) {
   return (
@@ -63,16 +80,24 @@ export function ReaderSettingsMenu({ settings, onUpdateSettings }: ReaderSetting
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>Font: {settings.fontFamily}</DropdownMenuSubTrigger>
           <DropdownMenuSubContent>
-            <DropdownMenuRadioGroup
-              value={settings.fontFamily}
-              onValueChange={(value) => onUpdateSettings({ fontFamily: value as string })}
-            >
-              {fontOptions.map((option) => (
-                <DropdownMenuRadioItem key={option.value} value={option.value}>
-                  {option.label}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
+            {fontSections.map((section, index) => (
+              <Fragment key={section.label}>
+                {index > 0 && <DropdownMenuSeparator />}
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>{section.label}</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup
+                    value={settings.fontFamily}
+                    onValueChange={(value) => onUpdateSettings({ fontFamily: value as string })}
+                  >
+                    {section.options.map((option) => (
+                      <DropdownMenuRadioItem key={option.value} value={option.value}>
+                        {option.label}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuGroup>
+              </Fragment>
+            ))}
           </DropdownMenuSubContent>
         </DropdownMenuSub>
 

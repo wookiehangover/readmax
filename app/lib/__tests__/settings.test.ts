@@ -148,4 +148,3 @@ describe("resolveTheme", () => {
     vi.unstubAllGlobals();
   });
 });
-

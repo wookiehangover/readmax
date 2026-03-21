@@ -5,4 +5,3 @@ describe("vitest setup", () => {
     expect(true).toBe(true);
   });
 });
-

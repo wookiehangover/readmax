@@ -71,7 +71,7 @@ describe("tiptapJsonToMarkdown", () => {
 
     it("renders link", () => {
       const result = tiptapJsonToMarkdown(
-        doc(p(text("click", [{ type: "link", attrs: { href: "https://example.com" } }])))
+        doc(p(text("click", [{ type: "link", attrs: { href: "https://example.com" } }]))),
       );
       expect(result).toBe("[click](https://example.com)");
     });
@@ -83,7 +83,7 @@ describe("tiptapJsonToMarkdown", () => {
 
     it("renders combined bold+italic", () => {
       const result = tiptapJsonToMarkdown(
-        doc(p(text("both", [{ type: "bold" }, { type: "italic" }])))
+        doc(p(text("both", [{ type: "bold" }, { type: "italic" }]))),
       );
       expect(result).toBe("***both***");
     });
@@ -188,10 +188,9 @@ describe("tiptapJsonToMarkdown", () => {
   describe("hardBreak", () => {
     it("renders hard break as newline", () => {
       const result = tiptapJsonToMarkdown(
-        doc(p(text("line1"), { type: "hardBreak" }, text("line2")))
+        doc(p(text("line1"), { type: "hardBreak" }, text("line2"))),
       );
       expect(result).toBe("line1\nline2");
     });
   });
 });
-

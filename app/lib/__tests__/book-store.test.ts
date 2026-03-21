@@ -67,7 +67,6 @@ function makeTestLayer() {
 }
 
 describe("BookService", () => {
-
   describe("saveBook + getBooks", () => {
     it("saves and retrieves books", async () => {
       const layer = makeTestLayer();
@@ -105,10 +104,7 @@ describe("BookService", () => {
     it("fails with BookNotFoundError for missing book", async () => {
       const layer = makeTestLayer();
       const exit = await Effect.runPromiseExit(
-        Effect.provide(
-          BookService.pipe(Effect.andThen((s) => s.getBook("nonexistent"))),
-          layer,
-        ),
+        Effect.provide(BookService.pipe(Effect.andThen((s) => s.getBook("nonexistent"))), layer),
       );
       expect(exit._tag).toBe("Failure");
       if (exit._tag === "Failure") {
@@ -159,4 +155,3 @@ describe("BookService", () => {
     });
   });
 });
-

@@ -1,16 +1,15 @@
 import { Layer, ManagedRuntime } from "effect"
+import { BookServiceLive } from "~/lib/book-store"
+import { EpubServiceLive } from "~/lib/epub-service"
 
 /**
  * Application-wide layer that composes all service layers.
- * Add service layers here as they are created:
- *
- *   export const AppLayer = Layer.mergeAll(
- *     BookStoreLayer,
- *     SettingsLayer,
- *     ...
- *   )
+ * Add service layers here as they are created.
  */
-export const AppLayer = Layer.empty
+export const AppLayer = Layer.mergeAll(
+  BookServiceLive,
+  EpubServiceLive,
+)
 
 /**
  * Shared ManagedRuntime for the application.

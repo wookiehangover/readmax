@@ -1,12 +1,19 @@
+import { Effect } from "effect";
 import type { Route } from "./+types/book";
-import { getBook } from "~/lib/book-store";
+import { BookService, BookServiceLive } from "~/lib/book-store";
 import { BookReader } from "~/components/book-reader";
+import { BookNotFoundError } from "~/lib/errors";
 
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
-  const book = await getBook(params.id);
-  if (!book) {
-    throw new Response("Book not found", { status: 404 });
-  }
+  const book = await Effect.runPromise(
+    BookService.pipe(
+      Effect.andThen((s) => s.getBook(params.id)),
+      Effect.catchTag("BookNotFoundError", () =>
+        Effect.die(new Response("Book not found", { status: 404 })),
+      ),
+      Effect.provide(BookServiceLive),
+    ),
+  );
   return { book };
 }
 

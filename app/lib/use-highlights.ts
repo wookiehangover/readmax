@@ -1,11 +1,8 @@
 import { useCallback, useRef, useState } from "react";
+import { Effect } from "effect";
 import type Rendition from "epubjs/types/rendition";
-import {
-  saveHighlight as dbSaveHighlight,
-  getHighlightsByBook,
-  deleteHighlight as dbDeleteHighlight,
-  type Highlight,
-} from "~/lib/annotations-store";
+import { AnnotationService, type Highlight } from "~/lib/annotations-store";
+import { AppRuntime } from "~/lib/effect-runtime";
 
 export interface SelectionPopover {
   position: { x: number; y: number };
@@ -65,14 +62,9 @@ function computeClickPosition(
   };
 }
 
-export function useHighlights({
-  bookId,
-  renditionRef,
-  containerRef,
-}: UseHighlightsOptions) {
+export function useHighlights({ bookId, renditionRef, containerRef }: UseHighlightsOptions) {
   const highlightsRef = useRef<Map<string, Highlight>>(new Map());
-  const [selectionPopover, setSelectionPopover] =
-    useState<SelectionPopover | null>(null);
+  const [selectionPopover, setSelectionPopover] = useState<SelectionPopover | null>(null);
   const [editPopover, setEditPopover] = useState<EditPopover | null>(null);
 
   const makeClickCallback = useCallback(
@@ -107,7 +99,11 @@ export function useHighlights({
   const loadAndApplyHighlights = useCallback(
     async (rendition: Rendition) => {
       try {
-        const existing = await getHighlightsByBook(bookId);
+        const program = Effect.gen(function* () {
+          const svc = yield* AnnotationService;
+          return yield* svc.getHighlightsByBook(bookId);
+        });
+        const existing = await AppRuntime.runPromise(program);
         const hlMap = new Map<string, Highlight>();
         for (const hl of existing) {
           hlMap.set(hl.cfiRange, hl);
@@ -157,7 +153,11 @@ export function useHighlights({
       createdAt: Date.now(),
     };
 
-    await dbSaveHighlight(highlight);
+    const saveProgram = Effect.gen(function* () {
+      const svc = yield* AnnotationService;
+      yield* svc.saveHighlight(highlight);
+    });
+    await AppRuntime.runPromise(saveProgram);
     highlightsRef.current.set(cfiRange, highlight);
     applyHighlightToRendition(rendition, highlight);
 
@@ -179,7 +179,11 @@ export function useHighlights({
     if (!editPopover || !rendition) return;
     const { highlight } = editPopover;
 
-    await dbDeleteHighlight(highlight.id);
+    const deleteProgram = Effect.gen(function* () {
+      const svc = yield* AnnotationService;
+      yield* svc.deleteHighlight(highlight.id);
+    });
+    await AppRuntime.runPromise(deleteProgram);
     rendition.annotations.remove(highlight.cfiRange, "highlight");
     highlightsRef.current.delete(highlight.cfiRange);
     setEditPopover(null);
@@ -200,4 +204,3 @@ export function useHighlights({
     registerSelectionHandler,
   };
 }
-

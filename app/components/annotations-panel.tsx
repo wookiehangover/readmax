@@ -1,9 +1,11 @@
 import { useEffect, useState, useCallback, useRef } from "react";
+import { Effect } from "effect";
 import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { X, Download } from "lucide-react";
 import { TiptapEditor, type TiptapEditorHandle } from "~/components/tiptap-editor";
-import { getNotebook, saveNotebook } from "~/lib/annotations-store";
+import { AnnotationService } from "~/lib/annotations-store";
+import { AppRuntime } from "~/lib/effect-runtime";
 import type { JSONContent } from "@tiptap/react";
 import { tiptapJsonToMarkdown } from "~/lib/tiptap-to-markdown";
 
@@ -32,7 +34,11 @@ export function AnnotationsPanel({
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const notebook = await getNotebook(bookId);
+      const program = Effect.gen(function* () {
+        const svc = yield* AnnotationService;
+        return yield* svc.getNotebook(bookId);
+      });
+      const notebook = await AppRuntime.runPromise(program);
       if (cancelled) return;
       if (notebook?.content) {
         setContent(notebook.content);
@@ -50,11 +56,15 @@ export function AnnotationsPanel({
     (newContent: JSONContent) => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
-        saveNotebook({
-          bookId,
-          content: newContent,
-          updatedAt: Date.now(),
+        const program = Effect.gen(function* () {
+          const svc = yield* AnnotationService;
+          yield* svc.saveNotebook({
+            bookId,
+            content: newContent,
+            updatedAt: Date.now(),
+          });
         });
+        AppRuntime.runPromise(program);
       }, 1000);
     },
     [bookId],
@@ -74,9 +84,7 @@ export function AnnotationsPanel({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    const filename = bookTitle
-      ? `${bookTitle}-annotations.md`
-      : "annotations.md";
+    const filename = bookTitle ? `${bookTitle}-annotations.md` : "annotations.md";
     a.download = filename;
     document.body.appendChild(a);
     a.click();
@@ -125,4 +133,3 @@ export function AnnotationsPanel({
     </div>
   );
 }
-

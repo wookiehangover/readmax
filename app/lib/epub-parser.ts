@@ -1,40 +1,14 @@
-import ePub from "epubjs";
+import { parseEpubEffect } from "~/lib/epub-service";
+import { AppRuntime } from "~/lib/effect-runtime";
 
-export interface EpubMetadata {
-  title: string;
-  author: string;
-  coverImage: Blob | null;
+export type { EpubMetadata } from "~/lib/epub-service";
+
+/**
+ * Parse an epub file and extract metadata.
+ * This is a convenience wrapper that runs the EpubService effect.
+ */
+export async function parseEpub(
+  data: ArrayBuffer,
+): Promise<import("~/lib/epub-service").EpubMetadata> {
+  return AppRuntime.runPromise(parseEpubEffect(data));
 }
-
-export async function parseEpub(data: ArrayBuffer): Promise<EpubMetadata> {
-  const book = ePub(data);
-
-  await book.ready;
-
-  const metadata = await book.loaded.metadata;
-  let coverImage: Blob | null = null;
-
-  try {
-    const coverHref = await book.loaded.cover;
-    if (coverHref) {
-      // Use the archive to get the actual image data as a Blob
-      const blob = await book.archive.getBlob(coverHref);
-      if (blob && blob.size > 0) {
-        coverImage = blob;
-      }
-    }
-  } catch {
-    // cover may not exist in all epubs
-  }
-
-  const result: EpubMetadata = {
-    title: metadata.title || "Untitled",
-    author: metadata.creator || "Unknown Author",
-    coverImage,
-  };
-
-  book.destroy();
-
-  return result;
-}
-

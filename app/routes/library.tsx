@@ -1,7 +1,9 @@
 import { useState, useCallback, useEffect } from "react";
+import { Effect } from "effect";
 import { Outlet } from "react-router";
 import type { Route } from "./+types/library";
-import { getBooks, type Book } from "~/lib/book-store";
+import { BookService, type Book } from "~/lib/book-store";
+import { AppRuntime } from "~/lib/effect-runtime";
 import { useSettings } from "~/lib/settings";
 import { DropZone } from "~/components/drop-zone";
 import { BookList } from "~/components/book-list";
@@ -14,7 +16,7 @@ export function meta(_args: Route.MetaArgs) {
 }
 
 export async function clientLoader() {
-  const books = await getBooks();
+  const books = await AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.getBooks())));
   return { books };
 }
 
@@ -58,9 +60,7 @@ export default function LibraryLayout({ loaderData }: Route.ComponentProps) {
           }`}
         >
           <div className="border-b px-4 py-3">
-            {!collapsed && (
-              <h1 className="text-lg font-semibold">Library</h1>
-            )}
+            {!collapsed && <h1 className="text-lg font-semibold">Library</h1>}
           </div>
           <BookList books={books} collapsed={collapsed} />
         </aside>
@@ -73,4 +73,3 @@ export default function LibraryLayout({ loaderData }: Route.ComponentProps) {
     </DropZone>
   );
 }
-

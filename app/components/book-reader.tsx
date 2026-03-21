@@ -201,7 +201,7 @@ export function BookReader({ book }: BookReaderProps) {
           saveTimerRef.current = setTimeout(() => {
             AppRuntime.runPromise(
               BookService.pipe(Effect.andThen((s) => s.savePosition(book.id, location.start.cfi))),
-            );
+            ).catch((err) => console.error("Failed to save reading position:", err));
           }, 1000);
         },
       );
@@ -234,11 +234,7 @@ export function BookReader({ book }: BookReaderProps) {
   useEffect(() => {
     const rendition = renditionRef.current;
     if (!rendition) return;
-    const css = getTypographyCss(
-      settings.fontFamily,
-      settings.fontSize,
-      settings.lineHeight,
-    );
+    const css = getTypographyCss(settings.fontFamily, settings.fontSize, settings.lineHeight);
     const contents = (rendition as any).getContents() as any[];
     contents.forEach((content: any) => {
       const doc = content.document;

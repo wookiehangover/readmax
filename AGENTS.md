@@ -9,7 +9,14 @@ Ebook reader web app. Users drag-and-drop `.epub` files, which are persisted in 
 - **Framework**: React Router v7 (framework mode) with TypeScript
 - **Styling**: Tailwind CSS v4 + shadcn/ui (Base UI, not Radix)
 - **Epub Rendering**: epubjs
-- **Storage**: idb-keyval (IndexedDB) — use separate databases for separate stores (idb-keyval limitation: one object store per database)
+- **Storage**: idb-keyval (IndexedDB) — use separate databases for separate stores (idb-keyval limitation: one object store per database). IndexedDB stores must be lazy-initialized via getter functions, not created at module scope. Module-scope `createStore()` calls will fail during SSR. Pattern:
+  ```ts
+  let _store: ReturnType<typeof createStore> | null = null;
+  function getStore() {
+    if (!_store) _store = createStore("db-name", "store-name");
+    return _store;
+  }
+  ```
 - **Fonts**: Google Fonts + self-hosted Geist/Geist Mono (woff2 variable fonts in `public/fonts/`)
 - **Linting**: oxlint (no eslint)
 - **Formatting**: oxfmt
@@ -100,14 +107,29 @@ export class MyError extends Data.TaggedError("MyError")<{
    await AppRuntime.runPromise(program);
    ```
 
-**Error handling** -- use `Effect.catchTag` to handle specific tagged errors:
-```ts
-Effect.catchTag("BookNotFoundError", () =>
-  Effect.die(new Response("Book not found", { status: 404 }))
-)
-```
+3. `useEffectQuery` hook (preferred for declarative data loading in React components):
+   ```ts
+   const { data, error, isLoading } = useEffectQuery(
+     () => BookService.pipe(Effect.andThen((s) => s.getBooks())),
+     [deps]
+   );
+   ```
+   Reserve `AppRuntime.runPromise` for route loaders, event handlers, and fire-and-forget operations. Use `useEffectQuery` for component-level data loading.
 
-**Do not** use raw `try/catch` around IndexedDB or other async service calls. Wrap them in `Effect.tryPromise` and let Effect propagate typed errors.
+**Error handling** -- handle errors in the Effect pipeline, not after `runPromise`:
+
+- Use `Effect.catchAll` or `Effect.catchTag` *before* `runPromise` to handle errors within the Effect pipeline, not `try/catch` after:
+  ```ts
+  Effect.catchTag("BookNotFoundError", () =>
+    Effect.die(new Response("Book not found", { status: 404 }))
+  )
+  ```
+- Fire-and-forget `runPromise` calls (e.g. debounced saves) must always have `.catch()`:
+  ```ts
+  AppRuntime.runPromise(effect).catch(console.error);
+  ```
+- Use `Effect.ensuring` for cleanup logic instead of `finally`
+- Do **not** use raw `try/catch` around IndexedDB or other async service calls. Wrap them in `Effect.tryPromise` and let Effect propagate typed errors.
 
 ## Coding Conventions
 

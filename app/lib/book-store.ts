@@ -1,4 +1,4 @@
-import { createStore, get, set, del, keys } from "idb-keyval";
+import { createStore, get, set, del, entries } from "idb-keyval";
 import { Context, Effect, Layer } from "effect";
 import { StorageError, BookNotFoundError, PositionError } from "~/lib/errors";
 
@@ -10,14 +10,24 @@ export interface Book {
   data: ArrayBuffer;
 }
 
-// --- idb-keyval stores (internal) ---
+// --- idb-keyval stores (lazy-initialized for SSR safety) ---
 
-const bookStore = createStore("ebook-reader-db", "books");
-const positionStore = createStore("ebook-reader-positions", "positions");
+let _bookStore: ReturnType<typeof createStore> | null = null;
+let _positionStore: ReturnType<typeof createStore> | null = null;
+
+function getBookStore() {
+  if (!_bookStore) _bookStore = createStore("ebook-reader-db", "books");
+  return _bookStore;
+}
+
+function getPositionStore() {
+  if (!_positionStore) _positionStore = createStore("ebook-reader-positions", "positions");
+  return _positionStore;
+}
 
 // --- Effect Service ---
 
-class BookService extends Context.Tag("BookService")<
+export class BookService extends Context.Tag("BookService")<
   BookService,
   {
     readonly saveBook: (book: Book) => Effect.Effect<void, StorageError>;
@@ -29,25 +39,18 @@ class BookService extends Context.Tag("BookService")<
   }
 >() {}
 
-const BookServiceLive = Layer.succeed(BookService, {
+export const BookServiceLive = Layer.succeed(BookService, {
   saveBook: (book: Book) =>
     Effect.tryPromise({
-      try: () => set(book.id, book, bookStore),
+      try: () => set(book.id, book, getBookStore()),
       catch: (cause) => new StorageError({ operation: "saveBook", cause }),
     }),
 
   getBooks: () =>
     Effect.tryPromise({
       try: async () => {
-        const allKeys = await keys(bookStore);
-        const books: Book[] = [];
-        for (const key of allKeys) {
-          const book = await get<Book>(key, bookStore);
-          if (book) {
-            books.push(book);
-          }
-        }
-        return books;
+        const allEntries = await entries<string, Book>(getBookStore());
+        return allEntries.map(([, book]) => book).filter(Boolean);
       },
       catch: (cause) => new StorageError({ operation: "getBooks", cause }),
     }),
@@ -55,7 +58,7 @@ const BookServiceLive = Layer.succeed(BookService, {
   getBook: (id: string) =>
     Effect.gen(function* () {
       const book = yield* Effect.tryPromise({
-        try: () => get<Book>(id, bookStore),
+        try: () => get<Book>(id, getBookStore()),
         catch: (cause) => new StorageError({ operation: "getBook", cause }),
       });
       if (!book) {
@@ -66,24 +69,22 @@ const BookServiceLive = Layer.succeed(BookService, {
 
   deleteBook: (id: string) =>
     Effect.tryPromise({
-      try: () => del(id, bookStore),
+      try: () => del(id, getBookStore()),
       catch: (cause) => new StorageError({ operation: "deleteBook", cause }),
     }),
 
   savePosition: (bookId: string, cfi: string) =>
     Effect.tryPromise({
-      try: () => set(bookId, cfi, positionStore),
+      try: () => set(bookId, cfi, getPositionStore()),
       catch: (cause) => new PositionError({ operation: "savePosition", bookId, cause }),
     }),
 
   getPosition: (bookId: string) =>
     Effect.tryPromise({
       try: async () => {
-        const cfi = await get<string>(bookId, positionStore);
+        const cfi = await get<string>(bookId, getPositionStore());
         return cfi ?? null;
       },
       catch: (cause) => new PositionError({ operation: "getPosition", bookId, cause }),
     }),
 });
-
-export { BookService, BookServiceLive };

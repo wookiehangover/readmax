@@ -3,9 +3,9 @@ import { Effect } from "effect";
 import type Rendition from "epubjs/types/rendition";
 import {
   AnnotationService,
-  AnnotationServiceLive,
   type Highlight,
 } from "~/lib/annotations-store";
+import { AppRuntime } from "~/lib/effect-runtime";
 
 export interface SelectionPopover {
   position: { x: number; y: number };
@@ -110,8 +110,8 @@ export function useHighlights({
         const program = Effect.gen(function* () {
           const svc = yield* AnnotationService;
           return yield* svc.getHighlightsByBook(bookId);
-        }).pipe(Effect.provide(AnnotationServiceLive));
-        const existing = await Effect.runPromise(program);
+        });
+        const existing = await AppRuntime.runPromise(program);
         const hlMap = new Map<string, Highlight>();
         for (const hl of existing) {
           hlMap.set(hl.cfiRange, hl);
@@ -164,8 +164,8 @@ export function useHighlights({
     const saveProgram = Effect.gen(function* () {
       const svc = yield* AnnotationService;
       yield* svc.saveHighlight(highlight);
-    }).pipe(Effect.provide(AnnotationServiceLive));
-    await Effect.runPromise(saveProgram);
+    });
+    await AppRuntime.runPromise(saveProgram);
     highlightsRef.current.set(cfiRange, highlight);
     applyHighlightToRendition(rendition, highlight);
 
@@ -190,8 +190,8 @@ export function useHighlights({
     const deleteProgram = Effect.gen(function* () {
       const svc = yield* AnnotationService;
       yield* svc.deleteHighlight(highlight.id);
-    }).pipe(Effect.provide(AnnotationServiceLive));
-    await Effect.runPromise(deleteProgram);
+    });
+    await AppRuntime.runPromise(deleteProgram);
     rendition.annotations.remove(highlight.cfiRange, "highlight");
     highlightsRef.current.delete(highlight.cfiRange);
     setEditPopover(null);

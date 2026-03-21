@@ -4,7 +4,8 @@ import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { X, Download } from "lucide-react";
 import { TiptapEditor, type TiptapEditorHandle } from "~/components/tiptap-editor";
-import { AnnotationService, AnnotationServiceLive } from "~/lib/annotations-store";
+import { AnnotationService } from "~/lib/annotations-store";
+import { AppRuntime } from "~/lib/effect-runtime";
 import type { JSONContent } from "@tiptap/react";
 import { tiptapJsonToMarkdown } from "~/lib/tiptap-to-markdown";
 
@@ -36,8 +37,8 @@ export function AnnotationsPanel({
       const program = Effect.gen(function* () {
         const svc = yield* AnnotationService;
         return yield* svc.getNotebook(bookId);
-      }).pipe(Effect.provide(AnnotationServiceLive));
-      const notebook = await Effect.runPromise(program);
+      });
+      const notebook = await AppRuntime.runPromise(program);
       if (cancelled) return;
       if (notebook?.content) {
         setContent(notebook.content);
@@ -62,8 +63,8 @@ export function AnnotationsPanel({
             content: newContent,
             updatedAt: Date.now(),
           });
-        }).pipe(Effect.provide(AnnotationServiceLive));
-        Effect.runPromise(program);
+        });
+        AppRuntime.runPromise(program);
       }, 1000);
     },
     [bookId],

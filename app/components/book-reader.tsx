@@ -5,7 +5,8 @@ import type Rendition from "epubjs/types/rendition";
 import { Button } from "~/components/ui/button";
 import { ChevronLeft, ChevronRight, NotebookPen } from "lucide-react";
 import { Effect } from "effect";
-import { BookService, BookServiceLive, type Book } from "~/lib/book-store";
+import { BookService, type Book } from "~/lib/book-store";
+import { AppRuntime } from "~/lib/effect-runtime";
 import { useSettings, resolveTheme } from "~/lib/settings";
 import type { ReaderLayout } from "~/lib/settings";
 import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
@@ -144,10 +145,9 @@ export function BookReader({ book }: BookReaderProps) {
     (async () => {
       await epubBook.ready;
 
-      const savedCfi = await Effect.runPromise(
+      const savedCfi = await AppRuntime.runPromise(
         BookService.pipe(
           Effect.andThen((s) => s.getPosition(book.id)),
-          Effect.provide(BookServiceLive),
         ),
       );
       await rendition.display(savedCfi || undefined);
@@ -182,10 +182,9 @@ export function BookReader({ book }: BookReaderProps) {
           setBookProgress(location.start.percentage * 100);
           if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
           saveTimerRef.current = setTimeout(() => {
-            Effect.runPromise(
+            AppRuntime.runPromise(
               BookService.pipe(
                 Effect.andThen((s) => s.savePosition(book.id, location.start.cfi)),
-                Effect.provide(BookServiceLive),
               ),
             );
           }, 1000);

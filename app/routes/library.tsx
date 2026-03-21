@@ -2,7 +2,8 @@ import { useState, useCallback, useEffect } from "react";
 import { Effect } from "effect";
 import { Outlet } from "react-router";
 import type { Route } from "./+types/library";
-import { BookService, BookServiceLive, type Book } from "~/lib/book-store";
+import { BookService, type Book } from "~/lib/book-store";
+import { AppRuntime } from "~/lib/effect-runtime";
 import { useSettings } from "~/lib/settings";
 import { DropZone } from "~/components/drop-zone";
 import { BookList } from "~/components/book-list";
@@ -15,10 +16,9 @@ export function meta(_args: Route.MetaArgs) {
 }
 
 export async function clientLoader() {
-  const books = await Effect.runPromise(
+  const books = await AppRuntime.runPromise(
     BookService.pipe(
       Effect.andThen((s) => s.getBooks()),
-      Effect.provide(BookServiceLive),
     ),
   );
   return { books };

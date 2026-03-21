@@ -1,5 +1,5 @@
-import { Effect } from "effect";
-import { parseEpubEffect, EpubServiceLive } from "~/lib/epub-service";
+import { parseEpubEffect } from "~/lib/epub-service";
+import { AppRuntime } from "~/lib/effect-runtime";
 
 export type { EpubMetadata } from "~/lib/epub-service";
 
@@ -10,8 +10,6 @@ export type { EpubMetadata } from "~/lib/epub-service";
 export async function parseEpub(
   data: ArrayBuffer,
 ): Promise<import("~/lib/epub-service").EpubMetadata> {
-  return Effect.runPromise(
-    parseEpubEffect(data).pipe(Effect.provide(EpubServiceLive)),
-  );
+  return AppRuntime.runPromise(parseEpubEffect(data));
 }
 

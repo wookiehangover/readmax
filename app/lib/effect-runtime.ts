@@ -1,4 +1,5 @@
 import { Layer, ManagedRuntime } from "effect"
+import { AnnotationServiceLive } from "~/lib/annotations-store"
 import { BookServiceLive } from "~/lib/book-store"
 import { EpubServiceLive } from "~/lib/epub-service"
 
@@ -9,6 +10,7 @@ import { EpubServiceLive } from "~/lib/epub-service"
 export const AppLayer = Layer.mergeAll(
   BookServiceLive,
   EpubServiceLive,
+  AnnotationServiceLive,
 )
 
 /**

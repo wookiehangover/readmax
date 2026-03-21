@@ -1,17 +1,16 @@
 import { Effect } from "effect";
 import type { Route } from "./+types/book";
-import { BookService, BookServiceLive } from "~/lib/book-store";
+import { BookService } from "~/lib/book-store";
 import { BookReader } from "~/components/book-reader";
-import { BookNotFoundError } from "~/lib/errors";
+import { AppRuntime } from "~/lib/effect-runtime";
 
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
-  const book = await Effect.runPromise(
+  const book = await AppRuntime.runPromise(
     BookService.pipe(
       Effect.andThen((s) => s.getBook(params.id)),
       Effect.catchTag("BookNotFoundError", () =>
         Effect.die(new Response("Book not found", { status: 404 })),
       ),
-      Effect.provide(BookServiceLive),
     ),
   );
   return { book };

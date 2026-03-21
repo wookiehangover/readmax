@@ -98,21 +98,24 @@ export function useHighlights({ bookId, renditionRef, containerRef }: UseHighlig
   /** Load all highlights for the book from IndexedDB and apply them to the rendition. */
   const loadAndApplyHighlights = useCallback(
     async (rendition: Rendition) => {
-      try {
-        const program = Effect.gen(function* () {
-          const svc = yield* AnnotationService;
-          return yield* svc.getHighlightsByBook(bookId);
-        });
-        const existing = await AppRuntime.runPromise(program);
-        const hlMap = new Map<string, Highlight>();
-        for (const hl of existing) {
-          hlMap.set(hl.cfiRange, hl);
-          applyHighlightToRendition(rendition, hl);
-        }
-        highlightsRef.current = hlMap;
-      } catch {
-        // Highlight loading can fail silently
+      const program = Effect.gen(function* () {
+        const svc = yield* AnnotationService;
+        return yield* svc.getHighlightsByBook(bookId);
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            console.error("Failed to load highlights:", error);
+            return [] as Highlight[];
+          }),
+        ),
+      );
+      const existing = await AppRuntime.runPromise(program);
+      const hlMap = new Map<string, Highlight>();
+      for (const hl of existing) {
+        hlMap.set(hl.cfiRange, hl);
+        applyHighlightToRendition(rendition, hl);
       }
+      highlightsRef.current = hlMap;
     },
     [bookId, applyHighlightToRendition],
   );

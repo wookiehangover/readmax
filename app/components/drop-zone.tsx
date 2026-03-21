@@ -49,10 +49,10 @@ export function DropZone({ onBookAdded, children }: DropZoneProps) {
 
       setIsProcessing(true);
 
-      try {
+      const processFiles = Effect.gen(function* () {
         for (const file of files) {
-          const arrayBuffer = await file.arrayBuffer();
-          const metadata = await AppRuntime.runPromise(parseEpubEffect(arrayBuffer));
+          const arrayBuffer = yield* Effect.promise(() => file.arrayBuffer());
+          const metadata = yield* parseEpubEffect(arrayBuffer);
 
           const book: Book = {
             id: crypto.randomUUID(),
@@ -62,14 +62,23 @@ export function DropZone({ onBookAdded, children }: DropZoneProps) {
             data: arrayBuffer,
           };
 
-          await AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.saveBook(book))));
+          yield* BookService.pipe(Effect.andThen((s) => s.saveBook(book)));
           onBookAdded?.(book);
         }
-      } catch (error) {
-        console.error("Failed to process epub:", error);
-      } finally {
-        setIsProcessing(false);
-      }
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            console.error("Failed to process epub:", error);
+          }),
+        ),
+        Effect.ensuring(
+          Effect.sync(() => {
+            setIsProcessing(false);
+          }),
+        ),
+      );
+
+      await AppRuntime.runPromise(processFiles);
     },
     [onBookAdded],
   );

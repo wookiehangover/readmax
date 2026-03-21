@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback, useRef } from "react";
+import { Effect } from "effect";
 import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { X, Download } from "lucide-react";
 import { TiptapEditor, type TiptapEditorHandle } from "~/components/tiptap-editor";
-import { getNotebook, saveNotebook } from "~/lib/annotations-store";
+import { AnnotationService, AnnotationServiceLive } from "~/lib/annotations-store";
 import type { JSONContent } from "@tiptap/react";
 import { tiptapJsonToMarkdown } from "~/lib/tiptap-to-markdown";
 
@@ -32,7 +33,11 @@ export function AnnotationsPanel({
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const notebook = await getNotebook(bookId);
+      const program = Effect.gen(function* () {
+        const svc = yield* AnnotationService;
+        return yield* svc.getNotebook(bookId);
+      }).pipe(Effect.provide(AnnotationServiceLive));
+      const notebook = await Effect.runPromise(program);
       if (cancelled) return;
       if (notebook?.content) {
         setContent(notebook.content);
@@ -50,11 +55,15 @@ export function AnnotationsPanel({
     (newContent: JSONContent) => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
-        saveNotebook({
-          bookId,
-          content: newContent,
-          updatedAt: Date.now(),
-        });
+        const program = Effect.gen(function* () {
+          const svc = yield* AnnotationService;
+          yield* svc.saveNotebook({
+            bookId,
+            content: newContent,
+            updatedAt: Date.now(),
+          });
+        }).pipe(Effect.provide(AnnotationServiceLive));
+        Effect.runPromise(program);
       }, 1000);
     },
     [bookId],

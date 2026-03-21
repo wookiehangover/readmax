@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, type DragEvent } from "react";
-import { parseEpub } from "~/lib/epub-parser";
-import { saveBook, type Book } from "~/lib/book-store";
+import { Effect } from "effect";
+import { parseEpubEffect, EpubServiceLive } from "~/lib/epub-service";
+import { BookService, BookServiceLive, type Book } from "~/lib/book-store";
 import { cn } from "~/lib/utils";
 
 interface DropZoneProps {
@@ -52,7 +53,11 @@ export function DropZone({ onBookAdded, children }: DropZoneProps) {
       try {
         for (const file of files) {
           const arrayBuffer = await file.arrayBuffer();
-          const metadata = await parseEpub(arrayBuffer);
+          const metadata = await Effect.runPromise(
+            parseEpubEffect(arrayBuffer).pipe(
+              Effect.provide(EpubServiceLive),
+            ),
+          );
 
           const book: Book = {
             id: crypto.randomUUID(),
@@ -62,7 +67,12 @@ export function DropZone({ onBookAdded, children }: DropZoneProps) {
             data: arrayBuffer,
           };
 
-          await saveBook(book);
+          await Effect.runPromise(
+            BookService.pipe(
+              Effect.andThen((s) => s.saveBook(book)),
+              Effect.provide(BookServiceLive),
+            ),
+          );
           onBookAdded?.(book);
         }
       } catch (error) {

@@ -14,7 +14,10 @@ import { RadialProgress } from "~/components/radial-progress";
 import { AnnotationsPanel } from "~/components/annotations-panel";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { useHighlights } from "~/lib/use-highlights";
+import { useReaderNavigation, type TocEntry } from "~/lib/reader-context";
 import type { TiptapEditorHandle } from "~/components/tiptap-editor";
+import type { HighlightReferenceAttrs } from "~/lib/tiptap-highlight-node";
+import { cn } from "~/lib/utils"
 
 interface BookReaderProps {
   book: Book;
@@ -56,10 +59,30 @@ function getTypographyCss(fontFamily: string, fontSize: number, lineHeight: numb
   `;
 }
 
+function resolveThemeColors(mode: "light" | "dark") {
+  const root = document.documentElement;
+  const currentlyDark = root.classList.contains("dark");
+  const needsDark = mode === "dark";
+
+  if (needsDark !== currentlyDark) {
+    root.classList.toggle("dark", needsDark);
+  }
+
+  const computed = getComputedStyle(root);
+  const background = computed.getPropertyValue("--background").trim();
+  const foreground = computed.getPropertyValue("--foreground").trim();
+
+  if (needsDark !== currentlyDark) {
+    root.classList.toggle("dark", currentlyDark);
+  }
+
+  return { background, foreground };
+}
+
 function getRenditionOptions(layout: ReaderLayout) {
   switch (layout) {
     case "spread":
-      return { spread: "always" as const, flow: "paginated" as const };
+      return { spread: "always" as const, flow: "paginated" as const, gap: 64 };
     case "scroll":
       return { spread: "none" as const, flow: "scrolled-doc" as const };
     case "single":
@@ -89,6 +112,8 @@ export function BookReader({ book }: BookReaderProps) {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [annotationsPanelOpen, setAnnotationsPanelOpen] = useState(false);
   const editorRef = useRef<TiptapEditorHandle>(null);
+  const [pendingHighlight, setPendingHighlight] = useState<HighlightReferenceAttrs | null>(null);
+  const { setToc, setNavigateToHref } = useReaderNavigation();
 
   const navigateToCfi = useCallback((cfi: string) => {
     renditionRef.current?.display(cfi);
@@ -120,6 +145,7 @@ export function BookReader({ book }: BookReaderProps) {
       height: "100%",
       spread: opts.spread,
       flow: opts.flow,
+      ...("gap" in opts && { gap: opts.gap }),
     });
     renditionRef.current = rendition;
 
@@ -152,17 +178,37 @@ export function BookReader({ book }: BookReaderProps) {
       doc.head.appendChild(highlightStyle);
     });
 
+    const lightColors = resolveThemeColors("light");
+    const darkColors = resolveThemeColors("dark");
+
     rendition.themes.register("light", {
-      body: { color: "#1a1a1a !important", background: "#ffffff !important" },
+      body: { color: `${lightColors.foreground} !important`, background: `${lightColors.background} !important` },
       a: { color: "inherit !important" },
     });
     rendition.themes.register("dark", {
-      body: { color: "#e0e0e0 !important", background: "#1a1a1a !important" },
+      body: { color: `${darkColors.foreground} !important`, background: `${darkColors.background} !important` },
       a: { color: "inherit !important" },
     });
 
     (async () => {
       await epubBook.ready;
+
+      // Extract TOC from epub navigation
+      const nav = epubBook.navigation;
+      if (nav && nav.toc) {
+        const mapToc = (items: any[]): TocEntry[] =>
+          items.map((item) => ({
+            label: item.label?.trim() ?? "",
+            href: item.href ?? "",
+            ...(item.subitems?.length ? { subitems: mapToc(item.subitems) } : {}),
+          }));
+        setToc(mapToc(nav.toc));
+      }
+
+      // Provide chapter navigation via rendition.display
+      setNavigateToHref((href: string) => {
+        rendition.display(href);
+      });
 
       const savedCfi = await AppRuntime.runPromise(
         BookService.pipe(Effect.andThen((s) => s.getPosition(book.id))),
@@ -218,12 +264,14 @@ export function BookReader({ book }: BookReaderProps) {
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      setToc([]);
+      setNavigateToHref(() => {});
       rendition.destroy();
       epubBook.destroy();
       bookRef.current = null;
       renditionRef.current = null;
     };
-  }, [book.id, book.data, settings.readerLayout, loadAndApplyHighlights, registerSelectionHandler]);
+  }, [book.id, book.data, settings.readerLayout, loadAndApplyHighlights, registerSelectionHandler, setToc, setNavigateToHref]);
 
   useEffect(() => {
     const rendition = renditionRef.current;
@@ -275,21 +323,41 @@ export function BookReader({ book }: BookReaderProps) {
   const handleSaveHighlight = useCallback(async () => {
     const highlight = await saveHighlightFromPopover();
     if (highlight) {
-      editorRef.current?.appendHighlightReference({
+      const attrs: HighlightReferenceAttrs = {
         highlightId: highlight.id,
         cfiRange: highlight.cfiRange,
         text: highlight.text,
-      });
+      };
+
+      // If the editor is already mounted, append directly
+      if (editorRef.current) {
+        editorRef.current.appendHighlightReference(attrs);
+      } else {
+        // Queue the highlight and open the panel — the useEffect below
+        // will flush it once the editor mounts
+        setPendingHighlight(attrs);
+      }
+
+      // Always ensure the panel is open
+      setAnnotationsPanelOpen(true);
     }
   }, [saveHighlightFromPopover]);
+
+  // Flush pending highlight once the editor is mounted
+  useEffect(() => {
+    if (pendingHighlight && editorRef.current) {
+      editorRef.current.appendHighlightReference(pendingHighlight);
+      setPendingHighlight(null);
+    }
+  });
 
   const isScrollMode = settings.readerLayout === "scroll";
 
   return (
     <div className="flex h-full">
       <div className="flex min-w-0 flex-1 flex-col">
-        <div ref={containerRef} className="flex-1 overflow-hidden" />
-        <div className="relative flex items-center justify-center border-t p-2">
+        <div ref={containerRef} className={cn("flex-1 overflow-hidden", { "px-8 pt-10 pb-4": settings.readerLayout })} />
+        <div className="relative flex items-center justify-center border-t px-2 h-10">
           <div className="absolute left-2 flex items-center gap-1.5">
             <RadialProgress value={chapterProgress} label="Chapter" />
             <RadialProgress value={bookProgress} label="Overall" />

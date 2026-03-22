@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <style>
+    :root { --stroke: #1a1a1a; }
+    @media (prefers-color-scheme: dark) {
+      :root { --stroke: #e5e5e5; }
+    }
+  </style>
+  <!-- Book spine -->
+  <path d="M7 4 C9 4 9 4 9 4 L9 28 C9 28 9 28 7 28" stroke="var(--stroke)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Book cover -->
+  <rect x="9" y="4" width="17" height="24" rx="1" stroke="var(--stroke)" stroke-width="2" stroke-linejoin="round"/>
+  <!-- Spine curve -->
+  <path d="M7 4 C5 4 5 6 5 7 L5 25 C5 26 5 28 7 28" stroke="var(--stroke)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Text lines on cover -->
+  <line x1="14" y1="11" x2="22" y2="11" stroke="var(--stroke)" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="14" y1="15" x2="20" y2="15" stroke="var(--stroke)" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="14" y1="19" x2="21" y2="19" stroke="var(--stroke)" stroke-width="1.5" stroke-linecap="round"/>
+</svg>
+

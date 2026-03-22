@@ -17,6 +17,7 @@ import { useHighlights } from "~/lib/use-highlights";
 import { useReaderNavigation, type TocEntry } from "~/lib/reader-context";
 import type { TiptapEditorHandle } from "~/components/tiptap-editor";
 import type { HighlightReferenceAttrs } from "~/lib/tiptap-highlight-node";
+import { cn } from "~/lib/utils"
 
 interface BookReaderProps {
   book: Book;
@@ -355,8 +356,8 @@ export function BookReader({ book }: BookReaderProps) {
   return (
     <div className="flex h-full">
       <div className="flex min-w-0 flex-1 flex-col">
-        <div ref={containerRef} className="flex-1 overflow-hidden px-8 pt-10 pb-4" />
-        <div className="relative flex items-center justify-center border-t p-2">
+        <div ref={containerRef} className={cn("flex-1 overflow-hidden", { "px-8 pt-10 pb-4": settings.readerLayout })} />
+        <div className="relative flex items-center justify-center border-t px-2 h-10">
           <div className="absolute left-2 flex items-center gap-1.5">
             <RadialProgress value={chapterProgress} label="Chapter" />
             <RadialProgress value={bookProgress} label="Overall" />

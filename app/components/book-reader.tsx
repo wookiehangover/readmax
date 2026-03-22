@@ -57,6 +57,26 @@ function getTypographyCss(fontFamily: string, fontSize: number, lineHeight: numb
   `;
 }
 
+function resolveThemeColors(mode: "light" | "dark") {
+  const root = document.documentElement;
+  const currentlyDark = root.classList.contains("dark");
+  const needsDark = mode === "dark";
+
+  if (needsDark !== currentlyDark) {
+    root.classList.toggle("dark", needsDark);
+  }
+
+  const computed = getComputedStyle(root);
+  const background = computed.getPropertyValue("--background").trim();
+  const foreground = computed.getPropertyValue("--foreground").trim();
+
+  if (needsDark !== currentlyDark) {
+    root.classList.toggle("dark", currentlyDark);
+  }
+
+  return { background, foreground };
+}
+
 function getRenditionOptions(layout: ReaderLayout) {
   switch (layout) {
     case "spread":
@@ -155,12 +175,15 @@ export function BookReader({ book }: BookReaderProps) {
       doc.head.appendChild(highlightStyle);
     });
 
+    const lightColors = resolveThemeColors("light");
+    const darkColors = resolveThemeColors("dark");
+
     rendition.themes.register("light", {
-      body: { color: "#1a1a1a !important", background: "#ffffff !important" },
+      body: { color: `${lightColors.foreground} !important`, background: `${lightColors.background} !important` },
       a: { color: "inherit !important" },
     });
     rendition.themes.register("dark", {
-      body: { color: "#e0e0e0 !important", background: "#1a1a1a !important" },
+      body: { color: `${darkColors.foreground} !important`, background: `${darkColors.background} !important` },
       a: { color: "inherit !important" },
     });
 
@@ -311,7 +334,7 @@ export function BookReader({ book }: BookReaderProps) {
   return (
     <div className="flex h-full">
       <div className="flex min-w-0 flex-1 flex-col">
-        <div ref={containerRef} className="flex-1 overflow-hidden px-8 pt-10 pb-4 bg-sidebar" />
+        <div ref={containerRef} className="flex-1 overflow-hidden px-8 pt-10 pb-4" />
         <div className="relative flex items-center justify-center border-t p-2">
           <div className="absolute left-2 flex items-center gap-1.5">
             <RadialProgress value={chapterProgress} label="Chapter" />

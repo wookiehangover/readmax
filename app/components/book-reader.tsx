@@ -227,7 +227,20 @@ export function BookReader({ book }: BookReaderProps) {
       registerSelectionHandler(rendition);
 
       try {
-        await epubBook.locations.generate(1500);
+        const cachedLocations = await AppRuntime.runPromise(
+          BookService.pipe(Effect.andThen((s) => s.getLocations(book.id))).pipe(
+            Effect.catchAll(() => Effect.succeed(null))
+          )
+        );
+        if (cachedLocations) {
+          epubBook.locations.load(cachedLocations);
+        } else {
+          await epubBook.locations.generate(1500);
+          const json = (epubBook.locations as any).save() as string;
+          AppRuntime.runPromise(
+            BookService.pipe(Effect.andThen((s) => s.saveLocations(book.id, json)))
+          ).catch(console.error);
+        }
         setTotalPages((epubBook.locations as any).total as number);
       } catch {
         // locations generation can fail silently

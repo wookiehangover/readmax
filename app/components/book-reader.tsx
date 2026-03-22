@@ -15,6 +15,7 @@ import { AnnotationsPanel } from "~/components/annotations-panel";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { useHighlights } from "~/lib/use-highlights";
 import type { TiptapEditorHandle } from "~/components/tiptap-editor";
+import type { HighlightReferenceAttrs } from "~/lib/tiptap-highlight-node";
 
 interface BookReaderProps {
   book: Book;
@@ -89,6 +90,7 @@ export function BookReader({ book }: BookReaderProps) {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [annotationsPanelOpen, setAnnotationsPanelOpen] = useState(false);
   const editorRef = useRef<TiptapEditorHandle>(null);
+  const [pendingHighlight, setPendingHighlight] = useState<HighlightReferenceAttrs | null>(null);
 
   const navigateToCfi = useCallback((cfi: string) => {
     renditionRef.current?.display(cfi);
@@ -275,13 +277,33 @@ export function BookReader({ book }: BookReaderProps) {
   const handleSaveHighlight = useCallback(async () => {
     const highlight = await saveHighlightFromPopover();
     if (highlight) {
-      editorRef.current?.appendHighlightReference({
+      const attrs: HighlightReferenceAttrs = {
         highlightId: highlight.id,
         cfiRange: highlight.cfiRange,
         text: highlight.text,
-      });
+      };
+
+      // If the editor is already mounted, append directly
+      if (editorRef.current) {
+        editorRef.current.appendHighlightReference(attrs);
+      } else {
+        // Queue the highlight and open the panel — the useEffect below
+        // will flush it once the editor mounts
+        setPendingHighlight(attrs);
+      }
+
+      // Always ensure the panel is open
+      setAnnotationsPanelOpen(true);
     }
   }, [saveHighlightFromPopover]);
+
+  // Flush pending highlight once the editor is mounted
+  useEffect(() => {
+    if (pendingHighlight && editorRef.current) {
+      editorRef.current.appendHighlightReference(pendingHighlight);
+      setPendingHighlight(null);
+    }
+  });
 
   const isScrollMode = settings.readerLayout === "scroll";
 

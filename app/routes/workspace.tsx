@@ -6,6 +6,7 @@ import {
   type IDockviewPanelProps,
   type DockviewApi,
   type IWatermarkPanelProps,
+  type DockviewTheme,
 } from "dockview";
 import { Link } from "react-router";
 import { BookOpen, NotebookPen, Library } from "lucide-react";
@@ -118,7 +119,10 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
   const apiRef = useRef<DockviewApi | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const dockviewTheme = "dockview-theme-app";
+  const dockviewTheme: DockviewTheme = {
+    name: "app",
+    className: "dockview-theme-app",
+  };
 
   // Debounced layout save
   const saveLayout = useCallback(() => {
@@ -300,7 +304,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
       {/* Dockview container */}
       <div className="flex-1">
         <DockviewReact
-          className={dockviewTheme}
+          theme={dockviewTheme}
           components={components}
           watermarkComponent={WatermarkPanel}
           onReady={onReady}

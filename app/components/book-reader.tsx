@@ -285,6 +285,21 @@ export function BookReader({ book }: BookReaderProps) {
   useEffect(() => {
     const rendition = renditionRef.current;
     if (!rendition) return;
+
+    // Re-resolve and re-register theme colors (they may have been stale at init time,
+    // or the CSS variables may have changed since the last theme switch)
+    const lightColors = resolveThemeColors("light");
+    const darkColors = resolveThemeColors("dark");
+
+    rendition.themes.register("light", {
+      body: { color: `${lightColors.foreground} !important`, background: `${lightColors.background} !important` },
+      a: { color: "inherit !important" },
+    });
+    rendition.themes.register("dark", {
+      body: { color: `${darkColors.foreground} !important`, background: `${darkColors.background} !important` },
+      a: { color: "inherit !important" },
+    });
+
     rendition.themes.select(resolveTheme(settings.theme));
   }, [settings.theme]);
 

@@ -181,6 +181,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
       component: "book-reader",
       title: book.title,
       params: { bookId: book.id, bookTitle: book.title },
+      renderer: "always",
     });
   }, []);
 
@@ -200,6 +201,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
       component: "notebook",
       title: `Notes: ${book.title}`,
       params: { bookId: book.id, bookTitle: book.title },
+      renderer: "always",
     });
   }, []);
 

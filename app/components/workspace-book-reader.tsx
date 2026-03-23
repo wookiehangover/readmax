@@ -358,58 +358,37 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
     });
   }, [settings.fontFamily, settings.fontSize, settings.lineHeight]);
 
-  // Force re-display when dockview panel becomes visible or active (tab switch).
-  // When a panel is hidden, the epub iframe can lose its rendering state.
-  // Calling rendition.display(cfi) re-triggers all content hooks (fonts,
-  // typography CSS, highlight styles) and then we reapply the color theme.
-  //
-  // We listen to three dockview events:
-  // - onDidVisibilityChange: fires when a tab is shown/hidden within its group
-  // - onDidActiveChange: fires when the panel becomes the focused panel
-  // - onDidGroupChange: fires when the panel is dragged to a new group
+  // With renderer: "always", dockview keeps the DOM alive when the tab is hidden
+  // (instead of removing it). The epub iframe stays intact, so we only need to
+  // reapply theme (in case it changed while hidden) and resize (in case the
+  // container dimensions changed).
   useEffect(() => {
     if (!panelApi) return;
 
-    const reapplyStyles = () => {
+    const handleBecameVisible = () => {
       const rendition = renditionRef.current;
       if (!rendition) return;
 
-      const currentCfi = rendition.location?.start?.cfi;
+      // Reapply theme (may have changed while hidden)
+      rendition.themes.select(resolveTheme(settings.theme));
 
-      if (currentCfi) {
-        // Force a full re-display at the current location.
-        // This re-triggers rendition.hooks.content.register() callbacks
-        // which inject Google Fonts, typography CSS, and highlight styles.
-        rendition.display(currentCfi).then(() => {
-          rendition.themes.select(resolveTheme(settings.theme));
-        });
-      } else {
-        // Fallback: reapply theme and resize
-        rendition.themes.select(resolveTheme(settings.theme));
-        requestAnimationFrame(() => {
-          (rendition as any)?.resize();
-        });
-      }
+      // Resize in case container dimensions changed
+      requestAnimationFrame(() => {
+        (rendition as any)?.resize();
+      });
     };
 
     const visDisposable = panelApi.onDidVisibilityChange((e) => {
-      if (e.isVisible) reapplyStyles();
+      if (e.isVisible) handleBecameVisible();
     });
 
     const activeDisposable = panelApi.onDidActiveChange((e) => {
-      if (e.isActive) reapplyStyles();
-    });
-
-    // Handle group changes (panel dragged to new split) — small delay
-    // to let the DOM settle after reparenting the iframe.
-    const groupDisposable = panelApi.onDidGroupChange(() => {
-      setTimeout(reapplyStyles, 100);
+      if (e.isActive) handleBecameVisible();
     });
 
     return () => {
       visDisposable.dispose();
       activeDisposable.dispose();
-      groupDisposable.dispose();
     };
   }, [panelApi, settings.theme]);
 

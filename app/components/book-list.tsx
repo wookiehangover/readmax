@@ -15,7 +15,7 @@ interface BookListProps {
   collapsed?: boolean;
 }
 
-function BookCover({ coverImage }: { coverImage: Blob }) {
+export function BookCover({ coverImage }: { coverImage: Blob }) {
   const [url, setUrl] = useState<string | null>(null);
 
   useEffect(() => {

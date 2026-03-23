@@ -9,6 +9,7 @@ import {
 } from "dockview";
 import { Link } from "react-router";
 import { BookOpen, NotebookPen, Library } from "lucide-react";
+import { BookCover } from "~/components/book-list";
 import type { Route } from "./+types/workspace";
 import { BookService, type Book } from "~/lib/book-store";
 import { WorkspaceService } from "~/lib/workspace-store";
@@ -250,12 +251,18 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
                   <button
                     type="button"
                     onClick={() => openBook(book)}
-                    className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent ${
-                      collapsed ? "justify-center" : ""
+                    className={`flex w-full items-center rounded-md text-left hover:bg-accent ${
+                      collapsed ? "justify-center p-1.5" : "gap-3 px-3 py-2"
                     }`}
                     title={book.title}
                   >
-                    <BookOpen className="size-4 shrink-0" />
+                    {book.coverImage ? (
+                      <BookCover coverImage={book.coverImage} />
+                    ) : (
+                      <div className="flex h-12 w-8 shrink-0 items-center justify-center rounded bg-muted">
+                        <span className="text-xs text-muted-foreground">📖</span>
+                      </div>
+                    )}
                     {!collapsed && (
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium">{book.title}</p>

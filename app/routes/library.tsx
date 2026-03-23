@@ -77,7 +77,7 @@ export default function LibraryLayout({ loaderData }: Route.ComponentProps) {
 
           {/* Main content */}
           <main className="flex-1 overflow-hidden">
-            <Outlet />
+            <Outlet context={{ books }} />
           </main>
         </div>
       </DropZone>

@@ -16,20 +16,6 @@ import { AppRuntime } from "~/lib/effect-runtime";
 import { useSettings } from "~/lib/settings";
 import { WorkspaceBookReader } from "~/components/workspace-book-reader";
 import { WorkspaceNotebook } from "~/components/workspace-notebook";
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarHeader,
-  SidebarInset,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarProvider,
-  SidebarRail,
-  SidebarTrigger,
-} from "~/components/ui/sidebar";
 
 export function meta(_args: Route.MetaArgs) {
   return [
@@ -126,7 +112,8 @@ function WatermarkPanel(_props: IWatermarkPanelProps) {
 
 export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
   const [books] = useState<Book[]>(loaderData.books);
-  const [settings] = useSettings();
+  const [settings, updateSettings] = useSettings();
+  const collapsed = settings.sidebarCollapsed;
   const apiRef = useRef<DockviewApi | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -179,6 +166,18 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
     };
   }, []);
 
+  // Cmd+B / Ctrl+B to toggle sidebar
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "b") {
+        e.preventDefault();
+        updateSettings({ sidebarCollapsed: !collapsed });
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [collapsed, updateSettings]);
+
   const openBook = useCallback((book: Book) => {
     const api = apiRef.current;
     if (!api) return;
@@ -220,79 +219,86 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
   }, []);
 
   return (
-    <SidebarProvider>
-      <Sidebar collapsible="icon">
-        <SidebarHeader>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton size="lg" render={<Link to="/" />} tooltip="Back to Library">
-                <Library data-icon="inline-start" />
-                <span className="font-semibold">Books</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarHeader>
-        <SidebarContent>
-          <SidebarGroup>
-            <SidebarGroupContent>
-              {books.length === 0 ? (
-                <p className="p-4 text-sm text-muted-foreground">
-                  No books yet. Drop an epub file on the library page.
-                </p>
-              ) : (
-                <SidebarMenu>
-                  {books.map((book) => (
-                    <SidebarMenuItem key={book.id} className="group/book">
-                      <SidebarMenuButton
-                        onClick={() => openBook(book)}
-                        tooltip={book.title}
-                      >
-                        <BookOpen data-icon="inline-start" />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium">{book.title}</p>
-                          <p className="truncate text-xs text-muted-foreground">{book.author}</p>
-                        </div>
-                      </SidebarMenuButton>
-                      <div className="absolute top-1/2 right-1 flex -translate-y-1/2 gap-0.5 opacity-0 group-hover/book:opacity-100">
-                        <button
-                          type="button"
-                          onClick={() => openBook(book)}
-                          className="rounded p-1 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                          title="Open book"
-                        >
-                          <BookOpen className="size-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openNotebook(book)}
-                          className="rounded p-1 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                          title="Open notebook"
-                        >
-                          <NotebookPen className="size-3.5" />
-                        </button>
-                      </div>
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              )}
-            </SidebarGroupContent>
-          </SidebarGroup>
-        </SidebarContent>
-        <SidebarRail />
-      </Sidebar>
-      <SidebarInset className="flex flex-col">
-        <header className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
-          <SidebarTrigger className="-ml-1" />
-        </header>
-        <div className="flex-1">
-          <DockviewReact
-            className={dockviewTheme}
-            components={components}
-            watermarkComponent={WatermarkPanel}
-            onReady={onReady}
-          />
+    <div className="flex h-screen">
+      {/* Sidebar */}
+      <aside
+        className={`flex shrink-0 flex-col border-r bg-card transition-[width] duration-200 ease-in-out ${
+          collapsed ? "w-14" : "w-[300px]"
+        }`}
+      >
+        <div className="flex items-center justify-between border-b px-4 py-3">
+          {!collapsed && <h1 className="text-lg font-semibold">Books</h1>}
+          <Link
+            to="/"
+            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+            title="Back to Library"
+          >
+            <Library className="size-4" />
+          </Link>
         </div>
-      </SidebarInset>
-    </SidebarProvider>
+        <div className="flex-1 overflow-y-auto">
+          {books.length === 0 ? (
+            !collapsed && (
+              <p className="p-4 text-sm text-muted-foreground">
+                No books yet. Drop an epub file on the library page.
+              </p>
+            )
+          ) : (
+            <ul className="flex flex-col gap-0.5 p-1">
+              {books.map((book) => (
+                <li key={book.id} className="group/book relative">
+                  <button
+                    type="button"
+                    onClick={() => openBook(book)}
+                    className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent ${
+                      collapsed ? "justify-center" : ""
+                    }`}
+                    title={book.title}
+                  >
+                    <BookOpen className="size-4 shrink-0" />
+                    {!collapsed && (
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">{book.title}</p>
+                        <p className="truncate text-xs text-muted-foreground">{book.author}</p>
+                      </div>
+                    )}
+                  </button>
+                  {!collapsed && (
+                    <div className="absolute top-1/2 right-1 flex -translate-y-1/2 gap-0.5 opacity-0 group-hover/book:opacity-100">
+                      <button
+                        type="button"
+                        onClick={() => openBook(book)}
+                        className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                        title="Open book"
+                      >
+                        <BookOpen className="size-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openNotebook(book)}
+                        className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                        title="Open notebook"
+                      >
+                        <NotebookPen className="size-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </aside>
+
+      {/* Dockview container */}
+      <div className="flex-1">
+        <DockviewReact
+          className={dockviewTheme}
+          components={components}
+          watermarkComponent={WatermarkPanel}
+          onReady={onReady}
+        />
+      </div>
+    </div>
   );
 }

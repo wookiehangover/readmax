@@ -195,11 +195,13 @@ function WorkspaceTocPopoverItem({
   collapsed,
   toc,
   onOpenBook,
+  isOpen,
 }: {
   book: Book;
   collapsed: boolean;
   toc: TocEntry[];
   onOpenBook: () => void;
+  isOpen: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const suppressHoverUntil = useRef(0);
@@ -242,7 +244,7 @@ function WorkspaceTocPopoverItem({
             onClick={onOpenBook}
             className={`flex w-full items-center rounded-md text-left hover:bg-accent ${
               collapsed ? "justify-center p-1.5" : "gap-3 px-3 py-2"
-            }`}
+            } ${isOpen ? "bg-accent/50" : ""}`}
             title={book.title}
           />
         }
@@ -306,6 +308,8 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Track which books have TOC data via a version counter (triggers re-render)
   const [tocVersion, setTocVersion] = useState(0);
+  // Track which books currently have open panels in dockview
+  const [openBookIds, setOpenBookIds] = useState<Set<string>>(new Set());
 
   // Load last-opened timestamps for sorting
   const { data: lastOpenedMap } = useEffectQuery(
@@ -354,6 +358,21 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
           }
         })
         .catch(console.error);
+
+      // Track open book panels
+      const updateOpenBooks = () => {
+        const ids = new Set<string>();
+        for (const panel of event.api.panels) {
+          if (panel.id.startsWith("book-")) {
+            ids.add(panel.id.replace("book-", ""));
+          }
+        }
+        setOpenBookIds(ids);
+      };
+
+      event.api.onDidAddPanel(updateOpenBooks);
+      event.api.onDidRemovePanel(updateOpenBooks);
+      updateOpenBooks();
 
       // Subscribe to layout changes for persistence
       event.api.onDidLayoutChange(() => {
@@ -538,6 +557,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
                         collapsed={collapsed}
                         toc={bookToc}
                         onOpenBook={() => openBook(book)}
+                        isOpen={openBookIds.has(book.id)}
                       />
                     ) : (
                       <button
@@ -545,7 +565,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
                         onClick={() => openBook(book)}
                         className={`flex w-full items-center rounded-md text-left hover:bg-accent ${
                           collapsed ? "justify-center p-1.5" : "gap-3 px-3 py-2"
-                        }`}
+                        } ${openBookIds.has(book.id) ? "bg-accent/50" : ""}`}
                         title={book.title}
                       >
                         <WorkspaceSidebarBookContent book={book} collapsed={collapsed} />

@@ -356,6 +356,11 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
       if ((e.metaKey || e.ctrlKey) && e.key === "b") {
         e.preventDefault();
         updateSettings({ sidebarCollapsed: !collapsed });
+        // After the sidebar CSS transition completes (200ms), notify dockview
+        // and epub renditions that the container dimensions changed.
+        setTimeout(() => {
+          window.dispatchEvent(new Event("resize"));
+        }, 220);
       }
     }
     window.addEventListener("keydown", handleKeyDown);
@@ -365,6 +370,11 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
   const openBook = useCallback((book: Book) => {
     const api = apiRef.current;
     if (!api) return;
+
+    // Record last-opened timestamp
+    AppRuntime.runPromise(
+      WorkspaceService.pipe(Effect.andThen((s) => s.saveLastOpened(book.id, Date.now()))),
+    ).catch(console.error);
 
     const panelId = `book-${book.id}`;
     const existing = api.panels.find((p) => p.id === panelId);
@@ -446,6 +456,23 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
         <div className="flex items-center justify-between border-b px-4 py-3">
           {!collapsed && <h1 className="text-lg font-semibold">Books</h1>}
           <div className="flex items-center gap-1">
+            {!collapsed && (
+              <div className="relative">
+                <ArrowUpDown className="pointer-events-none absolute top-1/2 left-1.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <select
+                  value={sortBy}
+                  onChange={(e) => updateSettings({ workspaceSortBy: e.target.value as WorkspaceSortBy })}
+                  className="h-7 appearance-none rounded border-none bg-transparent py-0 pr-2 pl-6 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus:outline-none"
+                  title="Sort books"
+                >
+                  {SORT_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
@@ -472,7 +499,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
           />
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {books.length === 0 ? (
+          {sortedBooks.length === 0 ? (
             !collapsed && (
               <p className="p-4 text-sm text-muted-foreground">
                 No books yet. Drop an epub or click + to add.
@@ -480,7 +507,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
             )
           ) : (
             <ul className="flex flex-col gap-0.5 p-1">
-              {books.map((book) => {
+              {sortedBooks.map((book) => {
                 // tocVersion is read here to trigger re-render when TOC data changes
                 void tocVersion;
                 const bookToc = tocMap.get(book.id);

@@ -18,9 +18,11 @@ import type { TiptapEditorHandle } from "~/components/tiptap-editor";
 import type { HighlightReferenceAttrs } from "~/lib/tiptap-highlight-node";
 import { useEffectQuery } from "~/lib/use-effect-query";
 import { cn } from "~/lib/utils";
+import type { DockviewPanelApi } from "dockview";
 
 interface WorkspaceBookReaderProps {
   bookId: string;
+  panelApi?: DockviewPanelApi;
   onRegisterNavigation?: (bookId: string, navigateToCfi: (cfi: string) => void) => void;
   onUnregisterNavigation?: (bookId: string) => void;
 }
@@ -93,7 +95,7 @@ function getRenditionOptions(layout: ReaderLayout) {
   }
 }
 
-export function WorkspaceBookReader({ bookId, onRegisterNavigation, onUnregisterNavigation }: WorkspaceBookReaderProps) {
+export function WorkspaceBookReader({ bookId, panelApi, onRegisterNavigation, onUnregisterNavigation }: WorkspaceBookReaderProps) {
   // Load book data via useEffectQuery
   const { data: book, error, isLoading } = useEffectQuery(
     () =>
@@ -120,14 +122,14 @@ export function WorkspaceBookReader({ bookId, onRegisterNavigation, onUnregister
     );
   }
 
-  return <WorkspaceBookReaderInner book={book} onRegisterNavigation={onRegisterNavigation} onUnregisterNavigation={onUnregisterNavigation} />;
+  return <WorkspaceBookReaderInner book={book} panelApi={panelApi} onRegisterNavigation={onRegisterNavigation} onUnregisterNavigation={onUnregisterNavigation} />;
 }
 
 /**
  * Inner component that renders once we have book data.
  * Manages its own epub lifecycle, TOC state, and keyboard navigation.
  */
-function WorkspaceBookReaderInner({ book, onRegisterNavigation, onUnregisterNavigation }: { book: Book; onRegisterNavigation?: (bookId: string, navigateToCfi: (cfi: string) => void) => void; onUnregisterNavigation?: (bookId: string) => void }) {
+function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnregisterNavigation }: { book: Book; panelApi?: DockviewPanelApi; onRegisterNavigation?: (bookId: string, navigateToCfi: (cfi: string) => void) => void; onUnregisterNavigation?: (bookId: string) => void }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const bookRef = useRef<EpubBook | null>(null);
@@ -355,6 +357,48 @@ function WorkspaceBookReaderInner({ book, onRegisterNavigation, onUnregisterNavi
       style.textContent = css;
     });
   }, [settings.fontFamily, settings.fontSize, settings.lineHeight]);
+
+  // Reapply epub styles when dockview panel becomes active again (tab switch)
+  useEffect(() => {
+    if (!panelApi) return;
+
+    const disposable = panelApi.onDidActiveChange((e) => {
+      if (!e.isActive) return;
+      const rendition = renditionRef.current;
+      if (!rendition) return;
+
+      // Reapply theme colors
+      rendition.themes.select(resolveTheme(settings.theme));
+
+      // Reapply typography CSS into the iframe
+      const css = getTypographyCss(
+        typographyRef.current.fontFamily,
+        typographyRef.current.fontSize,
+        typographyRef.current.lineHeight,
+      );
+      const contents = (rendition as any).getContents() as any[];
+      contents.forEach((content: any) => {
+        const doc = content.document;
+        if (!doc) return;
+        let style = doc.getElementById("reader-typography");
+        if (!style) {
+          style = doc.createElement("style");
+          style.id = "reader-typography";
+          doc.head.appendChild(style);
+        }
+        style.textContent = css;
+      });
+
+      // Trigger resize so epubjs recalculates layout
+      requestAnimationFrame(() => {
+        (renditionRef.current as any)?.resize();
+      });
+    });
+
+    return () => {
+      disposable.dispose();
+    };
+  }, [panelApi, settings.theme]);
 
   // Resize rendition when annotations panel toggles
   useEffect(() => {

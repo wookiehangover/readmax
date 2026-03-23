@@ -49,6 +49,7 @@ const navigationMap = new Map<string, (cfi: string) => void>();
 
 function BookReaderPanel({
   params,
+  api,
 }: IDockviewPanelProps<{ bookId: string }>) {
   const handleRegister = useCallback((bookId: string, nav: (cfi: string) => void) => {
     navigationMap.set(bookId, nav);
@@ -61,6 +62,7 @@ function BookReaderPanel({
   return (
     <WorkspaceBookReader
       bookId={params.bookId}
+      panelApi={api}
       onRegisterNavigation={handleRegister}
       onUnregisterNavigation={handleUnregister}
     />

@@ -1,13 +1,10 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { Effect } from "effect";
-import { Link, Outlet } from "react-router";
-import { PanelsTopLeft } from "lucide-react";
+import { Outlet } from "react-router";
 import type { Route } from "./+types/library";
 import { BookService, type Book } from "~/lib/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
-import { useSettings } from "~/lib/settings";
 import { DropZone } from "~/components/drop-zone";
-import { BookList } from "~/components/book-list";
 import { ReaderNavigationProvider } from "~/lib/reader-context";
 
 export function meta(_args: Route.MetaArgs) {
@@ -34,52 +31,17 @@ export function HydrateFallback() {
 
 export default function LibraryLayout({ loaderData }: Route.ComponentProps) {
   const [books, setBooks] = useState<Book[]>(loaderData.books);
-  const [settings, updateSettings] = useSettings();
-  const collapsed = settings.sidebarCollapsed;
 
   const handleBookAdded = useCallback((book: Book) => {
     setBooks((prev) => [...prev, book]);
   }, []);
 
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === "b") {
-        e.preventDefault();
-        updateSettings({ sidebarCollapsed: !collapsed });
-      }
-    }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [collapsed, updateSettings]);
-
   return (
     <ReaderNavigationProvider>
       <DropZone onBookAdded={handleBookAdded}>
-        <div className="flex h-screen">
-          {/* Sidebar */}
-          <aside
-            className={`flex shrink-0 flex-col border-r bg-card transition-[width] duration-200 ease-in-out ${
-              collapsed ? "w-14" : "w-[300px]"
-            }`}
-          >
-            <div className="flex items-center justify-between border-b px-4 py-3">
-              {!collapsed && <h1 className="text-lg font-semibold">Library</h1>}
-              <Link
-                to="/workspace"
-                className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                title="Open Workspace"
-              >
-                <PanelsTopLeft className="size-4" />
-              </Link>
-            </div>
-            <BookList books={books} collapsed={collapsed} />
-          </aside>
-
-          {/* Main content */}
-          <main className="flex-1 overflow-hidden">
-            <Outlet context={{ books }} />
-          </main>
-        </div>
+        <main className="h-screen">
+          <Outlet context={{ books }} />
+        </main>
       </DropZone>
     </ReaderNavigationProvider>
   );

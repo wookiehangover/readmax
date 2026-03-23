@@ -15,6 +15,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "~/components/ui/popover";
+import { ScrollArea } from "~/components/ui/scroll-area";
 import type { Route } from "./+types/workspace";
 import { BookService, type Book } from "~/lib/book-store";
 import { parseEpubEffect } from "~/lib/epub-service";
@@ -566,7 +567,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
             onChange={handleFileInput}
           />
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <ScrollArea className="min-h-0 flex-1" hideScrollbar>
           {sortedBooks.length === 0 ? (
             !collapsed && (
               <p className="p-4 text-sm text-muted-foreground">
@@ -633,7 +634,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
               })}
             </ul>
           )}
-        </div>
+        </ScrollArea>
       </aside>
 
       {/* Dockview container */}

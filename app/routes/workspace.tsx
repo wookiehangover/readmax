@@ -62,13 +62,15 @@ const navigationMap = new Map<string, (cfi: string) => void>();
 const tocMap = new Map<string, TocEntry[]>();
 // Listeners notified when tocMap changes (so React can re-render)
 let tocChangeListener: (() => void) | null = null;
+// Module-level ref to the top-level DockviewApi for cross-panel operations
+let dockviewApiRef: DockviewApi | null = null;
 
 // --- Panel components ---
 
 function BookReaderPanel({
   params,
   api,
-}: IDockviewPanelProps<{ bookId: string }>) {
+}: IDockviewPanelProps<{ bookId: string; bookTitle?: string }>) {
   const handleRegister = useCallback((bookId: string, nav: (cfi: string) => void) => {
     navigationMap.set(bookId, nav);
   }, []);
@@ -87,6 +89,27 @@ function BookReaderPanel({
     tocChangeListener?.();
   }, []);
 
+  const handleOpenNotebook = useCallback(() => {
+    const dockApi = dockviewApiRef;
+    if (!dockApi) return;
+
+    const panelId = `notebook-${params.bookId}`;
+    const existing = dockApi.panels.find((p) => p.id === panelId);
+    if (existing) {
+      existing.focus();
+      return;
+    }
+
+    const title = params.bookTitle ?? "Untitled";
+    dockApi.addPanel({
+      id: panelId,
+      component: "notebook",
+      title: truncateTitle(`Notes: ${title}`),
+      params: { bookId: params.bookId, bookTitle: title },
+      renderer: "always",
+    });
+  }, [params.bookId, params.bookTitle]);
+
   return (
     <WorkspaceBookReader
       bookId={params.bookId}
@@ -95,6 +118,7 @@ function BookReaderPanel({
       onUnregisterNavigation={handleUnregister}
       onRegisterToc={handleRegisterToc}
       onUnregisterToc={handleUnregisterToc}
+      onOpenNotebook={handleOpenNotebook}
     />
   );
 }
@@ -315,6 +339,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
   const onReady = useCallback(
     (event: DockviewReadyEvent) => {
       apiRef.current = event.api;
+      dockviewApiRef = event.api;
 
       // Try to restore saved layout
       AppRuntime.runPromise(

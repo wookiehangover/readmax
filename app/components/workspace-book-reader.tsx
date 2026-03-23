@@ -3,7 +3,7 @@ import ePub from "epubjs";
 import type EpubBook from "epubjs/types/book";
 import type Rendition from "epubjs/types/rendition";
 import { Button } from "~/components/ui/button";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, NotebookPen } from "lucide-react";
 import { Effect } from "effect";
 import { BookService, type Book } from "~/lib/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
@@ -26,6 +26,7 @@ interface WorkspaceBookReaderProps {
   onUnregisterNavigation?: (bookId: string) => void;
   onRegisterToc?: (bookId: string, toc: TocEntry[]) => void;
   onUnregisterToc?: (bookId: string) => void;
+  onOpenNotebook?: () => void;
 }
 
 function getFontFallback(fontFamily: string): string {
@@ -78,7 +79,7 @@ function getRenditionOptions(layout: ReaderLayout) {
   }
 }
 
-export function WorkspaceBookReader({ bookId, panelApi, onRegisterNavigation, onUnregisterNavigation, onRegisterToc, onUnregisterToc }: WorkspaceBookReaderProps) {
+export function WorkspaceBookReader({ bookId, panelApi, onRegisterNavigation, onUnregisterNavigation, onRegisterToc, onUnregisterToc, onOpenNotebook }: WorkspaceBookReaderProps) {
   // Load book data via useEffectQuery
   const { data: book, error, isLoading } = useEffectQuery(
     () =>
@@ -105,14 +106,14 @@ export function WorkspaceBookReader({ bookId, panelApi, onRegisterNavigation, on
     );
   }
 
-  return <WorkspaceBookReaderInner book={book} panelApi={panelApi} onRegisterNavigation={onRegisterNavigation} onUnregisterNavigation={onUnregisterNavigation} onRegisterToc={onRegisterToc} onUnregisterToc={onUnregisterToc} />;
+  return <WorkspaceBookReaderInner book={book} panelApi={panelApi} onRegisterNavigation={onRegisterNavigation} onUnregisterNavigation={onUnregisterNavigation} onRegisterToc={onRegisterToc} onUnregisterToc={onUnregisterToc} onOpenNotebook={onOpenNotebook} />;
 }
 
 /**
  * Inner component that renders once we have book data.
  * Manages its own epub lifecycle, TOC state, and keyboard navigation.
  */
-function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnregisterNavigation, onRegisterToc, onUnregisterToc }: { book: Book; panelApi?: DockviewPanelApi; onRegisterNavigation?: (bookId: string, navigateToCfi: (cfi: string) => void) => void; onUnregisterNavigation?: (bookId: string) => void; onRegisterToc?: (bookId: string, toc: TocEntry[]) => void; onUnregisterToc?: (bookId: string) => void }) {
+function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnregisterNavigation, onRegisterToc, onUnregisterToc, onOpenNotebook }: { book: Book; panelApi?: DockviewPanelApi; onRegisterNavigation?: (bookId: string, navigateToCfi: (cfi: string) => void) => void; onUnregisterNavigation?: (bookId: string) => void; onRegisterToc?: (bookId: string, toc: TocEntry[]) => void; onUnregisterToc?: (bookId: string) => void; onOpenNotebook?: () => void }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const bookRef = useRef<EpubBook | null>(null);
@@ -491,6 +492,12 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
             </div>
           )}
           <div className="absolute right-2 flex items-center gap-1">
+            {onOpenNotebook && (
+              <Button variant="ghost" size="icon" onClick={onOpenNotebook} title="Open Notebook">
+                <NotebookPen className="size-4" />
+                <span className="sr-only">Open Notebook</span>
+              </Button>
+            )}
             <ReaderSettingsMenu settings={settings} onUpdateSettings={handleUpdateSettings} />
           </div>
         </div>

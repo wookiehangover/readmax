@@ -358,7 +358,10 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
     });
   }, [settings.fontFamily, settings.fontSize, settings.lineHeight]);
 
-  // Reapply epub styles when dockview panel becomes active again (tab switch)
+  // Force re-display when dockview panel becomes active again (tab switch).
+  // When a panel is hidden, the epub iframe can lose its rendering state.
+  // Calling rendition.display(cfi) re-triggers all content hooks (fonts,
+  // typography CSS, highlight styles) and then we reapply the color theme.
   useEffect(() => {
     if (!panelApi) return;
 
@@ -367,32 +370,22 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
       const rendition = renditionRef.current;
       if (!rendition) return;
 
-      // Reapply theme colors
-      rendition.themes.select(resolveTheme(settings.theme));
+      const currentCfi = rendition.location?.start?.cfi;
 
-      // Reapply typography CSS into the iframe
-      const css = getTypographyCss(
-        typographyRef.current.fontFamily,
-        typographyRef.current.fontSize,
-        typographyRef.current.lineHeight,
-      );
-      const contents = (rendition as any).getContents() as any[];
-      contents.forEach((content: any) => {
-        const doc = content.document;
-        if (!doc) return;
-        let style = doc.getElementById("reader-typography");
-        if (!style) {
-          style = doc.createElement("style");
-          style.id = "reader-typography";
-          doc.head.appendChild(style);
-        }
-        style.textContent = css;
-      });
-
-      // Trigger resize so epubjs recalculates layout
-      requestAnimationFrame(() => {
-        (renditionRef.current as any)?.resize();
-      });
+      if (currentCfi) {
+        // Force a full re-display at the current location.
+        // This re-triggers rendition.hooks.content.register() callbacks
+        // which inject Google Fonts, typography CSS, and highlight styles.
+        rendition.display(currentCfi).then(() => {
+          rendition.themes.select(resolveTheme(settings.theme));
+        });
+      } else {
+        // Fallback: reapply theme and resize
+        rendition.themes.select(resolveTheme(settings.theme));
+        requestAnimationFrame(() => {
+          (rendition as any)?.resize();
+        });
+      }
     });
 
     return () => {

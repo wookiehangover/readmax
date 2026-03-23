@@ -1,10 +1,32 @@
-import { useEffect, useState } from "react";
-import { Link, useOutletContext } from "react-router";
+import { useEffect, useState, useCallback } from "react";
+import { Link } from "react-router";
+import { Effect } from "effect";
 import { BookOpen } from "lucide-react";
-import type { Book } from "~/lib/book-store";
+import type { Route } from "./+types/library-index";
+import { BookService, type Book } from "~/lib/book-store";
+import { AppRuntime } from "~/lib/effect-runtime";
+import { DropZone } from "~/components/drop-zone";
 
-interface LibraryOutletContext {
-  books: Book[];
+export function meta(_args: Route.MetaArgs) {
+  return [
+    { title: "eBook Reader" },
+    { name: "description", content: "A browser-based ebook reader" },
+  ];
+}
+
+export async function clientLoader() {
+  const books = await AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.getBooks())));
+  return { books };
+}
+
+clientLoader.hydrate = true as const;
+
+export function HydrateFallback() {
+  return (
+    <div className="flex h-screen items-center justify-center">
+      <p className="text-muted-foreground">Loading library…</p>
+    </div>
+  );
 }
 
 function CoverImage({ coverImage, alt }: { coverImage: Blob; alt: string }) {
@@ -43,46 +65,50 @@ function CoverPlaceholder({ title, author }: { title: string; author: string }) 
   );
 }
 
-export default function LibraryIndex() {
-  const { books } = useOutletContext<LibraryOutletContext>();
+export default function LibraryIndex({ loaderData }: Route.ComponentProps) {
+  const [books, setBooks] = useState<Book[]>(loaderData.books);
 
-  if (books.length === 0) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center text-center">
-        <BookOpen className="mb-4 size-12 text-muted-foreground/50" />
-        <p className="text-lg font-medium text-muted-foreground">
-          Your library is empty
-        </p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Drop an .epub file anywhere to get started
-        </p>
-      </div>
-    );
-  }
+  const handleBookAdded = useCallback((book: Book) => {
+    setBooks((prev) => [...prev, book]);
+  }, []);
 
   return (
-    <div className="h-full overflow-y-auto p-6">
-      <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-        {books.map((book) => (
-          <Link
-            key={book.id}
-            to={`/books/${book.id}`}
-            className="group block"
-          >
-            <div className="overflow-hidden rounded-lg shadow-sm transition-shadow group-hover:shadow-md">
-              {book.coverImage ? (
-                <CoverImage coverImage={book.coverImage} alt={book.title} />
-              ) : (
-                <CoverPlaceholder title={book.title} author={book.author} />
-              )}
-            </div>
-            <p className="mt-2 truncate text-sm font-medium">{book.title}</p>
-            <p className="truncate text-xs text-muted-foreground">
-              {book.author}
-            </p>
-          </Link>
-        ))}
-      </div>
-    </div>
+    <DropZone onBookAdded={handleBookAdded}>
+      {books.length === 0 ? (
+        <div className="flex h-screen flex-col items-center justify-center text-center">
+          <BookOpen className="mb-4 size-12 text-muted-foreground/50" />
+          <p className="text-lg font-medium text-muted-foreground">
+            Your library is empty
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Drop an .epub file anywhere to get started
+          </p>
+        </div>
+      ) : (
+        <div className="h-screen overflow-y-auto p-6">
+          <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+            {books.map((book) => (
+              <Link
+                key={book.id}
+                to={`/books/${book.id}`}
+                className="group block"
+              >
+                <div className="overflow-hidden rounded-lg shadow-sm transition-shadow group-hover:shadow-md">
+                  {book.coverImage ? (
+                    <CoverImage coverImage={book.coverImage} alt={book.title} />
+                  ) : (
+                    <CoverPlaceholder title={book.title} author={book.author} />
+                  )}
+                </div>
+                <p className="mt-2 truncate text-sm font-medium">{book.title}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {book.author}
+                </p>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+    </DropZone>
   );
 }

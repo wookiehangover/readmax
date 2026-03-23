@@ -1,9 +1,8 @@
 import { type RouteConfig, index, layout, route } from "@react-router/dev/routes";
 
 export default [
+  index("routes/library-index.tsx"),
   layout("routes/library.tsx", [
-    index("routes/home.tsx"),
-    route("library", "routes/library-index.tsx"),
     route("books/:id", "routes/book.tsx"),
   ]),
   route("workspace", "routes/workspace.tsx"),

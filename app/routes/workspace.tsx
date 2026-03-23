@@ -10,9 +10,15 @@ import {
 } from "dockview";
 import { Link } from "react-router";
 import { BookOpen, NotebookPen, Library } from "lucide-react";
-import { BookCover } from "~/components/book-list";
+import { BookCover, TocList } from "~/components/book-list";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "~/components/ui/popover";
 import type { Route } from "./+types/workspace";
 import { BookService, type Book } from "~/lib/book-store";
+import type { TocEntry } from "~/lib/reader-context";
 import { WorkspaceService } from "~/lib/workspace-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { useSettings } from "~/lib/settings";
@@ -43,9 +49,17 @@ export function HydrateFallback() {
   );
 }
 
-// --- Navigation coordination ---
+function truncateTitle(title: string, maxLength = 30): string {
+  return title.length > maxLength ? title.slice(0, maxLength) + "…" : title;
+}
+
+// --- Navigation & TOC coordination ---
 // Map of bookId -> navigateToCfi callback, shared across panels
 const navigationMap = new Map<string, (cfi: string) => void>();
+// Map of bookId -> TOC entries, populated by WorkspaceBookReader panels
+const tocMap = new Map<string, TocEntry[]>();
+// Listeners notified when tocMap changes (so React can re-render)
+let tocChangeListener: (() => void) | null = null;
 
 // --- Panel components ---
 
@@ -61,12 +75,24 @@ function BookReaderPanel({
     navigationMap.delete(bookId);
   }, []);
 
+  const handleRegisterToc = useCallback((bookId: string, toc: TocEntry[]) => {
+    tocMap.set(bookId, toc);
+    tocChangeListener?.();
+  }, []);
+
+  const handleUnregisterToc = useCallback((bookId: string) => {
+    tocMap.delete(bookId);
+    tocChangeListener?.();
+  }, []);
+
   return (
     <WorkspaceBookReader
       bookId={params.bookId}
       panelApi={api}
       onRegisterNavigation={handleRegister}
       onUnregisterNavigation={handleUnregister}
+      onRegisterToc={handleRegisterToc}
+      onUnregisterToc={handleUnregisterToc}
     />
   );
 }
@@ -112,12 +138,114 @@ function WatermarkPanel(_props: IWatermarkPanelProps) {
   );
 }
 
+function WorkspaceSidebarBookContent({
+  book,
+  collapsed,
+}: {
+  book: Book;
+  collapsed: boolean;
+}) {
+  return (
+    <>
+      {book.coverImage ? (
+        <BookCover coverImage={book.coverImage} />
+      ) : (
+        <div className="flex h-12 w-8 shrink-0 items-center justify-center rounded bg-muted">
+          <span className="text-xs text-muted-foreground">📖</span>
+        </div>
+      )}
+      {!collapsed && (
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium">{book.title}</p>
+          <p className="truncate text-xs text-muted-foreground">{book.author}</p>
+        </div>
+      )}
+    </>
+  );
+}
+
+function WorkspaceTocPopoverItem({
+  book,
+  collapsed,
+  toc,
+  onOpenBook,
+}: {
+  book: Book;
+  collapsed: boolean;
+  toc: TocEntry[];
+  onOpenBook: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const suppressHoverUntil = useRef(0);
+
+  const handleOpenChange = useCallback(
+    (nextOpen: boolean, details: { reason: string }) => {
+      if (!nextOpen && (details.reason === "outside-press" || details.reason === "escape-key")) {
+        suppressHoverUntil.current = Date.now() + 400;
+        setOpen(false);
+        return;
+      }
+      if (nextOpen && details.reason === "trigger-hover") {
+        if (Date.now() < suppressHoverUntil.current) {
+          return;
+        }
+      }
+      setOpen(nextOpen);
+    },
+    [],
+  );
+
+  const handleNavigate = useCallback(
+    (href: string) => {
+      const nav = navigationMap.get(book.id);
+      nav?.(href);
+      setOpen(false);
+    },
+    [book.id],
+  );
+
+  return (
+    <Popover open={open} onOpenChange={handleOpenChange}>
+      <PopoverTrigger
+        openOnHover
+        delay={200}
+        closeDelay={300}
+        render={
+          <button
+            type="button"
+            onClick={onOpenBook}
+            className={`flex w-full items-center rounded-md text-left hover:bg-accent ${
+              collapsed ? "justify-center p-1.5" : "gap-3 px-3 py-2"
+            }`}
+            title={book.title}
+          />
+        }
+      >
+        <WorkspaceSidebarBookContent book={book} collapsed={collapsed} />
+      </PopoverTrigger>
+      <PopoverContent
+        side="right"
+        align="start"
+        sideOffset={8}
+        className="max-h-80 w-56 overflow-y-auto p-1.5"
+      >
+        <p className="px-2 py-1 text-xs font-medium text-muted-foreground">Table of Contents</p>
+        <ul>
+          <TocList entries={toc} onNavigate={handleNavigate} />
+        </ul>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
   const [books] = useState<Book[]>(loaderData.books);
   const [settings, updateSettings] = useSettings();
   const collapsed = settings.sidebarCollapsed;
   const apiRef = useRef<DockviewApi | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Track which books have TOC data via a version counter (triggers re-render)
+  const [tocVersion, setTocVersion] = useState(0);
 
   const dockviewTheme: DockviewTheme = {
     name: "app",
@@ -163,11 +291,14 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
     [saveLayout],
   );
 
-  // Cleanup save timer on unmount
+  // Register TOC change listener and cleanup on unmount
   useEffect(() => {
+    tocChangeListener = () => setTocVersion((v) => v + 1);
     return () => {
+      tocChangeListener = null;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       navigationMap.clear();
+      tocMap.clear();
     };
   }, []);
 
@@ -197,7 +328,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
     api.addPanel({
       id: panelId,
       component: "book-reader",
-      title: book.title,
+      title: truncateTitle(book.title),
       params: { bookId: book.id, bookTitle: book.title },
       renderer: "always",
     });
@@ -217,7 +348,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
     api.addPanel({
       id: panelId,
       component: "notebook",
-      title: `Notes: ${book.title}`,
+      title: truncateTitle(`Notes: ${book.title}`),
       params: { bookId: book.id, bookTitle: book.title },
       renderer: "always",
     });
@@ -241,7 +372,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
             <Library className="size-4" />
           </Link>
         </div>
-        <div className="flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto">
           {books.length === 0 ? (
             !collapsed && (
               <p className="p-4 text-sm text-muted-foreground">
@@ -250,52 +381,56 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
             )
           ) : (
             <ul className="flex flex-col gap-0.5 p-1">
-              {books.map((book) => (
-                <li key={book.id} className="group/book relative">
-                  <button
-                    type="button"
-                    onClick={() => openBook(book)}
-                    className={`flex w-full items-center rounded-md text-left hover:bg-accent ${
-                      collapsed ? "justify-center p-1.5" : "gap-3 px-3 py-2"
-                    }`}
-                    title={book.title}
-                  >
-                    {book.coverImage ? (
-                      <BookCover coverImage={book.coverImage} />
+              {books.map((book) => {
+                // tocVersion is read here to trigger re-render when TOC data changes
+                void tocVersion;
+                const bookToc = tocMap.get(book.id);
+                const showTocPopover = bookToc && bookToc.length > 0;
+
+                return (
+                  <li key={book.id} className="group/book relative">
+                    {showTocPopover ? (
+                      <WorkspaceTocPopoverItem
+                        book={book}
+                        collapsed={collapsed}
+                        toc={bookToc}
+                        onOpenBook={() => openBook(book)}
+                      />
                     ) : (
-                      <div className="flex h-12 w-8 shrink-0 items-center justify-center rounded bg-muted">
-                        <span className="text-xs text-muted-foreground">📖</span>
-                      </div>
-                    )}
-                    {!collapsed && (
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">{book.title}</p>
-                        <p className="truncate text-xs text-muted-foreground">{book.author}</p>
-                      </div>
-                    )}
-                  </button>
-                  {!collapsed && (
-                    <div className="absolute top-1/2 right-1 flex -translate-y-1/2 gap-0.5 opacity-0 group-hover/book:opacity-100">
                       <button
                         type="button"
                         onClick={() => openBook(book)}
-                        className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                        title="Open book"
+                        className={`flex w-full items-center rounded-md text-left hover:bg-accent ${
+                          collapsed ? "justify-center p-1.5" : "gap-3 px-3 py-2"
+                        }`}
+                        title={book.title}
                       >
-                        <BookOpen className="size-3.5" />
+                        <WorkspaceSidebarBookContent book={book} collapsed={collapsed} />
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => openNotebook(book)}
-                        className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                        title="Open notebook"
-                      >
-                        <NotebookPen className="size-3.5" />
-                      </button>
-                    </div>
-                  )}
-                </li>
-              ))}
+                    )}
+                    {!collapsed && (
+                      <div className="absolute top-1/2 right-1 flex -translate-y-1/2 gap-0.5 opacity-0 group-hover/book:opacity-100">
+                        <button
+                          type="button"
+                          onClick={() => openBook(book)}
+                          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                          title="Open book"
+                        >
+                          <BookOpen className="size-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openNotebook(book)}
+                          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                          title="Open notebook"
+                        >
+                          <NotebookPen className="size-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>

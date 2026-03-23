@@ -20,12 +20,15 @@ import { useEffectQuery } from "~/lib/use-effect-query";
 import { cn } from "~/lib/utils";
 import { resolveThemeColors } from "~/lib/epub-theme-utils";
 import type { DockviewPanelApi } from "dockview";
+import type { TocEntry } from "~/lib/reader-context";
 
 interface WorkspaceBookReaderProps {
   bookId: string;
   panelApi?: DockviewPanelApi;
   onRegisterNavigation?: (bookId: string, navigateToCfi: (cfi: string) => void) => void;
   onUnregisterNavigation?: (bookId: string) => void;
+  onRegisterToc?: (bookId: string, toc: TocEntry[]) => void;
+  onUnregisterToc?: (bookId: string) => void;
 }
 
 function getFontFallback(fontFamily: string): string {
@@ -78,7 +81,7 @@ function getRenditionOptions(layout: ReaderLayout) {
   }
 }
 
-export function WorkspaceBookReader({ bookId, panelApi, onRegisterNavigation, onUnregisterNavigation }: WorkspaceBookReaderProps) {
+export function WorkspaceBookReader({ bookId, panelApi, onRegisterNavigation, onUnregisterNavigation, onRegisterToc, onUnregisterToc }: WorkspaceBookReaderProps) {
   // Load book data via useEffectQuery
   const { data: book, error, isLoading } = useEffectQuery(
     () =>
@@ -105,14 +108,14 @@ export function WorkspaceBookReader({ bookId, panelApi, onRegisterNavigation, on
     );
   }
 
-  return <WorkspaceBookReaderInner book={book} panelApi={panelApi} onRegisterNavigation={onRegisterNavigation} onUnregisterNavigation={onUnregisterNavigation} />;
+  return <WorkspaceBookReaderInner book={book} panelApi={panelApi} onRegisterNavigation={onRegisterNavigation} onUnregisterNavigation={onUnregisterNavigation} onRegisterToc={onRegisterToc} onUnregisterToc={onUnregisterToc} />;
 }
 
 /**
  * Inner component that renders once we have book data.
  * Manages its own epub lifecycle, TOC state, and keyboard navigation.
  */
-function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnregisterNavigation }: { book: Book; panelApi?: DockviewPanelApi; onRegisterNavigation?: (bookId: string, navigateToCfi: (cfi: string) => void) => void; onUnregisterNavigation?: (bookId: string) => void }) {
+function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnregisterNavigation, onRegisterToc, onUnregisterToc }: { book: Book; panelApi?: DockviewPanelApi; onRegisterNavigation?: (bookId: string, navigateToCfi: (cfi: string) => void) => void; onUnregisterNavigation?: (bookId: string) => void; onRegisterToc?: (bookId: string, toc: TocEntry[]) => void; onUnregisterToc?: (bookId: string) => void }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const bookRef = useRef<EpubBook | null>(null);
@@ -226,6 +229,18 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
     (async () => {
       await epubBook.ready;
 
+      // Extract TOC from epub navigation
+      const nav = epubBook.navigation;
+      if (nav && nav.toc) {
+        const mapToc = (items: any[]): TocEntry[] =>
+          items.map((item) => ({
+            label: item.label?.trim() ?? "",
+            href: item.href ?? "",
+            ...(item.subitems?.length ? { subitems: mapToc(item.subitems) } : {}),
+          }));
+        onRegisterToc?.(book.id, mapToc(nav.toc));
+      }
+
       // Restore saved reading position
       const savedCfi = await AppRuntime.runPromise(
         BookService.pipe(Effect.andThen((s) => s.getPosition(book.id))),
@@ -308,12 +323,13 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      onUnregisterToc?.(book.id);
       rendition.destroy();
       epubBook.destroy();
       bookRef.current = null;
       renditionRef.current = null;
     };
-  }, [book.id, book.data, settings.readerLayout, loadAndApplyHighlights, registerSelectionHandler]);
+  }, [book.id, book.data, settings.readerLayout, loadAndApplyHighlights, registerSelectionHandler, onRegisterToc, onUnregisterToc]);
 
   // Theme sync
   useEffect(() => {

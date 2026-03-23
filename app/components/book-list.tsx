@@ -29,7 +29,7 @@ export function BookCover({ coverImage }: { coverImage: Blob }) {
   return <img src={url} alt="" className="h-12 w-8 shrink-0 rounded object-cover" />;
 }
 
-function TocList({
+export function TocList({
   entries,
   depth = 0,
   onNavigate,
@@ -179,7 +179,7 @@ export function BookList({ books, collapsed = false }: BookListProps) {
   }
 
   return (
-    <ScrollArea className="flex-1">
+    <ScrollArea className="min-h-0 flex-1">
       <div className={cn("flex flex-col gap-1", collapsed ? "items-center p-1" : "p-2")}>
         {books.map((book) => {
           const isActive = book.id === activeBookId;

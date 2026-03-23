@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from "react";
+import { createPortal } from "react-dom";
 import ePub from "epubjs";
 import type EpubBook from "epubjs/types/book";
 import type Rendition from "epubjs/types/rendition";
@@ -11,17 +12,23 @@ import { useSettings, resolveTheme } from "~/lib/settings";
 import type { ReaderLayout } from "~/lib/settings";
 import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
 import { RadialProgress } from "~/components/radial-progress";
-import { AnnotationsPanel } from "~/components/annotations-panel";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { useHighlights } from "~/lib/use-highlights";
-import { useReaderNavigation, type TocEntry } from "~/lib/reader-context";
-import type { TiptapEditorHandle } from "~/components/tiptap-editor";
-import type { HighlightReferenceAttrs } from "~/lib/tiptap-highlight-node";
-import { cn } from "~/lib/utils"
+import { useEffectQuery } from "~/lib/use-effect-query";
+import { cn } from "~/lib/utils";
 import { resolveThemeColors } from "~/lib/epub-theme-utils";
+import type { DockviewPanelApi } from "dockview";
+import type { TocEntry } from "~/lib/reader-context";
 
-interface BookReaderProps {
-  book: Book;
+interface WorkspaceBookReaderProps {
+  bookId: string;
+  panelApi?: DockviewPanelApi;
+  onRegisterNavigation?: (bookId: string, navigateToCfi: (cfi: string) => void) => void;
+  onUnregisterNavigation?: (bookId: string) => void;
+  onRegisterToc?: (bookId: string, toc: TocEntry[]) => void;
+  onUnregisterToc?: (bookId: string) => void;
+  onOpenNotebook?: () => void;
+  onHighlightCreated?: (highlight: { highlightId: string; cfiRange: string; text: string }) => void;
 }
 
 function getFontFallback(fontFamily: string): string {
@@ -60,6 +67,8 @@ function getTypographyCss(fontFamily: string, fontSize: number, lineHeight: numb
   `;
 }
 
+
+
 function getRenditionOptions(layout: ReaderLayout) {
   switch (layout) {
     case "spread":
@@ -72,12 +81,68 @@ function getRenditionOptions(layout: ReaderLayout) {
   }
 }
 
-export function BookReader({ book }: BookReaderProps) {
+export function WorkspaceBookReader({ bookId, panelApi, onRegisterNavigation, onUnregisterNavigation, onRegisterToc, onUnregisterToc, onOpenNotebook, onHighlightCreated }: WorkspaceBookReaderProps) {
+  // Load book data via useEffectQuery
+  const { data: book, error, isLoading } = useEffectQuery(
+    () =>
+      BookService.pipe(
+        Effect.andThen((s) => s.getBook(bookId)),
+        Effect.catchTag("BookNotFoundError", () => Effect.succeed(null as Book | null)),
+      ),
+    [bookId],
+  );
+
+  if (isLoading) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <p className="text-muted-foreground">Loading book…</p>
+      </div>
+    );
+  }
+
+  if (error || !book) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <p className="text-muted-foreground">Book not found.</p>
+      </div>
+    );
+  }
+
+  return <WorkspaceBookReaderInner book={book} panelApi={panelApi} onRegisterNavigation={onRegisterNavigation} onUnregisterNavigation={onUnregisterNavigation} onRegisterToc={onRegisterToc} onUnregisterToc={onUnregisterToc} onOpenNotebook={onOpenNotebook} onHighlightCreated={onHighlightCreated} />;
+}
+
+/**
+ * Inner component that renders once we have book data.
+ * Manages its own epub lifecycle, TOC state, and keyboard navigation.
+ */
+function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnregisterNavigation, onRegisterToc, onUnregisterToc, onOpenNotebook, onHighlightCreated }: { book: Book; panelApi?: DockviewPanelApi; onRegisterNavigation?: (bookId: string, navigateToCfi: (cfi: string) => void) => void; onUnregisterNavigation?: (bookId: string) => void; onRegisterToc?: (bookId: string, toc: TocEntry[]) => void; onUnregisterToc?: (bookId: string) => void; onOpenNotebook?: () => void; onHighlightCreated?: (highlight: { highlightId: string; cfiRange: string; text: string }) => void }) {
+  const panelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const bookRef = useRef<EpubBook | null>(null);
   const renditionRef = useRef<Rendition | null>(null);
   const [settings, updateSettings] = useSettings();
   const layoutRef = useRef(settings.readerLayout);
+
+  // Defer epub initialization until the panel has been visible at least once.
+  // With renderer: "always", background tabs exist in the DOM but have zero
+  // dimensions. epubjs renderTo() on a zero-sized container produces broken layout.
+  const [hasBeenVisible, setHasBeenVisible] = useState(() => panelApi ? panelApi.isVisible : true);
+
+  useEffect(() => {
+    if (!panelApi || hasBeenVisible) return;
+    // Already visible on mount (race with state init)
+    if (panelApi.isVisible) {
+      setHasBeenVisible(true);
+      return;
+    }
+    const disposable = panelApi.onDidVisibilityChange((e) => {
+      if (e.isVisible) {
+        setHasBeenVisible(true);
+        disposable.dispose();
+      }
+    });
+    return () => disposable.dispose();
+  }, [panelApi, hasBeenVisible]);
   const typographyRef = useRef({
     fontFamily: settings.fontFamily,
     fontSize: settings.fontSize,
@@ -88,19 +153,25 @@ export function BookReader({ book }: BookReaderProps) {
     fontSize: settings.fontSize,
     lineHeight: settings.lineHeight,
   };
+
   const [chapterProgress, setChapterProgress] = useState(0);
   const [bookProgress, setBookProgress] = useState(0);
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState<number | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [annotationsPanelOpen, setAnnotationsPanelOpen] = useState(false);
-  const editorRef = useRef<TiptapEditorHandle>(null);
-  const [pendingHighlight, setPendingHighlight] = useState<HighlightReferenceAttrs | null>(null);
-  const { setToc, setNavigateToHref } = useReaderNavigation();
+
 
   const navigateToCfi = useCallback((cfi: string) => {
     renditionRef.current?.display(cfi);
   }, []);
+
+  // Register navigateToCfi with parent workspace for cross-panel coordination
+  useEffect(() => {
+    onRegisterNavigation?.(book.id, navigateToCfi);
+    return () => {
+      onUnregisterNavigation?.(book.id);
+    };
+  }, [book.id, navigateToCfi, onRegisterNavigation, onUnregisterNavigation]);
 
   const {
     selectionPopover,
@@ -115,7 +186,9 @@ export function BookReader({ book }: BookReaderProps) {
   // Keep layoutRef in sync
   layoutRef.current = settings.readerLayout;
 
+  // Main epub lifecycle effect — deferred until panel has been visible
   useEffect(() => {
+    if (!hasBeenVisible) return;
     const el = containerRef.current;
     if (!el) return;
 
@@ -185,14 +258,10 @@ export function BookReader({ book }: BookReaderProps) {
             href: item.href ?? "",
             ...(item.subitems?.length ? { subitems: mapToc(item.subitems) } : {}),
           }));
-        setToc(mapToc(nav.toc));
+        onRegisterToc?.(book.id, mapToc(nav.toc));
       }
 
-      // Provide chapter navigation via rendition.display
-      setNavigateToHref((href: string) => {
-        rendition.display(href);
-      });
-
+      // Restore saved reading position
       const savedCfi = await AppRuntime.runPromise(
         BookService.pipe(Effect.andThen((s) => s.getPosition(book.id))),
       );
@@ -201,17 +270,17 @@ export function BookReader({ book }: BookReaderProps) {
       const effectiveTheme = resolveTheme(settings.theme);
       rendition.themes.select(effectiveTheme);
 
-      // Load and apply existing highlights via the hook
+      // Load and apply existing highlights
       await loadAndApplyHighlights(rendition);
 
-      // Register selection handler via the hook
+      // Register selection handler
       registerSelectionHandler(rendition);
 
       try {
         const cachedLocations = await AppRuntime.runPromise(
           BookService.pipe(Effect.andThen((s) => s.getLocations(book.id))).pipe(
-            Effect.catchAll(() => Effect.succeed(null))
-          )
+            Effect.catchAll(() => Effect.succeed(null)),
+          ),
         );
         if (cachedLocations) {
           epubBook.locations.load(cachedLocations);
@@ -219,7 +288,7 @@ export function BookReader({ book }: BookReaderProps) {
           await epubBook.locations.generate(1500);
           const json = (epubBook.locations as any).save() as string;
           AppRuntime.runPromise(
-            BookService.pipe(Effect.andThen((s) => s.saveLocations(book.id, json)))
+            BookService.pipe(Effect.andThen((s) => s.saveLocations(book.id, json))),
           ).catch(console.error);
         }
         setTotalPages((epubBook.locations as any).total as number);
@@ -240,14 +309,12 @@ export function BookReader({ book }: BookReaderProps) {
           const { page, total } = location.start.displayed;
           setChapterProgress(total > 0 ? (page / total) * 100 : 0);
           setBookProgress(location.start.percentage * 100);
-          // Compute current page from locations if available
           const epubLocTotal = (bookRef.current?.locations as any)?.total as number | undefined;
           if (epubLocTotal && epubLocTotal > 0) {
             const locIndex = bookRef.current!.locations.locationFromCfi(location.start.cfi);
             if (typeof locIndex === "number" && locIndex >= 0) {
               setCurrentPage(locIndex + 1);
             } else {
-              // Fallback: derive from percentage
               setCurrentPage(Math.max(1, Math.round(location.start.percentage * epubLocTotal)));
             }
             setTotalPages(epubLocTotal);
@@ -262,8 +329,11 @@ export function BookReader({ book }: BookReaderProps) {
       );
     })();
 
+    // Keyboard navigation scoped to this panel only
     const handleKeyDown = (e: KeyboardEvent) => {
       if (layoutRef.current === "scroll") return;
+      // Only respond if this panel (or a descendant) has focus
+      if (!panelRef.current?.contains(document.activeElement) && document.activeElement !== panelRef.current) return;
       if (e.key === "ArrowLeft") rendition.prev();
       else if (e.key === "ArrowRight") rendition.next();
     };
@@ -273,15 +343,15 @@ export function BookReader({ book }: BookReaderProps) {
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      setToc([]);
-      setNavigateToHref(() => {});
+      onUnregisterToc?.(book.id);
       rendition.destroy();
       epubBook.destroy();
       bookRef.current = null;
       renditionRef.current = null;
     };
-  }, [book.id, book.data, settings.readerLayout, loadAndApplyHighlights, registerSelectionHandler, setToc, setNavigateToHref]);
+  }, [hasBeenVisible, book.id, book.data, settings.readerLayout, loadAndApplyHighlights, registerSelectionHandler, onRegisterToc, onUnregisterToc]);
 
+  // Theme sync
   useEffect(() => {
     const rendition = renditionRef.current;
     if (!rendition) return;
@@ -303,6 +373,7 @@ export function BookReader({ book }: BookReaderProps) {
     rendition.themes.select(resolveTheme(settings.theme));
   }, [settings.theme]);
 
+  // Typography sync
   useEffect(() => {
     const rendition = renditionRef.current;
     if (!rendition) return;
@@ -321,12 +392,51 @@ export function BookReader({ book }: BookReaderProps) {
     });
   }, [settings.fontFamily, settings.fontSize, settings.lineHeight]);
 
+  // With renderer: "always", dockview keeps the DOM alive when the tab is hidden
+  // (instead of removing it). The epub iframe stays intact, so we only need to
+  // reapply theme (in case it changed while hidden) and resize (in case the
+  // container dimensions changed).
   useEffect(() => {
-    const timer = setTimeout(() => {
-      (renditionRef.current as any)?.resize();
-    }, 350);
-    return () => clearTimeout(timer);
-  }, [annotationsPanelOpen]);
+    if (!panelApi) return;
+
+    const handleBecameVisible = () => {
+      const rendition = renditionRef.current;
+      if (!rendition) return;
+
+      // Re-resolve and re-register theme colors before selecting
+      const lightColors = resolveThemeColors("light");
+      const darkColors = resolveThemeColors("dark");
+
+      rendition.themes.register("light", {
+        body: { color: `${lightColors.foreground} !important`, background: `${lightColors.background} !important` },
+        a: { color: "inherit !important" },
+      });
+      rendition.themes.register("dark", {
+        body: { color: `${darkColors.foreground} !important`, background: `${darkColors.background} !important` },
+        a: { color: "inherit !important" },
+      });
+
+      rendition.themes.select(resolveTheme(settings.theme));
+
+      // Resize in case container dimensions changed
+      requestAnimationFrame(() => {
+        (rendition as any)?.resize();
+      });
+    };
+
+    const visDisposable = panelApi.onDidVisibilityChange((e) => {
+      if (e.isVisible) handleBecameVisible();
+    });
+
+    const activeDisposable = panelApi.onDidActiveChange((e) => {
+      if (e.isActive) handleBecameVisible();
+    });
+
+    return () => {
+      visDisposable.dispose();
+      activeDisposable.dispose();
+    };
+  }, [panelApi, settings.theme]);
 
   const handlePrev = useCallback(() => renditionRef.current?.prev(), []);
   const handleNext = useCallback(() => renditionRef.current?.next(), []);
@@ -347,38 +457,22 @@ export function BookReader({ book }: BookReaderProps) {
   const handleSaveHighlight = useCallback(async () => {
     const highlight = await saveHighlightFromPopover();
     if (highlight) {
-      const attrs: HighlightReferenceAttrs = {
+      onHighlightCreated?.({
         highlightId: highlight.id,
         cfiRange: highlight.cfiRange,
         text: highlight.text,
-      };
-
-      // If the editor is already mounted, append directly
-      if (editorRef.current) {
-        editorRef.current.appendHighlightReference(attrs);
-      } else {
-        // Queue the highlight and open the panel — the useEffect below
-        // will flush it once the editor mounts
-        setPendingHighlight(attrs);
-      }
-
-      // Always ensure the panel is open
-      setAnnotationsPanelOpen(true);
+      });
     }
-  }, [saveHighlightFromPopover]);
-
-  // Flush pending highlight once the editor is mounted
-  useEffect(() => {
-    if (pendingHighlight && editorRef.current) {
-      editorRef.current.appendHighlightReference(pendingHighlight);
-      setPendingHighlight(null);
-    }
-  });
+  }, [saveHighlightFromPopover, onHighlightCreated]);
 
   const isScrollMode = settings.readerLayout === "scroll";
 
   return (
-    <div className="flex h-full">
+    <div
+      ref={panelRef}
+      className="flex h-full outline-none"
+      tabIndex={0}
+    >
       <div className="flex min-w-0 flex-1 flex-col">
         <div ref={containerRef} className={cn("flex-1 overflow-hidden", { "px-8 pt-10 pb-4": settings.readerLayout })} />
         <div className="relative flex items-center justify-center border-t px-2 h-10">
@@ -407,44 +501,39 @@ export function BookReader({ book }: BookReaderProps) {
             </div>
           )}
           <div className="absolute right-2 flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setAnnotationsPanelOpen(!annotationsPanelOpen)}
-              title="Toggle notebook"
-            >
-              <NotebookPen className="size-4" />
-              <span className="sr-only">Toggle notebook</span>
-            </Button>
+            {onOpenNotebook && (
+              <Button variant="ghost" size="icon" onClick={onOpenNotebook} title="Open Notebook">
+                <NotebookPen className="size-4" />
+                <span className="sr-only">Open Notebook</span>
+              </Button>
+            )}
             <ReaderSettingsMenu settings={settings} onUpdateSettings={handleUpdateSettings} />
           </div>
         </div>
-        {selectionPopover && (
-          <HighlightPopover
-            position={selectionPopover.position}
-            selectedText={selectionPopover.text}
-            onSave={handleSaveHighlight}
-            onDismiss={dismissPopovers}
-          />
-        )}
-        {editPopover && (
-          <HighlightPopover
-            mode="edit"
-            position={editPopover.position}
-            selectedText={editPopover.highlight.text}
-            onDelete={deleteHighlightFromPopover}
-            onDismiss={dismissPopovers}
-          />
-        )}
+        {/* Portal popovers to document.body to escape dockview's CSS transforms,
+            which create a new containing block and break position:fixed */}
+        {selectionPopover &&
+          createPortal(
+            <HighlightPopover
+              position={selectionPopover.position}
+              selectedText={selectionPopover.text}
+              onSave={handleSaveHighlight}
+              onDismiss={dismissPopovers}
+            />,
+            document.body,
+          )}
+        {editPopover &&
+          createPortal(
+            <HighlightPopover
+              mode="edit"
+              position={editPopover.position}
+              selectedText={editPopover.highlight.text}
+              onDelete={deleteHighlightFromPopover}
+              onDismiss={dismissPopovers}
+            />,
+            document.body,
+          )}
       </div>
-      <AnnotationsPanel
-        bookId={book.id}
-        bookTitle={book.title}
-        isOpen={annotationsPanelOpen}
-        onClose={() => setAnnotationsPanelOpen(false)}
-        onNavigateToCfi={navigateToCfi}
-        editorRef={editorRef}
-      />
     </div>
   );
 }

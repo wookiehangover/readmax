@@ -5,4 +5,5 @@ export default [
     index("routes/library-index.tsx"),
     route("books/:id", "routes/book.tsx"),
   ]),
+  route("workspace", "routes/workspace.tsx"),
 ] satisfies RouteConfig;

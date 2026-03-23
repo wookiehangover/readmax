@@ -22,13 +22,18 @@ export function DropZone({ onBookAdded, children }: DropZoneProps) {
   const handleDragEnter = useCallback((e: DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setDragCounter((c) => c + 1);
+    // Only activate for file drags from the OS, not internal DOM drags (e.g. dockview tabs)
+    if (e.dataTransfer?.types.includes("Files")) {
+      setDragCounter((c) => c + 1);
+    }
   }, []);
 
   const handleDragLeave = useCallback((e: DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setDragCounter((c) => c - 1);
+    if (e.dataTransfer?.types.includes("Files")) {
+      setDragCounter((c) => c - 1);
+    }
   }, []);
 
   const handleDragOver = useCallback((e: DragEvent) => {

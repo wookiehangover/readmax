@@ -210,6 +210,11 @@ body {
   --dv-paneview-header-border-color: var(--border);
 }
 
+.dockview-theme-app .dv-tabs-and-actions-container {
+  border-bottom: 1px solid var(--border);
+}
+
+
 .dockview-theme-app .dv-drop-target-container .dv-drop-target-anchor.dv-drop-target-anchor-container-changed {
   opacity: 0;
   transition: none;

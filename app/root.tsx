@@ -9,7 +9,7 @@ import {
 
 import type { Route } from "./+types/root";
 import "./app.css";
-import { ThemeToggle } from "~/components/theme-toggle";
+import { ThemeEffect } from "~/components/theme-effect";
 
 // Inline script to set the theme class before React hydrates, preventing FOUC.
 const themeScript = `
@@ -42,7 +42,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         {children}
-        <ThemeToggle />
+        <ThemeEffect />
         <ScrollRestoration />
         <Scripts />
       </body>

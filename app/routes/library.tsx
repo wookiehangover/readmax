@@ -8,6 +8,7 @@ import { AppRuntime } from "~/lib/effect-runtime";
 import { useSettings } from "~/lib/settings";
 import { DropZone } from "~/components/drop-zone";
 import { BookList } from "~/components/book-list";
+import { ThemeToggle } from "~/components/theme-toggle";
 import { ReaderNavigationProvider } from "~/lib/reader-context";
 import { useIsMobile } from "~/hooks/use-mobile";
 import {
@@ -89,6 +90,9 @@ export default function LibraryLayout({ loaderData }: Route.ComponentProps) {
                 </Link>
               </div>
               <BookList books={books} collapsed={collapsed} />
+              <div className="border-t px-2 py-2">
+                <ThemeToggle />
+              </div>
             </aside>
           )}
 
@@ -111,6 +115,9 @@ export default function LibraryLayout({ loaderData }: Route.ComponentProps) {
                     </SheetDescription>
                   </SheetHeader>
                   <BookList books={books} collapsed={false} />
+                  <div className="border-t px-2 py-2">
+                    <ThemeToggle />
+                  </div>
                 </SheetContent>
               </Sheet>
             </>

@@ -136,7 +136,7 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
   }, [book, title, author]);
 
   return (
-    <div className="h-screen overflow-y-auto p-6">
+    <div className="h-screen overflow-y-auto p-4 md:p-6">
       <div className="mb-6">
         <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
           <ArrowLeft className="size-4" />
@@ -186,7 +186,7 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
         </div>
 
         {hasNotebook && (
-          <div className="flex min-w-0 flex-1 flex-col border-l pl-8">
+          <div className="flex min-w-0 flex-1 flex-col border-t pt-8 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-8">
             <h2 className="mb-2 text-sm font-semibold">Notes</h2>
             <ScrollArea className="flex-1">
               <TiptapEditor

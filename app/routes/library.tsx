@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { Effect } from "effect";
-import { Link, Outlet } from "react-router";
-import { PanelsTopLeft } from "lucide-react";
+import { Link, Outlet, useLocation } from "react-router";
+import { Menu, PanelsTopLeft } from "lucide-react";
 import type { Route } from "./+types/library";
 import { BookService, type Book } from "~/lib/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
@@ -9,6 +9,14 @@ import { useSettings } from "~/lib/settings";
 import { DropZone } from "~/components/drop-zone";
 import { BookList } from "~/components/book-list";
 import { ReaderNavigationProvider } from "~/lib/reader-context";
+import { useIsMobile } from "~/hooks/use-mobile";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "~/components/ui/sheet";
 
 export function meta(_args: Route.MetaArgs) {
   return [
@@ -36,10 +44,17 @@ export default function LibraryLayout({ loaderData }: Route.ComponentProps) {
   const [books, setBooks] = useState<Book[]>(loaderData.books);
   const [settings, updateSettings] = useSettings();
   const collapsed = settings.sidebarCollapsed;
+  const isMobile = useIsMobile();
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const location = useLocation();
 
   const handleBookAdded = useCallback((book: Book) => {
     setBooks((prev) => [...prev, book]);
   }, []);
+
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [location.pathname]);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -56,24 +71,50 @@ export default function LibraryLayout({ loaderData }: Route.ComponentProps) {
     <ReaderNavigationProvider>
       <DropZone onBookAdded={handleBookAdded}>
         <div className="flex h-screen">
-          {/* Sidebar */}
-          <aside
-            className={`flex shrink-0 flex-col border-r bg-card transition-[width] duration-200 ease-in-out ${
-              collapsed ? "w-14" : "w-[300px]"
-            }`}
-          >
-            <div className="flex items-center justify-between border-b px-4 py-3">
-              {!collapsed && <h1 className="text-lg font-semibold">Library</h1>}
-              <Link
-                to="/workspace"
-                className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                title="Open Workspace"
+          {/* Desktop sidebar */}
+          {!isMobile && (
+            <aside
+              className={`flex shrink-0 flex-col border-r bg-card transition-[width] duration-200 ease-in-out ${
+                collapsed ? "w-14" : "w-[300px]"
+              }`}
+            >
+              <div className="flex items-center justify-between border-b px-4 py-3">
+                {!collapsed && <h1 className="text-lg font-semibold">Library</h1>}
+                <Link
+                  to="/workspace"
+                  className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                  title="Open Workspace"
+                >
+                  <PanelsTopLeft className="size-4" />
+                </Link>
+              </div>
+              <BookList books={books} collapsed={collapsed} />
+            </aside>
+          )}
+
+          {/* Mobile sidebar sheet */}
+          {isMobile && (
+            <>
+              <button
+                type="button"
+                onClick={() => setMobileOpen(true)}
+                className="fixed top-3 left-3 z-40 rounded-md border bg-card p-2 shadow-md"
               >
-                <PanelsTopLeft className="size-4" />
-              </Link>
-            </div>
-            <BookList books={books} collapsed={collapsed} />
-          </aside>
+                <Menu className="size-5" />
+              </button>
+              <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+                <SheetContent side="left">
+                  <SheetHeader>
+                    <SheetTitle>Library</SheetTitle>
+                    <SheetDescription className="sr-only">
+                      Book library navigation
+                    </SheetDescription>
+                  </SheetHeader>
+                  <BookList books={books} collapsed={false} />
+                </SheetContent>
+              </Sheet>
+            </>
+          )}
 
           {/* Main content */}
           <main className="flex-1 overflow-hidden">

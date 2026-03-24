@@ -214,7 +214,7 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
-.dockview-theme-app .dv-tab {
+.dockview-theme-app .dv-tab.dv-inactive-tab {
   border-right: 1px solid var(--border);
 }
 

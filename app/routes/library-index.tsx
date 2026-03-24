@@ -170,8 +170,8 @@ export default function LibraryIndex({ loaderData }: Route.ComponentProps) {
           </div>
         </div>
       ) : (
-        <div className="h-screen overflow-y-auto p-6">
-          <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+        <div className="h-screen overflow-y-auto p-4 md:p-6">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
             {books.map((book) => (
               <div key={book.id} className="group relative">
                 <Link

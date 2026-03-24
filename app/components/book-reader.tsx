@@ -389,26 +389,26 @@ export function BookReader({ book }: BookReaderProps) {
     <div className="flex h-full">
       <div className="flex min-w-0 flex-1 flex-col">
         <div ref={containerRef} className={cn("flex-1 overflow-hidden", { "px-8 pt-10 pb-4": settings.readerLayout })} />
-        <div className="relative flex items-center justify-center border-t px-2 h-10">
+        <div className="relative flex items-center justify-center border-t px-2 h-12 md:h-10">
           <div className="absolute left-2 flex items-center gap-1.5">
             {totalPages !== null && currentPage !== null ? (
-              <span className="text-muted-foreground text-xs tabular-nums">
+              <span className="text-muted-foreground text-[10px] tabular-nums md:text-xs">
                 Page {currentPage} of {totalPages}
               </span>
             ) : (
-              <span className="text-muted-foreground text-xs tabular-nums">
+              <span className="text-muted-foreground text-[10px] tabular-nums md:text-xs">
                 {Math.round(bookProgress)}%
               </span>
             )}
           </div>
           {!isScrollMode && (
             <div className="flex items-center gap-4">
-              <Button variant="ghost" size="icon" onClick={handlePrev}>
-                <ChevronLeft className="size-4" />
+              <Button variant="ghost" size="icon" className="size-10 md:size-8" onClick={handlePrev}>
+                <ChevronLeft className="size-5 md:size-4" />
                 <span className="sr-only">Previous page</span>
               </Button>
-              <Button variant="ghost" size="icon" onClick={handleNext}>
-                <ChevronRight className="size-4" />
+              <Button variant="ghost" size="icon" className="size-10 md:size-8" onClick={handleNext}>
+                <ChevronRight className="size-5 md:size-4" />
                 <span className="sr-only">Next page</span>
               </Button>
             </div>
@@ -417,20 +417,21 @@ export function BookReader({ book }: BookReaderProps) {
             <Button
               variant="ghost"
               size="icon"
+              className="size-10 md:size-8"
               onClick={() => setAnnotationsPanelOpen(!annotationsPanelOpen)}
               title="Toggle notebook"
             >
-              <Notebook className="size-4" />
+              <Notebook className="size-5 md:size-4" />
               <span className="sr-only">Toggle notebook</span>
             </Button>
             {toc.length > 0 && (
               <Popover open={tocOpen} onOpenChange={setTocOpen}>
                 <PopoverTrigger
                   render={
-                    <Button variant="ghost" size="icon" title="Table of Contents" />
+                    <Button variant="ghost" size="icon" className="size-10 md:size-8" title="Table of Contents" />
                   }
                 >
-                  <TableOfContents className="size-4" />
+                  <TableOfContents className="size-5 md:size-4" />
                   <span className="sr-only">Table of Contents</span>
                 </PopoverTrigger>
                 <PopoverContent side="top" align="end" sideOffset={8} className="max-h-80 w-64 overflow-y-auto p-1.5">

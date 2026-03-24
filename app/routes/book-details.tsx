@@ -180,8 +180,8 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
         </div>
 
         {hasNotebook && (
-          <div className="flex min-w-0 flex-1 flex-col">
-            <h2 className="mb-2 text-sm font-semibold">Notebook</h2>
+          <div className="flex min-w-0 flex-1 flex-col border-l pl-8">
+            <h2 className="mb-2 text-sm font-semibold">Notes</h2>
             <ScrollArea className="flex-1">
               <TiptapEditor
                 content={notebookContent}

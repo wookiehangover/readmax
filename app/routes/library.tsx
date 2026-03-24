@@ -35,7 +35,7 @@ clientLoader.hydrate = true as const;
 
 export function HydrateFallback() {
   return (
-    <div className="flex h-screen items-center justify-center">
+    <div className="flex h-dvh items-center justify-center">
       <p className="text-muted-foreground">Loading library…</p>
     </div>
   );
@@ -71,7 +71,7 @@ export default function LibraryLayout({ loaderData }: Route.ComponentProps) {
   return (
     <ReaderNavigationProvider>
       <DropZone onBookAdded={handleBookAdded}>
-        <div className="flex h-screen">
+        <div className="flex h-dvh">
           {/* Desktop sidebar — shown when isMobile is undefined (SSR/initial) or false */}
           {isMobile !== true && (
             <aside

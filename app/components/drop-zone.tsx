@@ -95,7 +95,7 @@ export function DropZone({ onBookAdded, children }: DropZoneProps) {
 
   return (
     <div
-      className="relative min-h-screen"
+      className="relative min-h-dvh"
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}

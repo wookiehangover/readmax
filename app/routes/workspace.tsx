@@ -47,7 +47,7 @@ clientLoader.hydrate = true as const;
 
 export function HydrateFallback() {
   return (
-    <div className="flex h-screen items-center justify-center">
+    <div className="flex h-dvh items-center justify-center">
       <p className="text-muted-foreground">Loading workspace…</p>
     </div>
   );
@@ -536,7 +536,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
 
   return (
     <DropZone onBookAdded={handleBookAdded}>
-    <div className="flex h-screen">
+    <div className="flex h-dvh">
       {/* Sidebar */}
       <aside
         className={`flex shrink-0 flex-col border-r bg-card transition-[width] duration-200 ease-in-out ${

@@ -136,7 +136,7 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
   }, [book, title, author]);
 
   return (
-    <div className="h-screen overflow-y-auto p-4 md:p-6">
+    <div className="h-dvh overflow-y-auto p-4 md:p-6">
       <div className="mb-6">
         <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
           <ArrowLeft className="size-4" />

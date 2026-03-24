@@ -13,6 +13,12 @@ import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
 
+
+export function meta({ data }: Route.MetaArgs) {
+  const title = data?.book?.title ?? "Reader";
+  return [{ title }];
+}
+
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   const book = await AppRuntime.runPromise(
     BookService.pipe(

@@ -16,7 +16,7 @@ import {
 
 export function meta(_args: Route.MetaArgs) {
   return [
-    { title: "eBook Reader" },
+    { title: "Reader" },
     { name: "description", content: "A browser-based ebook reader" },
   ];
 }

@@ -31,7 +31,7 @@ import { WorkspaceNotebook } from "~/components/workspace-notebook";
 
 export function meta(_args: Route.MetaArgs) {
   return [
-    { title: "Workspace" },
+    { title: "Reader" },
     { name: "description", content: "Multi-pane book workspace" },
   ];
 }
@@ -342,6 +342,8 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
   const [tocVersion, setTocVersion] = useState(0);
   // Track which books currently have open panels in dockview
   const [openBookIds, setOpenBookIds] = useState<Set<string>>(new Set());
+  // Track total panel count for dynamic document title
+  const [panelCount, setPanelCount] = useState(0);
 
   // Load last-opened timestamps for sorting
   const { data: lastOpenedMap } = useEffectQuery(
@@ -391,6 +393,12 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
         })
         .catch(console.error);
 
+      // Track total panel count for dynamic title
+      const updatePanelCount = () => setPanelCount(event.api.panels.length);
+      updatePanelCount();
+      event.api.onDidAddPanel(updatePanelCount);
+      event.api.onDidRemovePanel(updatePanelCount);
+
       // Track open book panels
       const updateOpenBooks = () => {
         const ids = new Set<string>();
@@ -425,6 +433,12 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
       notebookCallbackMap.clear();
     };
   }, []);
+
+  // Update document title with panel count
+  useEffect(() => {
+    document.title = panelCount > 0 ? `Reader \u2056 ${panelCount}` : "Reader";
+  }, [panelCount]);
+
 
   // Cmd+B / Ctrl+B to toggle sidebar
   useEffect(() => {

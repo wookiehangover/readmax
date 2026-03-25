@@ -172,11 +172,16 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
     }
     const cfi = latestCfiRef.current;
     if (cfi) {
+      const panelId = panelApi?.id;
+      const saveBook = BookService.pipe(Effect.andThen((s) => s.savePosition(book.id, cfi)));
+      const savePanel = panelId
+        ? BookService.pipe(Effect.andThen((s) => s.savePosition(panelId, cfi)))
+        : Effect.void;
       AppRuntime.runPromise(
-        BookService.pipe(Effect.andThen((s) => s.savePosition(book.id, cfi))),
+        Effect.all([saveBook, savePanel], { concurrency: "unbounded" }),
       ).catch((err) => console.error("Failed to flush reading position:", err));
     }
-  }, [book.id]);
+  }, [book.id, panelApi?.id]);
   const [toc, setLocalToc] = useState<TocEntry[]>([]);
   const [tocOpen, setTocOpen] = useState(false);
 
@@ -293,9 +298,14 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
         onRegisterToc?.(panelApi?.id ?? book.id, tocData);
       }
 
-      // Restore reading position: prefer in-memory CFI (survives effect re-runs
-      // and keeps duplicate panels independent) over IndexedDB (cross-session).
+      // Restore reading position: prefer in-memory CFI, then panel-specific
+      // position (for refresh with restored layout), then book-level fallback.
       let startCfi = latestCfiRef.current;
+      if (!startCfi && panelApi?.id) {
+        startCfi = await AppRuntime.runPromise(
+          BookService.pipe(Effect.andThen((s) => s.getPosition(panelApi.id))),
+        );
+      }
       if (!startCfi) {
         startCfi = await AppRuntime.runPromise(
           BookService.pipe(Effect.andThen((s) => s.getPosition(book.id))),
@@ -357,8 +367,14 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
           latestCfiRef.current = location.start.cfi;
           if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
           saveTimerRef.current = setTimeout(() => {
+            const cfi = location.start.cfi;
+            const panelId = panelApi?.id;
+            const saveBook = BookService.pipe(Effect.andThen((s) => s.savePosition(book.id, cfi)));
+            const savePanel = panelId
+              ? BookService.pipe(Effect.andThen((s) => s.savePosition(panelId, cfi)))
+              : Effect.void;
             AppRuntime.runPromise(
-              BookService.pipe(Effect.andThen((s) => s.savePosition(book.id, location.start.cfi))),
+              Effect.all([saveBook, savePanel], { concurrency: "unbounded" }),
             ).catch((err) => console.error("Failed to save reading position:", err));
           }, 1000);
         },

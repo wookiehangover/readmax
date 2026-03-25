@@ -15,7 +15,7 @@ import { Effect } from "effect";
 import { BookService, type Book } from "~/lib/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { useSettings, resolveTheme } from "~/lib/settings";
-import type { ReaderLayout } from "~/lib/settings";
+import type { ReaderLayout, Settings } from "~/lib/settings";
 import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { useHighlights } from "~/lib/use-highlights";
@@ -26,9 +26,19 @@ import { resolveStartCfi, savePositionDualKey } from "~/lib/position-utils";
 import type { DockviewPanelApi } from "dockview";
 import type { TocEntry } from "~/lib/reader-context";
 
+/** Typography overrides restored from dockview panel params */
+export interface PanelTypographyParams {
+  fontFamily?: string;
+  fontSize?: number;
+  lineHeight?: number;
+  readerLayout?: ReaderLayout;
+}
+
 interface WorkspaceBookReaderProps {
   bookId: string;
   panelApi?: DockviewPanelApi;
+  /** Initial typography overrides from restored panel params */
+  panelTypography?: PanelTypographyParams;
   onRegisterNavigation?: (panelId: string, navigateToCfi: (cfi: string) => void) => void;
   onUnregisterNavigation?: (panelId: string) => void;
   onRegisterToc?: (panelId: string, toc: TocEntry[]) => void;
@@ -87,7 +97,7 @@ function getRenditionOptions(layout: ReaderLayout) {
   }
 }
 
-export function WorkspaceBookReader({ bookId, panelApi, onRegisterNavigation, onUnregisterNavigation, onRegisterToc, onUnregisterToc, onOpenNotebook, onHighlightCreated }: WorkspaceBookReaderProps) {
+export function WorkspaceBookReader({ bookId, panelApi, panelTypography, onRegisterNavigation, onUnregisterNavigation, onRegisterToc, onUnregisterToc, onOpenNotebook, onHighlightCreated }: WorkspaceBookReaderProps) {
   // Load book data via useEffectQuery
   const { data: book, error, isLoading } = useEffectQuery(
     () =>
@@ -114,20 +124,36 @@ export function WorkspaceBookReader({ bookId, panelApi, onRegisterNavigation, on
     );
   }
 
-  return <WorkspaceBookReaderInner book={book} panelApi={panelApi} onRegisterNavigation={onRegisterNavigation} onUnregisterNavigation={onUnregisterNavigation} onRegisterToc={onRegisterToc} onUnregisterToc={onUnregisterToc} onOpenNotebook={onOpenNotebook} onHighlightCreated={onHighlightCreated} />;
+  return <WorkspaceBookReaderInner book={book} panelApi={panelApi} panelTypography={panelTypography} onRegisterNavigation={onRegisterNavigation} onUnregisterNavigation={onUnregisterNavigation} onRegisterToc={onRegisterToc} onUnregisterToc={onUnregisterToc} onOpenNotebook={onOpenNotebook} onHighlightCreated={onHighlightCreated} />;
 }
 
 /**
  * Inner component that renders once we have book data.
  * Manages its own epub lifecycle, TOC state, and keyboard navigation.
  */
-function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnregisterNavigation, onRegisterToc, onUnregisterToc, onOpenNotebook, onHighlightCreated }: { book: Book; panelApi?: DockviewPanelApi; onRegisterNavigation?: (panelId: string, navigateToCfi: (cfi: string) => void) => void; onUnregisterNavigation?: (panelId: string) => void; onRegisterToc?: (panelId: string, toc: TocEntry[]) => void; onUnregisterToc?: (panelId: string) => void; onOpenNotebook?: () => void; onHighlightCreated?: (highlight: { highlightId: string; cfiRange: string; text: string }) => void }) {
+function WorkspaceBookReaderInner({ book, panelApi, panelTypography, onRegisterNavigation, onUnregisterNavigation, onRegisterToc, onUnregisterToc, onOpenNotebook, onHighlightCreated }: { book: Book; panelApi?: DockviewPanelApi; panelTypography?: PanelTypographyParams; onRegisterNavigation?: (panelId: string, navigateToCfi: (cfi: string) => void) => void; onUnregisterNavigation?: (panelId: string) => void; onRegisterToc?: (panelId: string, toc: TocEntry[]) => void; onUnregisterToc?: (panelId: string) => void; onOpenNotebook?: () => void; onHighlightCreated?: (highlight: { highlightId: string; cfiRange: string; text: string }) => void }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const bookRef = useRef<EpubBook | null>(null);
   const renditionRef = useRef<Rendition | null>(null);
-  const [settings, updateSettings] = useSettings();
-  const layoutRef = useRef(settings.readerLayout);
+  const [settings] = useSettings();
+
+  // Per-panel typography overrides: initialized from panel params (restored layout)
+  // or global settings as fallback. These are local to this panel instance.
+  const [localFontFamily, setLocalFontFamily] = useState<string>(
+    () => panelTypography?.fontFamily ?? settings.fontFamily,
+  );
+  const [localFontSize, setLocalFontSize] = useState<number>(
+    () => panelTypography?.fontSize ?? settings.fontSize,
+  );
+  const [localLineHeight, setLocalLineHeight] = useState<number>(
+    () => panelTypography?.lineHeight ?? settings.lineHeight,
+  );
+  const [localReaderLayout, setLocalReaderLayout] = useState<ReaderLayout>(
+    () => panelTypography?.readerLayout ?? settings.readerLayout,
+  );
+
+  const layoutRef = useRef(localReaderLayout);
 
   // Defer epub initialization until the panel has been visible at least once.
   // With renderer: "always", background tabs exist in the DOM but have zero
@@ -150,14 +176,14 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
     return () => disposable.dispose();
   }, [panelApi, hasBeenVisible]);
   const typographyRef = useRef({
-    fontFamily: settings.fontFamily,
-    fontSize: settings.fontSize,
-    lineHeight: settings.lineHeight,
+    fontFamily: localFontFamily,
+    fontSize: localFontSize,
+    lineHeight: localLineHeight,
   });
   typographyRef.current = {
-    fontFamily: settings.fontFamily,
-    fontSize: settings.fontSize,
-    lineHeight: settings.lineHeight,
+    fontFamily: localFontFamily,
+    fontSize: localFontSize,
+    lineHeight: localLineHeight,
   };
 
   const [bookProgress, setBookProgress] = useState(0);
@@ -212,7 +238,7 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
   } = useHighlights({ bookId: book.id, renditionRef, containerRef });
 
   // Keep layoutRef in sync
-  layoutRef.current = settings.readerLayout;
+  layoutRef.current = localReaderLayout;
 
   // Main epub lifecycle effect — deferred until panel has been visible
   useEffect(() => {
@@ -220,7 +246,7 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
     const el = containerRef.current;
     if (!el) return;
 
-    const opts = getRenditionOptions(settings.readerLayout);
+    const opts = getRenditionOptions(localReaderLayout);
     const epubBook = ePub(book.data);
     bookRef.current = epubBook;
 
@@ -395,7 +421,7 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
       bookRef.current = null;
       renditionRef.current = null;
     };
-  }, [hasBeenVisible, book.id, book.data, settings.readerLayout, loadAndApplyHighlights, registerSelectionHandler, onRegisterToc, onUnregisterToc, flushPositionSave]);
+  }, [hasBeenVisible, book.id, book.data, localReaderLayout, loadAndApplyHighlights, registerSelectionHandler, onRegisterToc, onUnregisterToc, flushPositionSave]);
 
   // Theme sync
   useEffect(() => {
@@ -419,11 +445,11 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
     rendition.themes.select(resolveTheme(settings.theme));
   }, [settings.theme]);
 
-  // Typography sync
+  // Typography sync — uses per-panel local state
   useEffect(() => {
     const rendition = renditionRef.current;
     if (!rendition) return;
-    const css = getTypographyCss(settings.fontFamily, settings.fontSize, settings.lineHeight);
+    const css = getTypographyCss(localFontFamily, localFontSize, localLineHeight);
     const contents = (rendition as any).getContents() as any[];
     contents.forEach((content: any) => {
       const doc = content.document;
@@ -436,7 +462,7 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
       }
       style.textContent = css;
     });
-  }, [settings.fontFamily, settings.fontSize, settings.lineHeight]);
+  }, [localFontFamily, localFontSize, localLineHeight]);
 
   // With renderer: "always", dockview keeps the DOM alive when the tab is hidden
   // (instead of removing it). The epub iframe stays intact, so we only need to
@@ -500,16 +526,31 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
   const handleNext = useCallback(() => renditionRef.current?.next(), []);
 
   const handleUpdateSettings = useCallback(
-    (update: Partial<typeof settings>) => {
-      if (update.readerLayout && update.readerLayout !== settings.readerLayout) {
+    (update: Partial<Settings>) => {
+      // Update local state only — do NOT propagate to global settings.
+      // Theme changes are ignored here (theme stays global).
+      if (update.fontFamily !== undefined) setLocalFontFamily(update.fontFamily);
+      if (update.fontSize !== undefined) setLocalFontSize(update.fontSize);
+      if (update.lineHeight !== undefined) setLocalLineHeight(update.lineHeight);
+      if (update.readerLayout !== undefined && update.readerLayout !== localReaderLayout) {
         const cfi = renditionRef.current?.location?.start?.cfi;
-        updateSettings(update);
+        setLocalReaderLayout(update.readerLayout);
         if (cfi) queueMicrotask(() => renditionRef.current?.display(cfi));
-        return;
       }
-      updateSettings(update);
+
+      // Persist overrides in dockview panel params so they survive layout save/restore
+      if (panelApi) {
+        const paramUpdates: Record<string, unknown> = {};
+        if (update.fontFamily !== undefined) paramUpdates.fontFamily = update.fontFamily;
+        if (update.fontSize !== undefined) paramUpdates.fontSize = update.fontSize;
+        if (update.lineHeight !== undefined) paramUpdates.lineHeight = update.lineHeight;
+        if (update.readerLayout !== undefined) paramUpdates.readerLayout = update.readerLayout;
+        if (Object.keys(paramUpdates).length > 0) {
+          panelApi.updateParameters(paramUpdates);
+        }
+      }
     },
-    [settings.readerLayout, updateSettings],
+    [localReaderLayout, panelApi],
   );
 
   const handleSaveHighlight = useCallback(async () => {
@@ -523,7 +564,16 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
     }
   }, [saveHighlightFromPopover, onHighlightCreated]);
 
-  const isScrollMode = settings.readerLayout === "scroll";
+  const isScrollMode = localReaderLayout === "scroll";
+
+  // Construct a settings-like object with local typography values for the menu
+  const localSettings: Settings = {
+    ...settings,
+    fontFamily: localFontFamily,
+    fontSize: localFontSize,
+    lineHeight: localLineHeight,
+    readerLayout: localReaderLayout,
+  };
 
   return (
     <div
@@ -532,7 +582,7 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
       tabIndex={0}
     >
       <div className="flex min-w-0 flex-1 flex-col">
-        <div ref={containerRef} className={cn("flex-1 overflow-hidden", { "px-8 pt-10 pb-4": settings.readerLayout })} />
+        <div ref={containerRef} className={cn("flex-1 overflow-hidden", { "px-8 pt-10 pb-4": localReaderLayout })} />
         <div className="relative flex items-center justify-center border-t px-2 h-10">
           <div className="absolute left-2 flex items-center gap-1.5">
             {totalPages !== null && currentPage !== null ? (
@@ -590,7 +640,7 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
                 </PopoverContent>
               </Popover>
             )}
-            <ReaderSettingsMenu settings={settings} onUpdateSettings={handleUpdateSettings} />
+            <ReaderSettingsMenu settings={localSettings} onUpdateSettings={handleUpdateSettings} />
           </div>
         </div>
         {/* Portal popovers to document.body to escape dockview's CSS transforms,

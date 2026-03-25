@@ -448,9 +448,17 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
 
       rendition.themes.select(resolveTheme(settings.theme));
 
-      // Resize in case container dimensions changed
+      // Save the current reading position before resize — epubjs resize()
+      // recalculates pagination and can jump to a different page.
+      const cfiBeforeResize = latestCfiRef.current;
+
+      // Resize in case container dimensions changed, then restore position
       requestAnimationFrame(() => {
-        (rendition as any)?.resize();
+        if (!renditionRef.current) return;
+        (renditionRef.current as any).resize();
+        if (cfiBeforeResize) {
+          renditionRef.current.display(cfiBeforeResize).catch(() => {});
+        }
       });
     };
 

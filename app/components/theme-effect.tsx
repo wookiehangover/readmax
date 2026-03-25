@@ -23,4 +23,3 @@ export function ThemeEffect() {
 
   return null;
 }
-

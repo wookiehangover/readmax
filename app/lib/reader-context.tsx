@@ -41,10 +41,11 @@ export function ReaderNavigationProvider({ children }: { children: ReactNode }) 
     [toc, navigateToHref, stableSetNavigateToHref],
   );
 
-  return <ReaderNavigationContext.Provider value={value}>{children}</ReaderNavigationContext.Provider>;
+  return (
+    <ReaderNavigationContext.Provider value={value}>{children}</ReaderNavigationContext.Provider>
+  );
 }
 
 export function useReaderNavigation() {
   return useContext(ReaderNavigationContext);
 }
-

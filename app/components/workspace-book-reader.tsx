@@ -5,11 +5,7 @@ import type EpubBook from "epubjs/types/book";
 import type Rendition from "epubjs/types/rendition";
 import { Button } from "~/components/ui/button";
 import { ChevronLeft, ChevronRight, Notebook, TableOfContents } from "lucide-react";
-import {
-  Popover,
-  PopoverTrigger,
-  PopoverContent,
-} from "~/components/ui/popover";
+import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover";
 import { TocList } from "~/components/book-list";
 import { Effect } from "effect";
 import { BookService, type Book } from "~/lib/book-store";
@@ -83,8 +79,6 @@ function getTypographyCss(fontFamily: string, fontSize: number, lineHeight: numb
   `;
 }
 
-
-
 function getRenditionOptions(layout: ReaderLayout) {
   switch (layout) {
     case "spread":
@@ -97,9 +91,23 @@ function getRenditionOptions(layout: ReaderLayout) {
   }
 }
 
-export function WorkspaceBookReader({ bookId, panelApi, panelTypography, onRegisterNavigation, onUnregisterNavigation, onRegisterToc, onUnregisterToc, onOpenNotebook, onHighlightCreated }: WorkspaceBookReaderProps) {
+export function WorkspaceBookReader({
+  bookId,
+  panelApi,
+  panelTypography,
+  onRegisterNavigation,
+  onUnregisterNavigation,
+  onRegisterToc,
+  onUnregisterToc,
+  onOpenNotebook,
+  onHighlightCreated,
+}: WorkspaceBookReaderProps) {
   // Load book data via useEffectQuery
-  const { data: book, error, isLoading } = useEffectQuery(
+  const {
+    data: book,
+    error,
+    isLoading,
+  } = useEffectQuery(
     () =>
       BookService.pipe(
         Effect.andThen((s) => s.getBook(bookId)),
@@ -124,14 +132,46 @@ export function WorkspaceBookReader({ bookId, panelApi, panelTypography, onRegis
     );
   }
 
-  return <WorkspaceBookReaderInner book={book} panelApi={panelApi} panelTypography={panelTypography} onRegisterNavigation={onRegisterNavigation} onUnregisterNavigation={onUnregisterNavigation} onRegisterToc={onRegisterToc} onUnregisterToc={onUnregisterToc} onOpenNotebook={onOpenNotebook} onHighlightCreated={onHighlightCreated} />;
+  return (
+    <WorkspaceBookReaderInner
+      book={book}
+      panelApi={panelApi}
+      panelTypography={panelTypography}
+      onRegisterNavigation={onRegisterNavigation}
+      onUnregisterNavigation={onUnregisterNavigation}
+      onRegisterToc={onRegisterToc}
+      onUnregisterToc={onUnregisterToc}
+      onOpenNotebook={onOpenNotebook}
+      onHighlightCreated={onHighlightCreated}
+    />
+  );
 }
 
 /**
  * Inner component that renders once we have book data.
  * Manages its own epub lifecycle, TOC state, and keyboard navigation.
  */
-function WorkspaceBookReaderInner({ book, panelApi, panelTypography, onRegisterNavigation, onUnregisterNavigation, onRegisterToc, onUnregisterToc, onOpenNotebook, onHighlightCreated }: { book: Book; panelApi?: DockviewPanelApi; panelTypography?: PanelTypographyParams; onRegisterNavigation?: (panelId: string, navigateToCfi: (cfi: string) => void) => void; onUnregisterNavigation?: (panelId: string) => void; onRegisterToc?: (panelId: string, toc: TocEntry[]) => void; onUnregisterToc?: (panelId: string) => void; onOpenNotebook?: () => void; onHighlightCreated?: (highlight: { highlightId: string; cfiRange: string; text: string }) => void }) {
+function WorkspaceBookReaderInner({
+  book,
+  panelApi,
+  panelTypography,
+  onRegisterNavigation,
+  onUnregisterNavigation,
+  onRegisterToc,
+  onUnregisterToc,
+  onOpenNotebook,
+  onHighlightCreated,
+}: {
+  book: Book;
+  panelApi?: DockviewPanelApi;
+  panelTypography?: PanelTypographyParams;
+  onRegisterNavigation?: (panelId: string, navigateToCfi: (cfi: string) => void) => void;
+  onUnregisterNavigation?: (panelId: string) => void;
+  onRegisterToc?: (panelId: string, toc: TocEntry[]) => void;
+  onUnregisterToc?: (panelId: string) => void;
+  onOpenNotebook?: () => void;
+  onHighlightCreated?: (highlight: { highlightId: string; cfiRange: string; text: string }) => void;
+}) {
   const panelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const bookRef = useRef<EpubBook | null>(null);
@@ -158,7 +198,9 @@ function WorkspaceBookReaderInner({ book, panelApi, panelTypography, onRegisterN
   // Defer epub initialization until the panel has been visible at least once.
   // With renderer: "always", background tabs exist in the DOM but have zero
   // dimensions. epubjs renderTo() on a zero-sized container produces broken layout.
-  const [hasBeenVisible, setHasBeenVisible] = useState(() => panelApi ? panelApi.isVisible : true);
+  const [hasBeenVisible, setHasBeenVisible] = useState(() =>
+    panelApi ? panelApi.isVisible : true,
+  );
 
   useEffect(() => {
     if (!panelApi || hasBeenVisible) return;
@@ -299,11 +341,17 @@ function WorkspaceBookReaderInner({ book, panelApi, panelTypography, onRegisterN
     const darkColors = resolveThemeColors("dark");
 
     rendition.themes.register("light", {
-      body: { color: `${lightColors.foreground} !important`, background: `${lightColors.background} !important` },
+      body: {
+        color: `${lightColors.foreground} !important`,
+        background: `${lightColors.background} !important`,
+      },
       a: { color: "inherit !important" },
     });
     rendition.themes.register("dark", {
-      body: { color: `${darkColors.foreground} !important`, background: `${darkColors.background} !important` },
+      body: {
+        color: `${darkColors.foreground} !important`,
+        background: `${darkColors.background} !important`,
+      },
       a: { color: "inherit !important" },
     });
 
@@ -394,7 +442,9 @@ function WorkspaceBookReaderInner({ book, panelApi, panelTypography, onRegisterN
               bookId: book.id,
               cfi: location.start.cfi,
               savePosition: (key, val) =>
-                AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.savePosition(key, val)))),
+                AppRuntime.runPromise(
+                  BookService.pipe(Effect.andThen((s) => s.savePosition(key, val))),
+                ),
             }).catch((err) => console.error("Failed to save reading position:", err));
           }, 1000);
         },
@@ -405,7 +455,11 @@ function WorkspaceBookReaderInner({ book, panelApi, panelTypography, onRegisterN
     const handleKeyDown = (e: KeyboardEvent) => {
       if (layoutRef.current === "scroll") return;
       // Only respond if this panel (or a descendant) has focus
-      if (!panelRef.current?.contains(document.activeElement) && document.activeElement !== panelRef.current) return;
+      if (
+        !panelRef.current?.contains(document.activeElement) &&
+        document.activeElement !== panelRef.current
+      )
+        return;
       if (e.key === "ArrowLeft") rendition.prev();
       else if (e.key === "ArrowRight") rendition.next();
     };
@@ -421,7 +475,17 @@ function WorkspaceBookReaderInner({ book, panelApi, panelTypography, onRegisterN
       bookRef.current = null;
       renditionRef.current = null;
     };
-  }, [hasBeenVisible, book.id, book.data, localReaderLayout, loadAndApplyHighlights, registerSelectionHandler, onRegisterToc, onUnregisterToc, flushPositionSave]);
+  }, [
+    hasBeenVisible,
+    book.id,
+    book.data,
+    localReaderLayout,
+    loadAndApplyHighlights,
+    registerSelectionHandler,
+    onRegisterToc,
+    onUnregisterToc,
+    flushPositionSave,
+  ]);
 
   // Theme sync
   useEffect(() => {
@@ -434,11 +498,17 @@ function WorkspaceBookReaderInner({ book, panelApi, panelTypography, onRegisterN
     const darkColors = resolveThemeColors("dark");
 
     rendition.themes.register("light", {
-      body: { color: `${lightColors.foreground} !important`, background: `${lightColors.background} !important` },
+      body: {
+        color: `${lightColors.foreground} !important`,
+        background: `${lightColors.background} !important`,
+      },
       a: { color: "inherit !important" },
     });
     rendition.themes.register("dark", {
-      body: { color: `${darkColors.foreground} !important`, background: `${darkColors.background} !important` },
+      body: {
+        color: `${darkColors.foreground} !important`,
+        background: `${darkColors.background} !important`,
+      },
       a: { color: "inherit !important" },
     });
 
@@ -480,11 +550,17 @@ function WorkspaceBookReaderInner({ book, panelApi, panelTypography, onRegisterN
       const darkColors = resolveThemeColors("dark");
 
       rendition.themes.register("light", {
-        body: { color: `${lightColors.foreground} !important`, background: `${lightColors.background} !important` },
+        body: {
+          color: `${lightColors.foreground} !important`,
+          background: `${lightColors.background} !important`,
+        },
         a: { color: "inherit !important" },
       });
       rendition.themes.register("dark", {
-        body: { color: `${darkColors.foreground} !important`, background: `${darkColors.background} !important` },
+        body: {
+          color: `${darkColors.foreground} !important`,
+          background: `${darkColors.background} !important`,
+        },
         a: { color: "inherit !important" },
       });
 
@@ -576,13 +652,12 @@ function WorkspaceBookReaderInner({ book, panelApi, panelTypography, onRegisterN
   };
 
   return (
-    <div
-      ref={panelRef}
-      className="flex h-full outline-none"
-      tabIndex={0}
-    >
+    <div ref={panelRef} className="flex h-full outline-none" tabIndex={0}>
       <div className="flex min-w-0 flex-1 flex-col">
-        <div ref={containerRef} className={cn("flex-1 overflow-hidden", { "px-8 pt-10 pb-4": localReaderLayout })} />
+        <div
+          ref={containerRef}
+          className={cn("flex-1 overflow-hidden", { "px-8 pt-10 pb-4": localReaderLayout })}
+        />
         <div className="relative flex items-center justify-center border-t px-2 h-10">
           <div className="absolute left-2 flex items-center gap-1.5">
             {totalPages !== null && currentPage !== null ? (
@@ -617,15 +692,20 @@ function WorkspaceBookReaderInner({ book, panelApi, panelTypography, onRegisterN
             {toc.length > 0 && (
               <Popover open={tocOpen} onOpenChange={setTocOpen}>
                 <PopoverTrigger
-                  render={
-                    <Button variant="ghost" size="icon" title="Table of Contents" />
-                  }
+                  render={<Button variant="ghost" size="icon" title="Table of Contents" />}
                 >
                   <TableOfContents className="size-4" />
                   <span className="sr-only">Table of Contents</span>
                 </PopoverTrigger>
-                <PopoverContent side="top" align="end" sideOffset={8} className="max-h-80 w-64 overflow-y-auto p-1.5">
-                  <p className="px-2 py-1 text-xs font-medium text-muted-foreground">Table of Contents</p>
+                <PopoverContent
+                  side="top"
+                  align="end"
+                  sideOffset={8}
+                  className="max-h-80 w-64 overflow-y-auto p-1.5"
+                >
+                  <p className="px-2 py-1 text-xs font-medium text-muted-foreground">
+                    Table of Contents
+                  </p>
                   <ul>
                     <TocList
                       entries={toc}

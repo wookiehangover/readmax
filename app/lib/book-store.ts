@@ -80,7 +80,11 @@ export const BookServiceLive = Layer.succeed(BookService, {
       try: async () => {
         await del(id, getBookStore());
         // Best-effort cleanup of cached locations
-        try { await del(id, getLocationsStore()); } catch { /* ignore */ }
+        try {
+          await del(id, getLocationsStore());
+        } catch {
+          /* ignore */
+        }
       },
       catch: (cause) => new StorageError({ operation: "deleteBook", cause }),
     }),

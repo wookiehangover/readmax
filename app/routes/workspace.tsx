@@ -1,11 +1,4 @@
-import {
-  useState,
-  useCallback,
-  useRef,
-  useEffect,
-  useMemo,
-  type ChangeEvent,
-} from "react";
+import { useState, useCallback, useRef, useEffect, useMemo, type ChangeEvent } from "react";
 import { Link } from "react-router";
 import { Effect } from "effect";
 import {
@@ -16,19 +9,9 @@ import {
   type IWatermarkPanelProps,
   type DockviewTheme,
 } from "dockview";
-import {
-  BookOpen,
-  NotebookPen,
-  Plus,
-  ArrowUpDown,
-  Settings,
-} from "lucide-react";
+import { BookOpen, NotebookPen, Plus, ArrowUpDown, Settings } from "lucide-react";
 import { BookCover, TocList } from "~/components/book-list";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "~/components/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import type { Route } from "./+types/workspace";
 import { BookService, type Book } from "~/lib/book-store";
@@ -47,16 +30,11 @@ import {
 import { WorkspaceNotebook } from "~/components/workspace-notebook";
 
 export function meta(_args: Route.MetaArgs) {
-  return [
-    { title: "Reader" },
-    { name: "description", content: "Multi-pane book workspace" },
-  ];
+  return [{ title: "Reader" }, { name: "description", content: "Multi-pane book workspace" }];
 }
 
 export async function clientLoader() {
-  const books = await AppRuntime.runPromise(
-    BookService.pipe(Effect.andThen((s) => s.getBooks())),
-  );
+  const books = await AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.getBooks())));
   return { books };
 }
 
@@ -125,15 +103,10 @@ function findTocForBook(bookId: string): TocEntry[] | undefined {
 function BookReaderPanel({
   params,
   api,
-}: IDockviewPanelProps<
-  { bookId: string; bookTitle?: string } & PanelTypographyParams
->) {
-  const handleRegister = useCallback(
-    (panelId: string, nav: (cfi: string) => void) => {
-      navigationMap.set(panelId, nav);
-    },
-    [],
-  );
+}: IDockviewPanelProps<{ bookId: string; bookTitle?: string } & PanelTypographyParams>) {
+  const handleRegister = useCallback((panelId: string, nav: (cfi: string) => void) => {
+    navigationMap.set(panelId, nav);
+  }, []);
 
   const handleUnregister = useCallback((panelId: string) => {
     navigationMap.delete(panelId);
@@ -184,11 +157,9 @@ function BookReaderPanel({
 
   // Extract per-panel typography overrides from dockview params (restored layout)
   const panelTypography: PanelTypographyParams = {
-    fontFamily:
-      typeof params.fontFamily === "string" ? params.fontFamily : undefined,
+    fontFamily: typeof params.fontFamily === "string" ? params.fontFamily : undefined,
     fontSize: typeof params.fontSize === "number" ? params.fontSize : undefined,
-    lineHeight:
-      typeof params.lineHeight === "number" ? params.lineHeight : undefined,
+    lineHeight: typeof params.lineHeight === "number" ? params.lineHeight : undefined,
     readerLayout:
       typeof params.readerLayout === "string"
         ? (params.readerLayout as PanelTypographyParams["readerLayout"])
@@ -210,9 +181,7 @@ function BookReaderPanel({
   );
 }
 
-function NotebookPanel({
-  params,
-}: IDockviewPanelProps<{ bookId: string; bookTitle: string }>) {
+function NotebookPanel({ params }: IDockviewPanelProps<{ bookId: string; bookTitle: string }>) {
   const handleNavigateToCfi = useCallback(
     (cfi: string) => {
       findNavForBook(params.bookId)?.(cfi);
@@ -223,11 +192,7 @@ function NotebookPanel({
   const handleRegisterAppendHighlight = useCallback(
     (
       bookId: string,
-      fn: (attrs: {
-        highlightId: string;
-        cfiRange: string;
-        text: string;
-      }) => void,
+      fn: (attrs: { highlightId: string; cfiRange: string; text: string }) => void,
     ) => {
       notebookCallbackMap.set(bookId, fn);
     },
@@ -249,10 +214,7 @@ function NotebookPanel({
   );
 }
 
-const components: Record<
-  string,
-  React.FunctionComponent<IDockviewPanelProps<any>>
-> = {
+const components: Record<string, React.FunctionComponent<IDockviewPanelProps<any>>> = {
   "book-reader": BookReaderPanel,
   notebook: NotebookPanel,
 };
@@ -273,13 +235,7 @@ function WatermarkPanel(_props: IWatermarkPanelProps) {
   );
 }
 
-function WorkspaceSidebarBookContent({
-  book,
-  collapsed,
-}: {
-  book: Book;
-  collapsed: boolean;
-}) {
+function WorkspaceSidebarBookContent({ book, collapsed }: { book: Book; collapsed: boolean }) {
   return (
     <>
       {book.coverImage ? (
@@ -292,9 +248,7 @@ function WorkspaceSidebarBookContent({
       {!collapsed && (
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{book.title}</p>
-          <p className="truncate text-xs text-muted-foreground">
-            {book.author}
-          </p>
+          <p className="truncate text-xs text-muted-foreground">{book.author}</p>
         </div>
       )}
     </>
@@ -317,25 +271,19 @@ function WorkspaceTocPopoverItem({
   const [open, setOpen] = useState(false);
   const suppressHoverUntil = useRef(0);
 
-  const handleOpenChange = useCallback(
-    (nextOpen: boolean, details: { reason: string }) => {
-      if (
-        !nextOpen &&
-        (details.reason === "outside-press" || details.reason === "escape-key")
-      ) {
-        suppressHoverUntil.current = Date.now() + 400;
-        setOpen(false);
+  const handleOpenChange = useCallback((nextOpen: boolean, details: { reason: string }) => {
+    if (!nextOpen && (details.reason === "outside-press" || details.reason === "escape-key")) {
+      suppressHoverUntil.current = Date.now() + 400;
+      setOpen(false);
+      return;
+    }
+    if (nextOpen && details.reason === "trigger-hover") {
+      if (Date.now() < suppressHoverUntil.current) {
         return;
       }
-      if (nextOpen && details.reason === "trigger-hover") {
-        if (Date.now() < suppressHoverUntil.current) {
-          return;
-        }
-      }
-      setOpen(nextOpen);
-    },
-    [],
-  );
+    }
+    setOpen(nextOpen);
+  }, []);
 
   const handleNavigate = useCallback(
     (href: string) => {
@@ -370,9 +318,7 @@ function WorkspaceTocPopoverItem({
         sideOffset={8}
         className="max-h-80 w-56 overflow-y-auto p-1.5"
       >
-        <p className="px-2 py-1 text-xs font-medium text-muted-foreground">
-          Table of Contents
-        </p>
+        <p className="px-2 py-1 text-xs font-medium text-muted-foreground">Table of Contents</p>
         <ul>
           <TocList entries={toc} onNavigate={handleNavigate} />
         </ul>
@@ -546,17 +492,14 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
 
     // Record last-opened timestamp
     AppRuntime.runPromise(
-      WorkspaceService.pipe(
-        Effect.andThen((s) => s.saveLastOpened(book.id, Date.now())),
-      ),
+      WorkspaceService.pipe(Effect.andThen((s) => s.saveLastOpened(book.id, Date.now()))),
     ).catch(console.error);
 
     if (!forceNew) {
       // Focus first existing panel for this book
       const existing = api.panels.find(
         (p) =>
-          p.id.startsWith("book-") &&
-          (p.params as Record<string, unknown>)?.bookId === book.id,
+          p.id.startsWith("book-") && (p.params as Record<string, unknown>)?.bookId === book.id,
       );
       if (existing) {
         existing.focus();
@@ -587,9 +530,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
 
     // Find an open book panel to position the notebook to its right
     const bookPanel = api.panels.find(
-      (p) =>
-        p.id.startsWith("book-") &&
-        (p.params as Record<string, unknown>)?.bookId === book.id,
+      (p) => p.id.startsWith("book-") && (p.params as Record<string, unknown>)?.bookId === book.id,
     );
 
     api.addPanel({
@@ -613,37 +554,30 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
     setBooks((prev) => [...prev, book]);
   }, []);
 
-  const handleFileInput = useCallback(
-    async (e: ChangeEvent<HTMLInputElement>) => {
-      const files = e.target.files;
-      if (!files) return;
-      for (const file of Array.from(files)) {
-        if (!file.name.endsWith(".epub")) continue;
-        try {
-          const arrayBuffer = await file.arrayBuffer();
-          const metadata = await AppRuntime.runPromise(
-            parseEpubEffect(arrayBuffer),
-          );
-          const book: Book = {
-            id: crypto.randomUUID(),
-            title: metadata.title,
-            author: metadata.author,
-            coverImage: metadata.coverImage,
-            data: arrayBuffer,
-          };
-          await AppRuntime.runPromise(
-            BookService.pipe(Effect.andThen((s) => s.saveBook(book))),
-          );
-          setBooks((prev) => [...prev, book]);
-        } catch (err) {
-          console.error("Failed to add book:", err);
-        }
+  const handleFileInput = useCallback(async (e: ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    for (const file of Array.from(files)) {
+      if (!file.name.endsWith(".epub")) continue;
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const metadata = await AppRuntime.runPromise(parseEpubEffect(arrayBuffer));
+        const book: Book = {
+          id: crypto.randomUUID(),
+          title: metadata.title,
+          author: metadata.author,
+          coverImage: metadata.coverImage,
+          data: arrayBuffer,
+        };
+        await AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.saveBook(book))));
+        setBooks((prev) => [...prev, book]);
+      } catch (err) {
+        console.error("Failed to add book:", err);
       }
-      // Reset input so the same file can be re-selected
-      e.target.value = "";
-    },
-    [],
-  );
+    }
+    // Reset input so the same file can be re-selected
+    e.target.value = "";
+  }, []);
 
   return (
     <DropZone onBookAdded={handleBookAdded}>
@@ -719,17 +653,13 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
                           book={book}
                           collapsed={collapsed}
                           toc={bookToc}
-                          onOpenBook={(e) =>
-                            openBook(book, e.metaKey || e.ctrlKey)
-                          }
+                          onOpenBook={(e) => openBook(book, e.metaKey || e.ctrlKey)}
                           isOpen={openBookIds.has(book.id)}
                         />
                       ) : (
                         <button
                           type="button"
-                          onClick={(e) =>
-                            openBook(book, e.metaKey || e.ctrlKey)
-                          }
+                          onClick={(e) => openBook(book, e.metaKey || e.ctrlKey)}
                           className={cn(
                             "flex w-full items-center rounded-md text-left hover:bg-accent",
                             {
@@ -740,19 +670,14 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
                           )}
                           title={book.title}
                         >
-                          <WorkspaceSidebarBookContent
-                            book={book}
-                            collapsed={collapsed}
-                          />
+                          <WorkspaceSidebarBookContent book={book} collapsed={collapsed} />
                         </button>
                       )}
                       {!collapsed && (
                         <div className="absolute top-1/2 right-1 flex -translate-y-1/2 gap-0.5 opacity-0 group-hover/book:opacity-100">
                           <button
                             type="button"
-                            onClick={(e) =>
-                              openBook(book, e.metaKey || e.ctrlKey)
-                            }
+                            onClick={(e) => openBook(book, e.metaKey || e.ctrlKey)}
                             className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                             title="Open book"
                           >
@@ -777,9 +702,12 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
           <div className="border-t h-10 flex items-center @container">
             <Link
               to="/settings"
-              className={cn("flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground", {
-                "mx-auto": collapsed
-              })}
+              className={cn(
+                "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground",
+                {
+                  "mx-auto": collapsed,
+                },
+              )}
               title="Settings"
             >
               <Settings className="size-4" />

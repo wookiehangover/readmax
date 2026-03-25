@@ -23,7 +23,10 @@ interface WorkspaceNotebookProps {
   bookId: string;
   bookTitle?: string;
   onNavigateToCfi?: (cfi: string) => void;
-  onRegisterAppendHighlight?: (bookId: string, fn: (attrs: HighlightReferenceAttrs) => void) => void;
+  onRegisterAppendHighlight?: (
+    bookId: string,
+    fn: (attrs: HighlightReferenceAttrs) => void,
+  ) => void;
   onUnregisterAppendHighlight?: (bookId: string) => void;
 }
 
@@ -119,19 +122,13 @@ export function WorkspaceNotebook({
     <div className="flex h-full flex-col bg-card">
       <div className="flex items-center justify-between border-b px-4 py-3">
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-semibold">
-            {displayTitle ?? "Notebook"}
-          </h2>
+          <h2 className="truncate text-sm font-semibold">{displayTitle ?? "Notebook"}</h2>
           {displayAuthor && (
             <p className="truncate text-xs text-muted-foreground">{displayAuthor}</p>
           )}
         </div>
         <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button variant="ghost" size="icon-xs" />
-            }
-          >
+          <DropdownMenuTrigger render={<Button variant="ghost" size="icon-xs" />}>
             <Ellipsis className="size-3.5" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
@@ -139,10 +136,7 @@ export function WorkspaceNotebook({
               <FileText className="size-4" />
               Details
             </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={handleExportMarkdown}
-              disabled={!content}
-            >
+            <DropdownMenuItem onClick={handleExportMarkdown} disabled={!content}>
               <Download className="size-4" />
               Export as Markdown
             </DropdownMenuItem>
@@ -163,4 +157,3 @@ export function WorkspaceNotebook({
     </div>
   );
 }
-

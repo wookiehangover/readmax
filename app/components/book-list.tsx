@@ -1,11 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { NavLink, useParams } from "react-router";
 import { ScrollArea } from "~/components/ui/scroll-area";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "~/components/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import type { Book } from "~/lib/book-store";
 import { useReaderNavigation, type TocEntry } from "~/lib/reader-context";
 import { cn } from "~/lib/utils";
@@ -64,13 +60,7 @@ export function TocList({
   );
 }
 
-function BookItemContent({
-  book,
-  collapsed,
-}: {
-  book: Book;
-  collapsed: boolean;
-}) {
+function BookItemContent({ book, collapsed }: { book: Book; collapsed: boolean }) {
   return (
     <>
       {book.coverImage ? (
@@ -106,26 +96,23 @@ function TocPopoverItem({
   const [open, setOpen] = useState(false);
   const suppressHoverUntil = useRef(0);
 
-  const handleOpenChange = useCallback(
-    (nextOpen: boolean, details: { reason: string }) => {
-      // After an explicit dismiss (outside click or escape), suppress hover
-      // re-opens for a short window so the popover stays closed.
-      if (!nextOpen && (details.reason === "outside-press" || details.reason === "escape-key")) {
-        suppressHoverUntil.current = Date.now() + 400;
-        setOpen(false);
-        return;
-      }
+  const handleOpenChange = useCallback((nextOpen: boolean, details: { reason: string }) => {
+    // After an explicit dismiss (outside click or escape), suppress hover
+    // re-opens for a short window so the popover stays closed.
+    if (!nextOpen && (details.reason === "outside-press" || details.reason === "escape-key")) {
+      suppressHoverUntil.current = Date.now() + 400;
+      setOpen(false);
+      return;
+    }
 
-      if (nextOpen && details.reason === "trigger-hover") {
-        if (Date.now() < suppressHoverUntil.current) {
-          return; // suppress
-        }
+    if (nextOpen && details.reason === "trigger-hover") {
+      if (Date.now() < suppressHoverUntil.current) {
+        return; // suppress
       }
+    }
 
-      setOpen(nextOpen);
-    },
-    [],
-  );
+    setOpen(nextOpen);
+  }, []);
 
   const handleNavigate = useCallback(
     (href: string) => {

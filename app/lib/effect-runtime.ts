@@ -8,7 +8,12 @@ import { WorkspaceServiceLive } from "~/lib/workspace-store";
  * Application-wide layer that composes all service layers.
  * Add service layers here as they are created.
  */
-export const AppLayer = Layer.mergeAll(BookServiceLive, EpubServiceLive, AnnotationServiceLive, WorkspaceServiceLive);
+export const AppLayer = Layer.mergeAll(
+  BookServiceLive,
+  EpubServiceLive,
+  AnnotationServiceLive,
+  WorkspaceServiceLive,
+);
 
 /**
  * Shared ManagedRuntime for the application.

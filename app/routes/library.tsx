@@ -20,10 +20,7 @@ import {
 } from "~/components/ui/sheet";
 
 export function meta(_args: Route.MetaArgs) {
-  return [
-    { title: "Reader" },
-    { name: "description", content: "A browser-based ebook reader" },
-  ];
+  return [{ title: "Reader" }, { name: "description", content: "A browser-based ebook reader" }];
 }
 
 export async function clientLoader() {
@@ -117,9 +114,7 @@ export default function LibraryLayout({ loaderData }: Route.ComponentProps) {
                 <SheetContent side="left">
                   <SheetHeader>
                     <SheetTitle>Library</SheetTitle>
-                    <SheetDescription className="sr-only">
-                      Book library navigation
-                    </SheetDescription>
+                    <SheetDescription className="sr-only">Book library navigation</SheetDescription>
                   </SheetHeader>
                   <BookList books={books} collapsed={false} />
                   <div className="flex items-center gap-1 border-t px-2 py-2">

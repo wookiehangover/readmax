@@ -4,11 +4,7 @@ import type EpubBook from "epubjs/types/book";
 import type Rendition from "epubjs/types/rendition";
 import { Button } from "~/components/ui/button";
 import { ChevronLeft, ChevronRight, Notebook, TableOfContents } from "lucide-react";
-import {
-  Popover,
-  PopoverTrigger,
-  PopoverContent,
-} from "~/components/ui/popover";
+import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover";
 import { TocList } from "~/components/book-list";
 import { Effect } from "effect";
 import { BookService, type Book } from "~/lib/book-store";
@@ -22,7 +18,7 @@ import { useHighlights } from "~/lib/use-highlights";
 import { useReaderNavigation, type TocEntry } from "~/lib/reader-context";
 import type { TiptapEditorHandle } from "~/components/tiptap-editor";
 import type { HighlightReferenceAttrs } from "~/lib/tiptap-highlight-node";
-import { cn } from "~/lib/utils"
+import { cn } from "~/lib/utils";
 import { resolveThemeColors } from "~/lib/epub-theme-utils";
 
 interface BookReaderProps {
@@ -179,11 +175,17 @@ export function BookReader({ book }: BookReaderProps) {
     const darkColors = resolveThemeColors("dark");
 
     rendition.themes.register("light", {
-      body: { color: `${lightColors.foreground} !important`, background: `${lightColors.background} !important` },
+      body: {
+        color: `${lightColors.foreground} !important`,
+        background: `${lightColors.background} !important`,
+      },
       a: { color: "inherit !important" },
     });
     rendition.themes.register("dark", {
-      body: { color: `${darkColors.foreground} !important`, background: `${darkColors.background} !important` },
+      body: {
+        color: `${darkColors.foreground} !important`,
+        background: `${darkColors.background} !important`,
+      },
       a: { color: "inherit !important" },
     });
 
@@ -226,8 +228,8 @@ export function BookReader({ book }: BookReaderProps) {
       try {
         const cachedLocations = await AppRuntime.runPromise(
           BookService.pipe(Effect.andThen((s) => s.getLocations(book.id))).pipe(
-            Effect.catchAll(() => Effect.succeed(null))
-          )
+            Effect.catchAll(() => Effect.succeed(null)),
+          ),
         );
         if (cachedLocations) {
           epubBook.locations.load(cachedLocations);
@@ -235,7 +237,7 @@ export function BookReader({ book }: BookReaderProps) {
           await epubBook.locations.generate(1500);
           const json = (epubBook.locations as any).save() as string;
           AppRuntime.runPromise(
-            BookService.pipe(Effect.andThen((s) => s.saveLocations(book.id, json)))
+            BookService.pipe(Effect.andThen((s) => s.saveLocations(book.id, json))),
           ).catch(console.error);
         }
         setTotalPages((epubBook.locations as any).total as number);
@@ -295,7 +297,15 @@ export function BookReader({ book }: BookReaderProps) {
       bookRef.current = null;
       renditionRef.current = null;
     };
-  }, [book.id, book.data, settings.readerLayout, loadAndApplyHighlights, registerSelectionHandler, setToc, setNavigateToHref]);
+  }, [
+    book.id,
+    book.data,
+    settings.readerLayout,
+    loadAndApplyHighlights,
+    registerSelectionHandler,
+    setToc,
+    setNavigateToHref,
+  ]);
 
   useEffect(() => {
     const rendition = renditionRef.current;
@@ -307,11 +317,17 @@ export function BookReader({ book }: BookReaderProps) {
     const darkColors = resolveThemeColors("dark");
 
     rendition.themes.register("light", {
-      body: { color: `${lightColors.foreground} !important`, background: `${lightColors.background} !important` },
+      body: {
+        color: `${lightColors.foreground} !important`,
+        background: `${lightColors.background} !important`,
+      },
       a: { color: "inherit !important" },
     });
     rendition.themes.register("dark", {
-      body: { color: `${darkColors.foreground} !important`, background: `${darkColors.background} !important` },
+      body: {
+        color: `${darkColors.foreground} !important`,
+        background: `${darkColors.background} !important`,
+      },
       a: { color: "inherit !important" },
     });
 
@@ -395,7 +411,10 @@ export function BookReader({ book }: BookReaderProps) {
   return (
     <div className="flex h-full">
       <div className="flex min-w-0 flex-1 flex-col">
-        <div ref={containerRef} className={cn("flex-1 overflow-hidden", { "px-8 pt-10 pb-4": settings.readerLayout })} />
+        <div
+          ref={containerRef}
+          className={cn("flex-1 overflow-hidden", { "px-8 pt-10 pb-4": settings.readerLayout })}
+        />
         <div className="relative flex items-center justify-center border-t px-2 h-12 md:h-10">
           <div className="absolute left-2 flex items-center gap-1.5">
             {totalPages !== null && currentPage !== null ? (
@@ -410,11 +429,21 @@ export function BookReader({ book }: BookReaderProps) {
           </div>
           {!isScrollMode && (
             <div className="flex items-center gap-4">
-              <Button variant="ghost" size="icon" className="size-10 md:size-8" onClick={handlePrev}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-10 md:size-8"
+                onClick={handlePrev}
+              >
                 <ChevronLeft className="size-5 md:size-4" />
                 <span className="sr-only">Previous page</span>
               </Button>
-              <Button variant="ghost" size="icon" className="size-10 md:size-8" onClick={handleNext}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-10 md:size-8"
+                onClick={handleNext}
+              >
                 <ChevronRight className="size-5 md:size-4" />
                 <span className="sr-only">Next page</span>
               </Button>
@@ -435,14 +464,26 @@ export function BookReader({ book }: BookReaderProps) {
               <Popover open={tocOpen} onOpenChange={setTocOpen}>
                 <PopoverTrigger
                   render={
-                    <Button variant="ghost" size="icon" className="size-10 md:size-8" title="Table of Contents" />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-10 md:size-8"
+                      title="Table of Contents"
+                    />
                   }
                 >
                   <TableOfContents className="size-5 md:size-4" />
                   <span className="sr-only">Table of Contents</span>
                 </PopoverTrigger>
-                <PopoverContent side="top" align="end" sideOffset={8} className="max-h-80 w-64 overflow-y-auto p-1.5">
-                  <p className="px-2 py-1 text-xs font-medium text-muted-foreground">Table of Contents</p>
+                <PopoverContent
+                  side="top"
+                  align="end"
+                  sideOffset={8}
+                  className="max-h-80 w-64 overflow-y-auto p-1.5"
+                >
+                  <p className="px-2 py-1 text-xs font-medium text-muted-foreground">
+                    Table of Contents
+                  </p>
                   <ul>
                     <TocList
                       entries={toc}

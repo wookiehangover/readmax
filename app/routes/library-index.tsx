@@ -16,10 +16,7 @@ import {
 } from "~/components/ui/dropdown-menu";
 
 export function meta(_args: Route.MetaArgs) {
-  return [
-    { title: "Reader" },
-    { name: "description", content: "A browser-based ebook reader" },
-  ];
+  return [{ title: "Reader" }, { name: "description", content: "A browser-based ebook reader" }];
 }
 
 export async function clientLoader() {
@@ -48,27 +45,15 @@ function CoverImage({ coverImage, alt }: { coverImage: Blob; alt: string }) {
 
   if (!url) return null;
 
-  return (
-    <img
-      src={url}
-      alt={alt}
-      className="aspect-[2/3] w-full rounded-lg object-cover"
-    />
-  );
+  return <img src={url} alt={alt} className="aspect-[2/3] w-full rounded-lg object-cover" />;
 }
 
 function CoverPlaceholder({ title, author }: { title: string; author: string }) {
   return (
     <div className="flex aspect-[2/3] w-full flex-col items-center justify-center rounded-lg bg-muted p-3 text-center">
       <BookOpen className="mb-2 size-8 text-muted-foreground/50" />
-      <p className="line-clamp-3 text-sm font-medium text-muted-foreground">
-        {title}
-      </p>
-      {author && (
-        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground/70">
-          {author}
-        </p>
-      )}
+      <p className="line-clamp-3 text-sm font-medium text-muted-foreground">{title}</p>
+      {author && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground/70">{author}</p>}
     </div>
   );
 }
@@ -95,63 +80,57 @@ export default function LibraryIndex({ loaderData }: Route.ComponentProps) {
     setBooks((prev) => [...prev, book]);
   }, []);
 
-  const handleFileInput = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = e.target.files;
-      if (!files) return;
-      for (const file of Array.from(files)) {
-        if (!file.name.endsWith(".epub")) continue;
-        try {
-          const arrayBuffer = await file.arrayBuffer();
-          const metadata = await AppRuntime.runPromise(parseEpubEffect(arrayBuffer));
-          const book: Book = {
-            id: crypto.randomUUID(),
-            title: metadata.title,
-            author: metadata.author,
-            coverImage: metadata.coverImage,
-            data: arrayBuffer,
-          };
-          await AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.saveBook(book))));
-          setBooks((prev) => [...prev, book]);
-        } catch (err) {
-          console.error("Failed to add book:", err);
-        }
+  const handleFileInput = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    for (const file of Array.from(files)) {
+      if (!file.name.endsWith(".epub")) continue;
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const metadata = await AppRuntime.runPromise(parseEpubEffect(arrayBuffer));
+        const book: Book = {
+          id: crypto.randomUUID(),
+          title: metadata.title,
+          author: metadata.author,
+          coverImage: metadata.coverImage,
+          data: arrayBuffer,
+        };
+        await AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.saveBook(book))));
+        setBooks((prev) => [...prev, book]);
+      } catch (err) {
+        console.error("Failed to add book:", err);
       }
-      e.target.value = "";
-    },
-    [],
-  );
+    }
+    e.target.value = "";
+  }, []);
 
-  const handleDeleteBook = useCallback(
-    async (bookId: string) => {
-      const confirmed = window.confirm("Are you sure you want to delete this book?");
-      if (!confirmed) return;
+  const handleDeleteBook = useCallback(async (bookId: string) => {
+    const confirmed = window.confirm("Are you sure you want to delete this book?");
+    if (!confirmed) return;
 
-      const program = Effect.gen(function* () {
-        const bookSvc = yield* BookService;
-        const annotationSvc = yield* AnnotationService;
+    const program = Effect.gen(function* () {
+      const bookSvc = yield* BookService;
+      const annotationSvc = yield* AnnotationService;
 
-        // Delete all highlights for this book
-        const highlights = yield* annotationSvc.getHighlightsByBook(bookId);
-        for (const hl of highlights) {
-          yield* annotationSvc.deleteHighlight(hl.id);
-        }
+      // Delete all highlights for this book
+      const highlights = yield* annotationSvc.getHighlightsByBook(bookId);
+      for (const hl of highlights) {
+        yield* annotationSvc.deleteHighlight(hl.id);
+      }
 
-        // Delete the book itself
-        yield* bookSvc.deleteBook(bookId);
-      }).pipe(
-        Effect.catchAll((error) =>
-          Effect.sync(() => {
-            console.error("Failed to delete book:", error);
-          }),
-        ),
-      );
+      // Delete the book itself
+      yield* bookSvc.deleteBook(bookId);
+    }).pipe(
+      Effect.catchAll((error) =>
+        Effect.sync(() => {
+          console.error("Failed to delete book:", error);
+        }),
+      ),
+    );
 
-      await AppRuntime.runPromise(program);
-      setBooks((prev) => prev.filter((b) => b.id !== bookId));
-    },
-    [],
-  );
+    await AppRuntime.runPromise(program);
+    setBooks((prev) => prev.filter((b) => b.id !== bookId));
+  }, []);
 
   return (
     <DropZone onBookAdded={handleBookAdded}>
@@ -174,10 +153,7 @@ export default function LibraryIndex({ loaderData }: Route.ComponentProps) {
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
             {books.map((book) => (
               <div key={book.id} className="group relative">
-                <Link
-                  to={`/books/${book.id}`}
-                  className="block"
-                >
+                <Link to={`/books/${book.id}`} className="block">
                   <div className="overflow-hidden rounded-lg shadow-sm transition-shadow group-hover:shadow-md">
                     {book.coverImage ? (
                       <CoverImage coverImage={book.coverImage} alt={book.title} />
@@ -186,9 +162,7 @@ export default function LibraryIndex({ loaderData }: Route.ComponentProps) {
                     )}
                   </div>
                   <p className="mt-2 truncate text-sm font-medium">{book.title}</p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {book.author}
-                  </p>
+                  <p className="truncate text-xs text-muted-foreground">{book.author}</p>
                 </Link>
                 <DropdownMenu>
                   <DropdownMenuTrigger
@@ -199,9 +173,7 @@ export default function LibraryIndex({ loaderData }: Route.ComponentProps) {
                     <Ellipsis className="size-4" />
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      onClick={() => navigate(`/books/${book.id}/details`)}
-                    >
+                    <DropdownMenuItem onClick={() => navigate(`/books/${book.id}/details`)}>
                       <FileText className="size-4" />
                       Details
                     </DropdownMenuItem>

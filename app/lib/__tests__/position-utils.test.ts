@@ -17,9 +17,9 @@ describe("resolveStartCfi", () => {
   });
 
   it("returns panel-specific position when latestCfi is null and panelId position exists", async () => {
-    const getPosition = vi.fn<(key: string) => Promise<string | null>>().mockImplementation(
-      async (key) => (key === "panel-1" ? "epubcfi(/6/20)" : null),
-    );
+    const getPosition = vi
+      .fn<(key: string) => Promise<string | null>>()
+      .mockImplementation(async (key) => (key === "panel-1" ? "epubcfi(/6/20)" : null));
 
     const result = await resolveStartCfi({
       latestCfi: null,
@@ -35,9 +35,9 @@ describe("resolveStartCfi", () => {
   });
 
   it("falls back to bookId position when panelId position is null", async () => {
-    const getPosition = vi.fn<(key: string) => Promise<string | null>>().mockImplementation(
-      async (key) => (key === "book-1" ? "epubcfi(/6/30)" : null),
-    );
+    const getPosition = vi
+      .fn<(key: string) => Promise<string | null>>()
+      .mockImplementation(async (key) => (key === "book-1" ? "epubcfi(/6/30)" : null));
 
     const result = await resolveStartCfi({
       latestCfi: null,
@@ -67,9 +67,9 @@ describe("resolveStartCfi", () => {
   });
 
   it("skips panelId lookup when panelId is undefined", async () => {
-    const getPosition = vi.fn<(key: string) => Promise<string | null>>().mockImplementation(
-      async (key) => (key === "book-1" ? "epubcfi(/6/40)" : null),
-    );
+    const getPosition = vi
+      .fn<(key: string) => Promise<string | null>>()
+      .mockImplementation(async (key) => (key === "book-1" ? "epubcfi(/6/40)" : null));
 
     const result = await resolveStartCfi({
       latestCfi: null,
@@ -101,7 +101,9 @@ describe("resolveStartCfi", () => {
 
 describe("savePositionDualKey", () => {
   it("saves to both panelId and bookId keys", async () => {
-    const savePosition = vi.fn<(key: string, cfi: string) => Promise<void>>().mockResolvedValue(undefined);
+    const savePosition = vi
+      .fn<(key: string, cfi: string) => Promise<void>>()
+      .mockResolvedValue(undefined);
 
     await savePositionDualKey({
       panelId: "panel-1",
@@ -116,7 +118,9 @@ describe("savePositionDualKey", () => {
   });
 
   it("saves only to bookId when panelId is undefined", async () => {
-    const savePosition = vi.fn<(key: string, cfi: string) => Promise<void>>().mockResolvedValue(undefined);
+    const savePosition = vi
+      .fn<(key: string, cfi: string) => Promise<void>>()
+      .mockResolvedValue(undefined);
 
     await savePositionDualKey({
       panelId: undefined,
@@ -131,9 +135,11 @@ describe("savePositionDualKey", () => {
 
   it("both saves receive the same CFI value", async () => {
     const saved: Array<{ key: string; cfi: string }> = [];
-    const savePosition = vi.fn<(key: string, cfi: string) => Promise<void>>().mockImplementation(
-      async (key, cfi) => { saved.push({ key, cfi }); },
-    );
+    const savePosition = vi
+      .fn<(key: string, cfi: string) => Promise<void>>()
+      .mockImplementation(async (key, cfi) => {
+        saved.push({ key, cfi });
+      });
 
     const cfi = "epubcfi(/6/70)";
     await savePositionDualKey({
@@ -147,4 +153,3 @@ describe("savePositionDualKey", () => {
     expect(saved.every((s) => s.cfi === cfi)).toBe(true);
   });
 });
-

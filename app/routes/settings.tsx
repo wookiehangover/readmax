@@ -96,11 +96,23 @@ function StepperControl({
     <div className="flex items-center justify-between">
       <span className="text-sm text-muted-foreground">{label}</span>
       <div className="flex items-center gap-1.5">
-        <Button variant="outline" size="icon" className="size-7" onClick={onDecrement} aria-label={`Decrease ${label.toLowerCase()}`}>
+        <Button
+          variant="outline"
+          size="icon"
+          className="size-7"
+          onClick={onDecrement}
+          aria-label={`Decrease ${label.toLowerCase()}`}
+        >
           <Minus className="size-3" />
         </Button>
         <span className="w-12 text-center text-sm tabular-nums">{displayValue}</span>
-        <Button variant="outline" size="icon" className="size-7" onClick={onIncrement} aria-label={`Increase ${label.toLowerCase()}`}>
+        <Button
+          variant="outline"
+          size="icon"
+          className="size-7"
+          onClick={onIncrement}
+          aria-label={`Increase ${label.toLowerCase()}`}
+        >
           <Plus className="size-3" />
         </Button>
       </div>
@@ -115,7 +127,10 @@ export default function SettingsPage() {
     <div className="flex min-h-dvh flex-col bg-background">
       <header className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="mx-auto flex h-12 max-w-2xl items-center gap-3 px-4">
-          <Link to="/" className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
+          <Link
+            to="/"
+            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
             <ArrowLeft className="size-4" />
           </Link>
           <h1 className="text-lg font-semibold">Settings</h1>
@@ -125,7 +140,9 @@ export default function SettingsPage() {
       <main className="mx-auto w-full max-w-2xl space-y-8 px-4 py-8">
         {/* Appearance */}
         <section>
-          <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-muted-foreground">Appearance</h2>
+          <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-muted-foreground">
+            Appearance
+          </h2>
           <div className="rounded-lg border bg-card p-4">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">Theme</span>
@@ -145,7 +162,9 @@ export default function SettingsPage() {
         </section>
         {/* Reader Defaults */}
         <section>
-          <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-muted-foreground">Reader Defaults</h2>
+          <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-muted-foreground">
+            Reader Defaults
+          </h2>
           <div className="space-y-4 rounded-lg border bg-card p-4">
             {/* Layout */}
             <div className="flex items-center justify-between">
@@ -171,7 +190,9 @@ export default function SettingsPage() {
               <div className="space-y-3">
                 {fontSections.map((section) => (
                   <div key={section.label}>
-                    <span className="mb-1 block text-xs text-muted-foreground">{section.label}</span>
+                    <span className="mb-1 block text-xs text-muted-foreground">
+                      {section.label}
+                    </span>
                     <div className="flex flex-wrap gap-1.5">
                       {section.options.map((opt) => (
                         <OptionButton
@@ -204,8 +225,16 @@ export default function SettingsPage() {
               label="Line Height"
               value={settings.lineHeight}
               displayValue={settings.lineHeight.toFixed(1)}
-              onDecrement={() => updateSettings({ lineHeight: Math.max(1.0, Math.round((settings.lineHeight - 0.1) * 10) / 10) })}
-              onIncrement={() => updateSettings({ lineHeight: Math.min(2.5, Math.round((settings.lineHeight + 0.1) * 10) / 10) })}
+              onDecrement={() =>
+                updateSettings({
+                  lineHeight: Math.max(1.0, Math.round((settings.lineHeight - 0.1) * 10) / 10),
+                })
+              }
+              onIncrement={() =>
+                updateSettings({
+                  lineHeight: Math.min(2.5, Math.round((settings.lineHeight + 0.1) * 10) / 10),
+                })
+              }
             />
           </div>
         </section>
@@ -213,4 +242,3 @@ export default function SettingsPage() {
     </div>
   );
 }
-

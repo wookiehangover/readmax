@@ -13,7 +13,6 @@ import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
 
-
 export function meta({ data }: Route.MetaArgs) {
   const title = data?.book?.title ?? "Reader";
   return [{ title }];
@@ -81,10 +80,7 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
 
   // Load notebook for this book
   const { data: notebook, isLoading: notebookLoading } = useEffectQuery(
-    () =>
-      AnnotationService.pipe(
-        Effect.andThen((svc) => svc.getNotebook(book.id)),
-      ),
+    () => AnnotationService.pipe(Effect.andThen((svc) => svc.getNotebook(book.id))),
     [book.id],
   );
   const notebookContent = notebook?.content ?? null;
@@ -123,9 +119,7 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
     setSaved(false);
     try {
       const updatedBook: Book = { ...book, title, author };
-      await AppRuntime.runPromise(
-        BookService.pipe(Effect.andThen((s) => s.saveBook(updatedBook))),
-      );
+      await AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.saveBook(updatedBook))));
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {
@@ -160,22 +154,14 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
             <label htmlFor="title" className="mb-1 block text-sm font-medium">
               Title
             </label>
-            <Input
-              id="title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
+            <Input id="title" value={title} onChange={(e) => setTitle(e.target.value)} />
           </div>
 
           <div>
             <label htmlFor="author" className="mb-1 block text-sm font-medium">
               Author
             </label>
-            <Input
-              id="author"
-              value={author}
-              onChange={(e) => setAuthor(e.target.value)}
-            />
+            <Input id="author" value={author} onChange={(e) => setAuthor(e.target.value)} />
           </div>
 
           <div className="mt-2">
@@ -189,10 +175,7 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
           <div className="flex min-w-0 flex-1 flex-col border-t pt-8 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-8">
             <h2 className="mb-2 text-sm font-semibold">Notes</h2>
             <ScrollArea className="flex-1">
-              <TiptapEditor
-                content={notebookContent}
-                onUpdate={handleNotebookUpdate}
-              />
+              <TiptapEditor content={notebookContent} onUpdate={handleNotebookUpdate} />
             </ScrollArea>
           </div>
         )}
@@ -200,4 +183,3 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
     </div>
   );
 }
-

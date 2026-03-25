@@ -28,7 +28,10 @@ export class WorkspaceService extends Context.Tag("WorkspaceService")<
   {
     readonly saveLayout: (layout: SerializedDockview) => Effect.Effect<void, WorkspaceError>;
     readonly getLayout: () => Effect.Effect<SerializedDockview | null, WorkspaceError>;
-    readonly saveLastOpened: (bookId: string, timestamp: number) => Effect.Effect<void, WorkspaceError>;
+    readonly saveLastOpened: (
+      bookId: string,
+      timestamp: number,
+    ) => Effect.Effect<void, WorkspaceError>;
     readonly getLastOpenedMap: () => Effect.Effect<Map<string, number>, WorkspaceError>;
   }
 >() {}
@@ -64,4 +67,3 @@ export const WorkspaceServiceLive = Layer.succeed(WorkspaceService, {
       catch: (cause) => new WorkspaceError({ operation: "getLastOpenedMap", cause }),
     }),
 });
-

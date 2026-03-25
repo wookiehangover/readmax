@@ -51,4 +51,3 @@ export function resolveThemeColors(mode: "light" | "dark") {
 
   return { background, foreground };
 }
-

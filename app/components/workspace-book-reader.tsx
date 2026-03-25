@@ -22,6 +22,7 @@ import { useHighlights } from "~/lib/use-highlights";
 import { useEffectQuery } from "~/lib/use-effect-query";
 import { cn } from "~/lib/utils";
 import { resolveThemeColors } from "~/lib/epub-theme-utils";
+import { resolveStartCfi, savePositionDualKey } from "~/lib/position-utils";
 import type { DockviewPanelApi } from "dockview";
 import type { TocEntry } from "~/lib/reader-context";
 
@@ -172,14 +173,13 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
     }
     const cfi = latestCfiRef.current;
     if (cfi) {
-      const panelId = panelApi?.id;
-      const saveBook = BookService.pipe(Effect.andThen((s) => s.savePosition(book.id, cfi)));
-      const savePanel = panelId
-        ? BookService.pipe(Effect.andThen((s) => s.savePosition(panelId, cfi)))
-        : Effect.void;
-      AppRuntime.runPromise(
-        Effect.all([saveBook, savePanel], { concurrency: "unbounded" }),
-      ).catch((err) => console.error("Failed to flush reading position:", err));
+      savePositionDualKey({
+        panelId: panelApi?.id,
+        bookId: book.id,
+        cfi,
+        savePosition: (key, val) =>
+          AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.savePosition(key, val)))),
+      }).catch((err) => console.error("Failed to flush reading position:", err));
     }
   }, [book.id, panelApi?.id]);
   const [toc, setLocalToc] = useState<TocEntry[]>([]);
@@ -300,17 +300,13 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
 
       // Restore reading position: prefer in-memory CFI, then panel-specific
       // position (for refresh with restored layout), then book-level fallback.
-      let startCfi = latestCfiRef.current;
-      if (!startCfi && panelApi?.id) {
-        startCfi = await AppRuntime.runPromise(
-          BookService.pipe(Effect.andThen((s) => s.getPosition(panelApi.id))),
-        );
-      }
-      if (!startCfi) {
-        startCfi = await AppRuntime.runPromise(
-          BookService.pipe(Effect.andThen((s) => s.getPosition(book.id))),
-        );
-      }
+      const startCfi = await resolveStartCfi({
+        latestCfi: latestCfiRef.current,
+        panelId: panelApi?.id,
+        bookId: book.id,
+        getPosition: (key) =>
+          AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.getPosition(key)))),
+      });
       await rendition.display(startCfi || undefined);
 
       const effectiveTheme = resolveTheme(settings.theme);
@@ -367,15 +363,13 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
           latestCfiRef.current = location.start.cfi;
           if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
           saveTimerRef.current = setTimeout(() => {
-            const cfi = location.start.cfi;
-            const panelId = panelApi?.id;
-            const saveBook = BookService.pipe(Effect.andThen((s) => s.savePosition(book.id, cfi)));
-            const savePanel = panelId
-              ? BookService.pipe(Effect.andThen((s) => s.savePosition(panelId, cfi)))
-              : Effect.void;
-            AppRuntime.runPromise(
-              Effect.all([saveBook, savePanel], { concurrency: "unbounded" }),
-            ).catch((err) => console.error("Failed to save reading position:", err));
+            savePositionDualKey({
+              panelId: panelApi?.id,
+              bookId: book.id,
+              cfi: location.start.cfi,
+              savePosition: (key, val) =>
+                AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.savePosition(key, val)))),
+            }).catch((err) => console.error("Failed to save reading position:", err));
           }, 1000);
         },
       );

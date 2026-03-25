@@ -136,6 +136,7 @@ export class MyError extends Data.TaggedError("MyError")<{
 - Use pnpm for all package management
 - Use conventional commits (e.g., `feat:`, `fix:`)
 - No emoji in commit messages
+- Prefer `cn()` with object syntax for conditional Tailwind classes instead of inline template literals
 - shadcn components use Base UI (not Radix) — check component APIs accordingly (e.g., `DropdownMenuLabel` must be inside `DropdownMenuGroup`)
 - When adding shadcn components: `pnpx shadcn@latest add <component>`
 - Prefer self-hosted fonts over CDN when font files are available locally

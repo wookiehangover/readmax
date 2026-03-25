@@ -172,7 +172,7 @@ body {
 .dockview-theme-app {
   --dv-paneview-active-outline-color: var(--ring);
   --dv-tabs-and-actions-container-font-size: 13px;
-  --dv-tabs-and-actions-container-height: 35px;
+  --dv-tabs-and-actions-container-height: 36px;
   --dv-drag-over-background-color: color-mix(in oklch, var(--accent) 50%, transparent);
   --dv-drag-over-border-color: var(--border);
   --dv-tabs-container-scrollbar-color: var(--muted-foreground);

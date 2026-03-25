@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo, type ChangeEvent } from "react";
+import { Link } from "react-router";
 import { Effect } from "effect";
 import {
   DockviewReact,
@@ -8,7 +9,7 @@ import {
   type IWatermarkPanelProps,
   type DockviewTheme,
 } from "dockview";
-import { BookOpen, NotebookPen, Plus, ArrowUpDown } from "lucide-react";
+import { BookOpen, NotebookPen, Plus, ArrowUpDown, Settings } from "lucide-react";
 import { BookCover, TocList } from "~/components/book-list";
 import {
   Popover,
@@ -26,7 +27,7 @@ import { AppRuntime } from "~/lib/effect-runtime";
 import { useSettings, type WorkspaceSortBy } from "~/lib/settings";
 import { useEffectQuery } from "~/lib/use-effect-query";
 import { cn } from "~/lib/utils";
-import { WorkspaceBookReader } from "~/components/workspace-book-reader";
+import { WorkspaceBookReader, type PanelTypographyParams } from "~/components/workspace-book-reader";
 import { WorkspaceNotebook } from "~/components/workspace-notebook";
 
 export function meta(_args: Route.MetaArgs) {
@@ -99,7 +100,7 @@ function findTocForBook(bookId: string): TocEntry[] | undefined {
 function BookReaderPanel({
   params,
   api,
-}: IDockviewPanelProps<{ bookId: string; bookTitle?: string }>) {
+}: IDockviewPanelProps<{ bookId: string; bookTitle?: string } & PanelTypographyParams>) {
   const handleRegister = useCallback((panelId: string, nav: (cfi: string) => void) => {
     navigationMap.set(panelId, nav);
   }, []);
@@ -150,10 +151,19 @@ function BookReaderPanel({
     [params.bookId],
   );
 
+  // Extract per-panel typography overrides from dockview params (restored layout)
+  const panelTypography: PanelTypographyParams = {
+    fontFamily: typeof params.fontFamily === "string" ? params.fontFamily : undefined,
+    fontSize: typeof params.fontSize === "number" ? params.fontSize : undefined,
+    lineHeight: typeof params.lineHeight === "number" ? params.lineHeight : undefined,
+    readerLayout: typeof params.readerLayout === "string" ? (params.readerLayout as PanelTypographyParams["readerLayout"]) : undefined,
+  };
+
   return (
     <WorkspaceBookReader
       bookId={params.bookId}
       panelApi={api}
+      panelTypography={panelTypography}
       onRegisterNavigation={handleRegister}
       onUnregisterNavigation={handleUnregister}
       onRegisterToc={handleRegisterToc}
@@ -678,6 +688,16 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
             </ul>
           )}
         </ScrollArea>
+        <div className="border-t px-2 py-2">
+          <Link
+            to="/settings"
+            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+            title="Settings"
+          >
+            <Settings className="size-4" />
+            {!collapsed && <span>Settings</span>}
+          </Link>
+        </div>
       </aside>
 
       {/* Dockview container */}

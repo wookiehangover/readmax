@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { Effect } from "effect";
 import { Link, Outlet, useLocation } from "react-router";
-import { Menu, PanelsTopLeft } from "lucide-react";
+import { Menu, PanelsTopLeft, Settings } from "lucide-react";
 import type { Route } from "./+types/library";
 import { BookService, type Book } from "~/lib/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
@@ -90,8 +90,15 @@ export default function LibraryLayout({ loaderData }: Route.ComponentProps) {
                 </Link>
               </div>
               <BookList books={books} collapsed={collapsed} />
-              <div className="border-t px-2 py-2">
+              <div className="flex items-center gap-1 border-t px-2 py-2">
                 <ThemeToggle />
+                <Link
+                  to="/settings"
+                  className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                  title="Settings"
+                >
+                  <Settings className="size-4" />
+                </Link>
               </div>
             </aside>
           )}
@@ -115,8 +122,15 @@ export default function LibraryLayout({ loaderData }: Route.ComponentProps) {
                     </SheetDescription>
                   </SheetHeader>
                   <BookList books={books} collapsed={false} />
-                  <div className="border-t px-2 py-2">
+                  <div className="flex items-center gap-1 border-t px-2 py-2">
                     <ThemeToggle />
+                    <Link
+                      to="/settings"
+                      className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                      title="Settings"
+                    >
+                      <Settings className="size-4" />
+                    </Link>
                   </div>
                 </SheetContent>
               </Sheet>

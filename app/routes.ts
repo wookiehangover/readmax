@@ -7,4 +7,5 @@ export default [
     route("books/:id/details", "routes/book-details.tsx"),
   ]),
   route("workspace", "routes/workspace.tsx"),
+  route("settings", "routes/settings.tsx"),
 ] satisfies RouteConfig;

@@ -255,7 +255,6 @@ export function BookReader({ book }: BookReaderProps) {
           };
         }) => {
           if (!renditionRef.current) return;
-          const { page, total } = location.start.displayed;
           setBookProgress(location.start.percentage * 100);
           // Compute current page from locations if available
           const epubLocTotal = (bookRef.current?.locations as any)?.total as number | undefined;

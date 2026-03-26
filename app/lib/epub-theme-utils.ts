@@ -36,7 +36,7 @@ export function resolveThemeColors(mode: "light" | "dark") {
   document.body.appendChild(probe);
 
   // Force style recalculation before reading computed values
-  probe.offsetHeight;
+  void probe.offsetHeight;
 
   const computed = getComputedStyle(probe);
   const background = computed.backgroundColor;

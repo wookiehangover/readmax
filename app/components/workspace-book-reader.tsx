@@ -422,7 +422,6 @@ function WorkspaceBookReaderInner({
           };
         }) => {
           if (!renditionRef.current) return;
-          const { page, total } = location.start.displayed;
           setBookProgress(location.start.percentage * 100);
           const epubLocTotal = (bookRef.current?.locations as any)?.total as number | undefined;
           if (epubLocTotal && epubLocTotal > 0) {

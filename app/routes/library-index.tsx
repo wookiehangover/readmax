@@ -5,9 +5,9 @@ import { Ellipsis, FileText, Trash2 } from "lucide-react";
 import { CoverImage, CoverPlaceholder, AddBookCard } from "~/components/book-grid";
 import type { Route } from "./+types/library-index";
 import { BookService, type Book } from "~/lib/book-store";
-import { AnnotationService } from "~/lib/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
-import { parseEpubEffect } from "~/lib/epub-service";
+import { useBookUpload } from "~/lib/use-book-upload";
+import { useBookDeletion } from "~/lib/use-book-deletion";
 import { DropZone } from "~/components/drop-zone";
 import {
   DropdownMenu,
@@ -46,57 +46,12 @@ export default function LibraryIndex({ loaderData }: Route.ComponentProps) {
     setBooks((prev) => [...prev, book]);
   }, []);
 
-  const handleFileInput = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
-    for (const file of Array.from(files)) {
-      if (!file.name.endsWith(".epub")) continue;
-      try {
-        const arrayBuffer = await file.arrayBuffer();
-        const metadata = await AppRuntime.runPromise(parseEpubEffect(arrayBuffer));
-        const book: Book = {
-          id: crypto.randomUUID(),
-          title: metadata.title,
-          author: metadata.author,
-          coverImage: metadata.coverImage,
-          data: arrayBuffer,
-        };
-        await AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.saveBook(book))));
-        setBooks((prev) => [...prev, book]);
-      } catch (err) {
-        console.error("Failed to add book:", err);
-      }
-    }
-    e.target.value = "";
-  }, []);
-
-  const handleDeleteBook = useCallback(async (bookId: string) => {
-    const confirmed = window.confirm("Are you sure you want to delete this book?");
-    if (!confirmed) return;
-
-    const program = Effect.gen(function* () {
-      const bookSvc = yield* BookService;
-      const annotationSvc = yield* AnnotationService;
-
-      // Delete all highlights for this book
-      const highlights = yield* annotationSvc.getHighlightsByBook(bookId);
-      for (const hl of highlights) {
-        yield* annotationSvc.deleteHighlight(hl.id);
-      }
-
-      // Delete the book itself
-      yield* bookSvc.deleteBook(bookId);
-    }).pipe(
-      Effect.catchAll((error) =>
-        Effect.sync(() => {
-          console.error("Failed to delete book:", error);
-        }),
-      ),
-    );
-
-    await AppRuntime.runPromise(program);
+  const handleBookDeleted = useCallback((bookId: string) => {
     setBooks((prev) => prev.filter((b) => b.id !== bookId));
   }, []);
+
+  const { handleFileInput } = useBookUpload({ onBookAdded: handleBookAdded });
+  const { handleDeleteBook } = useBookDeletion({ onBookDeleted: handleBookDeleted });
 
   return (
     <DropZone onBookAdded={handleBookAdded}>

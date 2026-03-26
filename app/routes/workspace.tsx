@@ -24,6 +24,7 @@ import {
   PanelLeftClose,
 } from "lucide-react";
 import { BookCover, TocList } from "~/components/book-list";
+import { CoverImage, CoverPlaceholder, AddBookCard } from "~/components/book-grid";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import type { Route } from "./+types/workspace";
@@ -48,6 +49,7 @@ import {
   type PanelTypographyParams,
 } from "~/components/workspace-book-reader";
 import { WorkspaceNotebook } from "~/components/workspace-notebook";
+import { truncateTitle, sortBooks } from "~/lib/workspace-utils";
 
 export function meta(_args: Route.MetaArgs) {
   return [{ title: "Reader" }, { name: "description", content: "Multi-pane book workspace" }];
@@ -68,9 +70,7 @@ export function HydrateFallback() {
   );
 }
 
-function truncateTitle(title: string, maxLength = 30): string {
-  return title.length > maxLength ? title.slice(0, maxLength) + "…" : title;
-}
+
 
 // --- Navigation & TOC coordination ---
 // Map of panelId -> navigateToCfi callback, shared across panels
@@ -241,42 +241,6 @@ function NotebookPanel({ params }: IDockviewPanelProps<{ bookId: string; bookTit
   );
 }
 
-function NewTabCoverImage({ coverImage, alt }: { coverImage: Blob; alt: string }) {
-  const [url, setUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    const objectUrl = URL.createObjectURL(coverImage);
-    setUrl(objectUrl);
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [coverImage]);
-
-  if (!url) return null;
-
-  return <img src={url} alt={alt} className="aspect-[2/3] w-full rounded-lg object-cover" />;
-}
-
-function NewTabCoverPlaceholder({ title, author }: { title: string; author: string }) {
-  return (
-    <div className="flex aspect-[2/3] w-full flex-col items-center justify-center rounded-lg bg-muted p-3 text-center">
-      <BookOpen className="mb-2 size-8 text-muted-foreground/50" />
-      <p className="line-clamp-3 text-sm font-medium text-muted-foreground">{title}</p>
-      {author && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground/70">{author}</p>}
-    </div>
-  );
-}
-
-function NewTabAddBookCard({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex aspect-[2/3] w-full flex-col items-center justify-center rounded-lg border-2 border-dashed border-muted-foreground/25 bg-muted/50 text-muted-foreground transition-colors hover:border-muted-foreground/50 hover:bg-muted"
-    >
-      <Plus className="mb-2 size-8" />
-      <span className="text-sm font-medium">Add book</span>
-    </button>
-  );
-}
 
 function NewTabPanel(_props: IDockviewPanelProps<Record<string, never>>) {
   const [books, setBooks] = useState<Book[]>(booksRefGlobal);
@@ -368,7 +332,7 @@ function NewTabPanel(_props: IDockviewPanelProps<Record<string, never>>) {
       {books.length === 0 ? (
         <div className="flex h-full items-center justify-center p-6">
           <div className="w-40">
-            <NewTabAddBookCard onClick={() => fileInputRef.current?.click()} />
+            <AddBookCard onClick={() => fileInputRef.current?.click()} />
           </div>
         </div>
       ) : (
@@ -383,9 +347,9 @@ function NewTabPanel(_props: IDockviewPanelProps<Record<string, never>>) {
                 >
                   <div className="overflow-hidden rounded-lg shadow-sm transition-shadow group-hover:shadow-md">
                     {book.coverImage ? (
-                      <NewTabCoverImage coverImage={book.coverImage} alt={book.title} />
+                      <CoverImage coverImage={book.coverImage} alt={book.title} />
                     ) : (
-                      <NewTabCoverPlaceholder title={book.title} author={book.author} />
+                      <CoverPlaceholder title={book.title} author={book.author} />
                     )}
                   </div>
                   <p className="mt-2 truncate text-sm font-medium">{book.title}</p>
@@ -416,7 +380,7 @@ function NewTabPanel(_props: IDockviewPanelProps<Record<string, never>>) {
               </div>
             ))}
             <div>
-              <NewTabAddBookCard onClick={() => fileInputRef.current?.click()} />
+              <AddBookCard onClick={() => fileInputRef.current?.click()} />
             </div>
           </div>
         </div>
@@ -583,31 +547,7 @@ function WorkspaceTocPopoverItem({
   );
 }
 
-function sortBooks(
-  books: Book[],
-  sortBy: WorkspaceSortBy,
-  lastOpenedMap: Map<string, number> | undefined,
-): Book[] {
-  const sorted = [...books];
-  switch (sortBy) {
-    case "title":
-      sorted.sort((a, b) => a.title.localeCompare(b.title));
-      break;
-    case "author":
-      sorted.sort((a, b) => a.author.localeCompare(b.author));
-      break;
-    case "recent": {
-      const map = lastOpenedMap ?? new Map<string, number>();
-      sorted.sort((a, b) => {
-        const ta = map.get(a.id) ?? 0;
-        const tb = map.get(b.id) ?? 0;
-        return tb - ta; // most recent first; never-opened (0) sink to bottom
-      });
-      break;
-    }
-  }
-  return sorted;
-}
+
 
 const SORT_OPTIONS: { value: WorkspaceSortBy; label: string }[] = [
   { value: "recent", label: "Recently Opened" },

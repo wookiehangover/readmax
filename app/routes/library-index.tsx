@@ -1,7 +1,8 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef } from "react";
 import { Link, useNavigate } from "react-router";
 import { Effect } from "effect";
-import { BookOpen, Ellipsis, FileText, Plus, Trash2 } from "lucide-react";
+import { Ellipsis, FileText, Trash2 } from "lucide-react";
+import { CoverImage, CoverPlaceholder, AddBookCard } from "~/components/book-grid";
 import type { Route } from "./+types/library-index";
 import { BookService, type Book } from "~/lib/book-store";
 import { AnnotationService } from "~/lib/annotations-store";
@@ -34,42 +35,7 @@ export function HydrateFallback() {
   );
 }
 
-function CoverImage({ coverImage, alt }: { coverImage: Blob; alt: string }) {
-  const [url, setUrl] = useState<string | null>(null);
 
-  useEffect(() => {
-    const objectUrl = URL.createObjectURL(coverImage);
-    setUrl(objectUrl);
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [coverImage]);
-
-  if (!url) return null;
-
-  return <img src={url} alt={alt} className="aspect-[2/3] w-full rounded-lg object-cover" />;
-}
-
-function CoverPlaceholder({ title, author }: { title: string; author: string }) {
-  return (
-    <div className="flex aspect-[2/3] w-full flex-col items-center justify-center rounded-lg bg-muted p-3 text-center">
-      <BookOpen className="mb-2 size-8 text-muted-foreground/50" />
-      <p className="line-clamp-3 text-sm font-medium text-muted-foreground">{title}</p>
-      {author && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground/70">{author}</p>}
-    </div>
-  );
-}
-
-function AddBookCard({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex aspect-[2/3] w-full flex-col items-center justify-center rounded-lg border-2 border-dashed border-muted-foreground/25 bg-muted/50 text-muted-foreground transition-colors hover:border-muted-foreground/50 hover:bg-muted"
-    >
-      <Plus className="mb-2 size-8" />
-      <span className="text-sm font-medium">Add book</span>
-    </button>
-  );
-}
 
 export default function LibraryIndex({ loaderData }: Route.ComponentProps) {
   const [books, setBooks] = useState<Book[]>(loaderData.books);

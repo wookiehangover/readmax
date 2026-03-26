@@ -9,7 +9,7 @@ import {
   type IWatermarkPanelProps,
   type DockviewTheme,
 } from "dockview";
-import { BookOpen, NotebookPen, Plus, ArrowUpDown, Settings } from "lucide-react";
+import { BookOpen, NotebookPen, Plus, ArrowUpDown, Settings, Upload, Columns2 } from "lucide-react";
 import { BookCover, TocList } from "~/components/book-list";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { ScrollArea } from "~/components/ui/scroll-area";
@@ -66,6 +66,8 @@ const notebookCallbackMap = new Map<
 let tocChangeListener: (() => void) | null = null;
 // Module-level ref to the top-level DockviewApi for cross-panel operations
 let dockviewApiRef: DockviewApi | null = null;
+// Module-level ref to file input so WatermarkPanel can trigger uploads
+let fileInputRefGlobal: React.RefObject<HTMLInputElement | null> | null = null;
 
 // Helpers to look up panel-keyed maps by bookId
 function findNavForBook(bookId: string): ((cfi: string) => void) | undefined {
@@ -223,12 +225,36 @@ const components: Record<string, React.FunctionComponent<IDockviewPanelProps<any
 
 function WatermarkPanel(_props: IWatermarkPanelProps) {
   return (
-    <div className="flex h-full items-center justify-center">
-      <div className="text-center">
-        <BookOpen className="mx-auto mb-3 size-10 text-muted-foreground/50" />
-        <p className="text-sm text-muted-foreground">No tabs open</p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Select a book from the sidebar to get started
+    <div className="flex h-full items-center justify-center p-8">
+      <div className="flex max-w-md flex-col items-center text-center">
+        <div className="mb-6 flex items-center gap-2 text-muted-foreground/40">
+          <div className="flex h-14 w-10 items-center justify-center rounded border border-dashed border-muted-foreground/25">
+            <BookOpen className="size-5" />
+          </div>
+          <Columns2 className="size-4" />
+          <div className="flex h-14 w-10 items-center justify-center rounded border border-dashed border-muted-foreground/25">
+            <BookOpen className="size-5" />
+          </div>
+        </div>
+
+        <h2 className="text-lg font-medium text-foreground">
+          Your multi-pane reading workspace
+        </h2>
+        <p className="mt-1.5 text-sm text-muted-foreground">
+          Open books side-by-side, take notes, and highlight passages — all in one place.
+        </p>
+
+        <button
+          type="button"
+          onClick={() => fileInputRefGlobal?.current?.click()}
+          className="mt-6 inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+        >
+          <Upload className="size-4" />
+          Upload an epub to get started
+        </button>
+
+        <p className="mt-3 text-xs text-muted-foreground">
+          or drag and drop a <span className="font-medium">.epub</span> file anywhere
         </p>
       </div>
     </div>
@@ -367,12 +393,45 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
   const apiRef = useRef<DockviewApi | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Expose to module-level so WatermarkPanel can trigger uploads
+  fileInputRefGlobal = fileInputRef;
   // Track which books have TOC data via a version counter (triggers re-render)
   const [tocVersion, setTocVersion] = useState(0);
   // Track which books currently have open panels in dockview
   const [openBookIds, setOpenBookIds] = useState<Set<string>>(new Set());
   // Track total panel count for dynamic document title
   const [panelCount, setPanelCount] = useState(0);
+
+  // Hover-reveal state for collapsed sidebar
+  const [sidebarHovered, setSidebarHovered] = useState(false);
+  const hoverLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleSidebarMouseEnter = useCallback(() => {
+    if (hoverLeaveTimerRef.current) {
+      clearTimeout(hoverLeaveTimerRef.current);
+      hoverLeaveTimerRef.current = null;
+    }
+    setSidebarHovered(true);
+  }, []);
+
+  const handleSidebarMouseLeave = useCallback(() => {
+    hoverLeaveTimerRef.current = setTimeout(() => {
+      setSidebarHovered(false);
+      hoverLeaveTimerRef.current = null;
+    }, 300);
+  }, []);
+
+  // Clean up hover timer on unmount
+  useEffect(() => {
+    return () => {
+      if (hoverLeaveTimerRef.current) clearTimeout(hoverLeaveTimerRef.current);
+    };
+  }, []);
+
+  // Reset hover state when sidebar is pinned open
+  useEffect(() => {
+    if (!collapsed) setSidebarHovered(false);
+  }, [collapsed]);
 
   // Load last-opened timestamps for sorting
   const { data: lastOpenedMap } = useEffectQuery(
@@ -581,39 +640,51 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
 
   return (
     <DropZone onBookAdded={handleBookAdded}>
-      <div className="flex h-dvh">
+      <div className="relative flex h-dvh">
+        {/* Hover trigger zone — visible only when sidebar is collapsed */}
+        {collapsed && (
+          <div
+            className="fixed top-0 left-0 z-40 h-full w-3"
+            onMouseEnter={handleSidebarMouseEnter}
+          />
+        )}
+
         {/* Sidebar */}
         <aside
+          onMouseEnter={collapsed ? handleSidebarMouseEnter : undefined}
+          onMouseLeave={collapsed ? handleSidebarMouseLeave : undefined}
           className={cn(
-            "flex shrink-0 flex-col border-r bg-card transition-[width] duration-200 ease-in-out",
+            "flex shrink-0 flex-col border-r bg-card transition-transform duration-250 ease-out",
             {
-              "w-14": collapsed,
+              // Collapsed: fixed overlay, slides offscreen unless hovered
+              "fixed top-0 left-0 z-50 h-full w-75 shadow-xl": collapsed,
+              "-translate-x-full": collapsed && !sidebarHovered,
+              "translate-x-0": collapsed && sidebarHovered,
+              // Expanded (pinned): static in layout
               "w-75": !collapsed,
             },
           )}
         >
           <div className="flex items-center justify-between border-b h-9">
-            {!collapsed && (
-              <div className="relative">
-                <ArrowUpDown className="pointer-events-none absolute top-1/2 left-1.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                <select
-                  value={sortBy}
-                  onChange={(e) =>
-                    updateSettings({
-                      workspaceSortBy: e.target.value as WorkspaceSortBy,
-                    })
-                  }
-                  className="h-7 appearance-none rounded border-none bg-transparent py-0 pr-2 pl-6 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus:outline-none"
-                  title="Sort books"
-                >
-                  {SORT_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+            <div className="relative">
+              <ArrowUpDown className="pointer-events-none absolute top-1/2 left-1.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <select
+                value={sortBy}
+                onChange={(e) =>
+                  updateSettings({
+                    workspaceSortBy: e.target.value as WorkspaceSortBy,
+                  })
+                }
+                className="h-7 appearance-none rounded border-none bg-transparent py-0 pr-2 pl-6 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus:outline-none"
+                title="Sort books"
+              >
+                {SORT_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
@@ -633,11 +704,9 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
           </div>
           <ScrollArea className="min-h-0 flex-1" hideScrollbar>
             {sortedBooks.length === 0 ? (
-              !collapsed && (
-                <p className="p-4 text-sm text-muted-foreground">
-                  No books yet. Drop an epub or click + to add.
-                </p>
-              )
+              <p className="p-4 text-sm text-muted-foreground">
+                No books yet. Drop an epub or click + to add.
+              </p>
             ) : (
               <ul className="flex flex-col gap-0.5 p-1 grayscale hover:grayscale-0 transition-all">
                 {sortedBooks.map((book) => {
@@ -651,7 +720,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
                       {showTocPopover ? (
                         <WorkspaceTocPopoverItem
                           book={book}
-                          collapsed={collapsed}
+                          collapsed={false}
                           toc={bookToc}
                           onOpenBook={(e) => openBook(book, e.metaKey || e.ctrlKey)}
                           isOpen={openBookIds.has(book.id)}
@@ -661,38 +730,34 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
                           type="button"
                           onClick={(e) => openBook(book, e.metaKey || e.ctrlKey)}
                           className={cn(
-                            "flex w-full items-center rounded-md text-left hover:bg-accent",
+                            "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left hover:bg-accent",
                             {
-                              "justify-center p-1.5": collapsed,
-                              "gap-3 px-3 py-2": !collapsed,
                               "bg-accent/50": openBookIds.has(book.id),
                             },
                           )}
                           title={book.title}
                         >
-                          <WorkspaceSidebarBookContent book={book} collapsed={collapsed} />
+                          <WorkspaceSidebarBookContent book={book} collapsed={false} />
                         </button>
                       )}
-                      {!collapsed && (
-                        <div className="absolute top-1/2 right-1 flex -translate-y-1/2 gap-0.5 opacity-0 group-hover/book:opacity-100">
-                          <button
-                            type="button"
-                            onClick={(e) => openBook(book, e.metaKey || e.ctrlKey)}
-                            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                            title="Open book"
-                          >
-                            <BookOpen className="size-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openNotebook(book)}
-                            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                            title="Open notebook"
-                          >
-                            <NotebookPen className="size-3.5" />
-                          </button>
-                        </div>
-                      )}
+                      <div className="absolute top-1/2 right-1 flex -translate-y-1/2 gap-0.5 opacity-0 group-hover/book:opacity-100">
+                        <button
+                          type="button"
+                          onClick={(e) => openBook(book, e.metaKey || e.ctrlKey)}
+                          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                          title="Open book"
+                        >
+                          <BookOpen className="size-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openNotebook(book)}
+                          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                          title="Open notebook"
+                        >
+                          <NotebookPen className="size-3.5" />
+                        </button>
+                      </div>
                     </li>
                   );
                 })}
@@ -702,21 +767,16 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
           <div className="border-t h-10 flex items-center @container">
             <Link
               to="/settings"
-              className={cn(
-                "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground",
-                {
-                  "mx-auto": collapsed,
-                },
-              )}
+              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
               title="Settings"
             >
               <Settings className="size-4" />
-              {!collapsed && <span>Settings</span>}
+              <span>Settings</span>
             </Link>
           </div>
         </aside>
 
-        {/* Dockview container */}
+        {/* Dockview container — full width when sidebar is collapsed */}
         <div className="flex-1">
           <DockviewReact
             theme={dockviewTheme}

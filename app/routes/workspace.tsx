@@ -10,7 +10,7 @@ import {
   type DockviewTheme,
   type IDockviewHeaderActionsProps,
 } from "dockview";
-import { BookOpen, NotebookPen, Plus, ArrowUpDown, Settings, Upload, Columns2, Ellipsis, Trash2, FileText, PanelLeft } from "lucide-react";
+import { BookOpen, NotebookPen, Plus, ArrowUpDown, Settings, Upload, Columns2, Ellipsis, Trash2, FileText, PanelLeft, PanelLeftClose } from "lucide-react";
 import { BookCover, TocList } from "~/components/book-list";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { ScrollArea } from "~/components/ui/scroll-area";
@@ -634,10 +634,20 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
     [],
   );
 
-  const sortedBooks = useMemo(
-    () => sortBooks(books, sortBy, lastOpenedMap),
-    [books, sortBy, lastOpenedMap],
-  );
+  const { openBooks, otherBooks } = useMemo(() => {
+    const open: Book[] = [];
+    const other: Book[] = [];
+    for (const book of books) {
+      if (openBookIds.has(book.id)) {
+        open.push(book);
+      } else {
+        other.push(book);
+      }
+    }
+    open.sort((a, b) => a.title.localeCompare(b.title));
+    const sortedOther = sortBooks(other, sortBy, lastOpenedMap);
+    return { openBooks: open, otherBooks: sortedOther };
+  }, [books, sortBy, lastOpenedMap, openBookIds]);
 
   const dockviewTheme: DockviewTheme = {
     name: "app",
@@ -920,14 +930,29 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
                 <PanelLeft className="size-4" />
               </button>
             ) : (
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                title="Add books"
-              >
-                <Plus className="size-4" />
-              </button>
+              <div className="flex items-center gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                  title="Add books"
+                >
+                  <Plus className="size-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    updateSettings({ sidebarCollapsed: true });
+                    setTimeout(() => {
+                      window.dispatchEvent(new Event("resize"));
+                    }, 270);
+                  }}
+                  className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                  title="Collapse sidebar"
+                >
+                  <PanelLeftClose className="size-4" />
+                </button>
+              </div>
             )}
             <input
               ref={fileInputRef}
@@ -939,7 +964,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
             />
           </div>
           <ScrollArea className="min-h-0 flex-1" hideScrollbar>
-            {sortedBooks.length === 0 ? (
+            {openBooks.length === 0 && otherBooks.length === 0 ? (
               !collapsed && (
                 <p className="p-4 text-sm text-muted-foreground">
                   No books yet. Drop an epub or click + to add.
@@ -947,9 +972,9 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
               )
             ) : (
               <ul className="flex flex-col gap-0.5 p-1 grayscale hover:grayscale-0 transition-all">
-                {(collapsed ? sortedBooks.filter((b) => openBookIds.has(b.id)) : sortedBooks).map((book) => {
-                  // tocVersion is read here to trigger re-render when TOC data changes
-                  void tocVersion;
+                {/* tocVersion is read here to trigger re-render when TOC data changes */}
+                {void tocVersion}
+                {(collapsed ? openBooks : openBooks).map((book) => {
                   const bookToc = findTocForBook(book.id);
                   const showTocPopover = bookToc && bookToc.length > 0;
 
@@ -961,18 +986,17 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
                           collapsed={collapsed}
                           toc={bookToc}
                           onOpenBook={(e) => openBook(book, e.metaKey || e.ctrlKey)}
-                          isOpen={openBookIds.has(book.id)}
+                          isOpen={true}
                         />
                       ) : (
                         <button
                           type="button"
                           onClick={(e) => openBook(book, e.metaKey || e.ctrlKey)}
                           className={cn(
-                            "flex w-full items-center rounded-md text-left hover:bg-accent",
+                            "flex w-full items-center rounded-md text-left hover:bg-accent bg-accent/50",
                             {
                               "justify-center p-1.5": collapsed,
                               "gap-3 px-3 py-2": !collapsed,
-                              "bg-accent/50": openBookIds.has(book.id),
                             },
                           )}
                           title={book.title}
@@ -1000,6 +1024,57 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
                           </button>
                         </div>
                       )}
+                    </li>
+                  );
+                })}
+                {!collapsed && openBooks.length > 0 && otherBooks.length > 0 && (
+                  <li className="my-1 border-b border-border/50" />
+                )}
+                {!collapsed && otherBooks.map((book) => {
+                  const bookToc = findTocForBook(book.id);
+                  const showTocPopover = bookToc && bookToc.length > 0;
+
+                  return (
+                    <li key={book.id} className="group/book relative">
+                      {showTocPopover ? (
+                        <WorkspaceTocPopoverItem
+                          book={book}
+                          collapsed={collapsed}
+                          toc={bookToc}
+                          onOpenBook={(e) => openBook(book, e.metaKey || e.ctrlKey)}
+                          isOpen={false}
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => openBook(book, e.metaKey || e.ctrlKey)}
+                          className={cn(
+                            "flex w-full items-center rounded-md text-left hover:bg-accent",
+                            { "gap-3 px-3 py-2": !collapsed },
+                          )}
+                          title={book.title}
+                        >
+                          <WorkspaceSidebarBookContent book={book} collapsed={collapsed} />
+                        </button>
+                      )}
+                      <div className="absolute top-1/2 right-1 flex -translate-y-1/2 gap-0.5 opacity-0 group-hover/book:opacity-100">
+                        <button
+                          type="button"
+                          onClick={(e) => openBook(book, e.metaKey || e.ctrlKey)}
+                          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                          title="Open book"
+                        >
+                          <BookOpen className="size-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openNotebook(book)}
+                          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                          title="Open notebook"
+                        >
+                          <NotebookPen className="size-3.5" />
+                        </button>
+                      </div>
                     </li>
                   );
                 })}

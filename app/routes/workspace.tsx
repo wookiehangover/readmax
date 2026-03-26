@@ -435,14 +435,16 @@ function LeftHeaderActions({ containerApi }: IDockviewHeaderActionsProps) {
   }, [containerApi]);
 
   return (
-    <button
-      type="button"
-      onClick={handleClick}
-      className="flex items-center justify-center border-l border-border px-1 text-muted-foreground hover:text-foreground"
-      title="New Library tab"
-    >
-      <Plus className="size-3.5" />
-    </button>
+    <div className="flex h-full items-stretch">
+      <button
+        type="button"
+        onClick={handleClick}
+        className="flex h-full items-center justify-center border-l border-border px-1 text-muted-foreground hover:text-foreground"
+        title="New Library tab"
+      >
+        <Plus className="size-3.5" />
+      </button>
+    </div>
   );
 }
 

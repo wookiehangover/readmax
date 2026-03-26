@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, useMemo, type ChangeEvent } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { Link } from "react-router";
 import { Effect } from "effect";
 import {
@@ -29,8 +29,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover
 import { ScrollArea } from "~/components/ui/scroll-area";
 import type { Route } from "./+types/workspace";
 import { BookService, type Book } from "~/lib/book-store";
-import { AnnotationService } from "~/lib/annotations-store";
-import { parseEpubEffect } from "~/lib/epub-service";
+import { useBookUpload } from "~/lib/use-book-upload";
+import { useBookDeletion } from "~/lib/use-book-deletion";
 import { DropZone } from "~/components/drop-zone";
 import {
   DropdownMenu,
@@ -50,6 +50,11 @@ import {
 } from "~/components/workspace-book-reader";
 import { WorkspaceNotebook } from "~/components/workspace-notebook";
 import { truncateTitle, sortBooks } from "~/lib/workspace-utils";
+
+/** Delay after sidebar CSS transition before dispatching resize (ms) */
+const SIDEBAR_TRANSITION_MS = 270;
+/** Debounce delay for persisting dockview layout changes (ms) */
+const LAYOUT_SAVE_DEBOUNCE_MS = 500;
 
 export function meta(_args: Route.MetaArgs) {
   return [{ title: "Reader" }, { name: "description", content: "Multi-pane book workspace" }];
@@ -263,61 +268,19 @@ function NewTabPanel(_props: IDockviewPanelProps<Record<string, never>>) {
     openNotebookGlobal?.(book);
   }, []);
 
-  const handleDeleteBook = useCallback(async (bookId: string) => {
-    const confirmed = window.confirm("Are you sure you want to delete this book?");
-    if (!confirmed) return;
+  const handleBookAddedNewTab = useCallback((book: Book) => {
+    booksRefGlobal = [...booksRefGlobal, book];
+    booksChangeListener?.();
+    openBookGlobal?.(book);
+  }, []);
 
-    const program = Effect.gen(function* () {
-      const bookSvc = yield* BookService;
-      const annotationSvc = yield* AnnotationService;
-
-      // Delete all highlights for this book
-      const highlights = yield* annotationSvc.getHighlightsByBook(bookId);
-      for (const hl of highlights) {
-        yield* annotationSvc.deleteHighlight(hl.id);
-      }
-
-      // Delete the book itself
-      yield* bookSvc.deleteBook(bookId);
-    }).pipe(
-      Effect.catchAll((error) =>
-        Effect.sync(() => {
-          console.error("Failed to delete book:", error);
-        }),
-      ),
-    );
-
-    await AppRuntime.runPromise(program);
+  const handleBookDeletedNewTab = useCallback((bookId: string) => {
     booksRefGlobal = booksRefGlobal.filter((b) => b.id !== bookId);
     booksChangeListener?.();
   }, []);
 
-  const handleFileInput = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
-    for (const file of Array.from(files)) {
-      if (!file.name.endsWith(".epub")) continue;
-      try {
-        const arrayBuffer = await file.arrayBuffer();
-        const metadata = await AppRuntime.runPromise(parseEpubEffect(arrayBuffer));
-        const book: Book = {
-          id: crypto.randomUUID(),
-          title: metadata.title,
-          author: metadata.author,
-          coverImage: metadata.coverImage,
-          data: arrayBuffer,
-        };
-        await AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.saveBook(book))));
-        // Update the module-level books and notify listeners
-        booksRefGlobal = [...booksRefGlobal, book];
-        booksChangeListener?.();
-        openBookGlobal?.(book);
-      } catch (err) {
-        console.error("Failed to add book:", err);
-      }
-    }
-    e.target.value = "";
-  }, []);
+  const { handleDeleteBook } = useBookDeletion({ onBookDeleted: handleBookDeletedNewTab });
+  const { handleFileInput } = useBookUpload({ onBookAdded: handleBookAddedNewTab });
 
   return (
     <>
@@ -562,6 +525,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
   const sortBy = settings.workspaceSortBy;
   const apiRef = useRef<DockviewApi | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const disposablesRef = useRef<Array<{ dispose: () => void }>>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Expose to module-level so WatermarkPanel and NewTabPanel can trigger uploads
   fileInputRefGlobal = fileInputRef;
@@ -610,7 +574,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
       AppRuntime.runPromise(
         WorkspaceService.pipe(Effect.andThen((s) => s.saveLayout(layout))),
       ).catch(console.error);
-    }, 500);
+    }, LAYOUT_SAVE_DEBOUNCE_MS);
   }, []);
 
   const onReady = useCallback(
@@ -627,7 +591,11 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
       )
         .then((layout) => {
           if (layout) {
-            event.api.fromJSON(layout);
+            try {
+              event.api.fromJSON(layout);
+            } catch (err) {
+              console.error("Failed to restore dockview layout:", err);
+            }
           }
         })
         .catch(console.error);
@@ -635,8 +603,6 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
       // Track total panel count for dynamic title
       const updatePanelCount = () => setPanelCount(event.api.panels.length);
       updatePanelCount();
-      event.api.onDidAddPanel(updatePanelCount);
-      event.api.onDidRemovePanel(updatePanelCount);
 
       // Track open book panels
       const updateOpenBooks = () => {
@@ -649,15 +615,18 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
         }
         setOpenBookIds(ids);
       };
-
-      event.api.onDidAddPanel(updateOpenBooks);
-      event.api.onDidRemovePanel(updateOpenBooks);
       updateOpenBooks();
 
-      // Subscribe to layout changes for persistence
-      event.api.onDidLayoutChange(() => {
-        saveLayout();
-      });
+      // Store disposables for cleanup on unmount
+      disposablesRef.current = [
+        event.api.onDidAddPanel(updatePanelCount),
+        event.api.onDidRemovePanel(updatePanelCount),
+        event.api.onDidAddPanel(updateOpenBooks),
+        event.api.onDidRemovePanel(updateOpenBooks),
+        event.api.onDidLayoutChange(() => {
+          saveLayout();
+        }),
+      ];
     },
     [saveLayout],
   );
@@ -668,6 +637,8 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
     return () => {
       tocChangeListener = null;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      for (const d of disposablesRef.current) d.dispose();
+      disposablesRef.current = [];
       navigationMap.clear();
       tocMap.clear();
       notebookCallbackMap.clear();
@@ -689,7 +660,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
         // and epub renditions that the container dimensions changed.
         setTimeout(() => {
           window.dispatchEvent(new Event("resize"));
-        }, 270);
+        }, SIDEBAR_TRANSITION_MS);
       }
     }
     window.addEventListener("keydown", handleKeyDown);
@@ -796,34 +767,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
     [openBook],
   );
 
-  const handleFileInput = useCallback(
-    async (e: ChangeEvent<HTMLInputElement>) => {
-      const files = e.target.files;
-      if (!files) return;
-      for (const file of Array.from(files)) {
-        if (!file.name.endsWith(".epub")) continue;
-        try {
-          const arrayBuffer = await file.arrayBuffer();
-          const metadata = await AppRuntime.runPromise(parseEpubEffect(arrayBuffer));
-          const book: Book = {
-            id: crypto.randomUUID(),
-            title: metadata.title,
-            author: metadata.author,
-            coverImage: metadata.coverImage,
-            data: arrayBuffer,
-          };
-          await AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.saveBook(book))));
-          setBooks((prev) => [...prev, book]);
-          openBook(book);
-        } catch (err) {
-          console.error("Failed to add book:", err);
-        }
-      }
-      // Reset input so the same file can be re-selected
-      e.target.value = "";
-    },
-    [openBook],
-  );
+  const { handleFileInput } = useBookUpload({ onBookAdded: handleBookAdded });
 
   // Sync module-level callbacks so NewTabPanel can open books/notebooks
   openBookGlobal = openBook;
@@ -868,7 +812,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
                   updateSettings({ sidebarCollapsed: false });
                   setTimeout(() => {
                     window.dispatchEvent(new Event("resize"));
-                  }, 270);
+                  }, SIDEBAR_TRANSITION_MS);
                 }}
                 className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground mx-auto"
                 title="Expand sidebar"
@@ -891,7 +835,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
                     updateSettings({ sidebarCollapsed: true });
                     setTimeout(() => {
                       window.dispatchEvent(new Event("resize"));
-                    }, 270);
+                    }, SIDEBAR_TRANSITION_MS);
                   }}
                   className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                   title="Collapse sidebar"
@@ -920,7 +864,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
               <ul className="flex flex-col gap-0.5 p-1 grayscale hover:grayscale-0 transition-all">
                 {/* tocVersion is read here to trigger re-render when TOC data changes */}
                 {void tocVersion}
-                {(collapsed ? openBooks : openBooks).map((book) => {
+                {openBooks.map((book) => {
                   const bookToc = findTocForBook(book.id);
                   const showTocPopover = bookToc && bookToc.length > 0;
 

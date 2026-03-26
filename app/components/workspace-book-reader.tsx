@@ -17,11 +17,14 @@ import { HighlightPopover } from "~/components/highlight-popover";
 import { useHighlights } from "~/lib/use-highlights";
 import { useEffectQuery } from "~/lib/use-effect-query";
 import { cn } from "~/lib/utils";
-import { resolveThemeColors } from "~/lib/epub-theme-utils";
+import { registerThemeColors } from "~/lib/epub-theme-utils";
 import { resolveStartCfi, savePositionDualKey } from "~/lib/position-utils";
 import type { DockviewPanelApi } from "dockview";
 import type { TocEntry } from "~/lib/reader-context";
 import { getTypographyCss, getRenditionOptions } from "~/lib/epub-rendering-utils";
+
+/** Debounce delay for persisting reading position changes (ms) */
+const POSITION_SAVE_DEBOUNCE_MS = 1000;
 
 /** Typography overrides restored from dockview panel params */
 export interface PanelTypographyParams {
@@ -292,23 +295,7 @@ function WorkspaceBookReaderInner({
       });
     });
 
-    const lightColors = resolveThemeColors("light");
-    const darkColors = resolveThemeColors("dark");
-
-    rendition.themes.register("light", {
-      body: {
-        color: `${lightColors.foreground} !important`,
-        background: `${lightColors.background} !important`,
-      },
-      a: { color: "inherit !important" },
-    });
-    rendition.themes.register("dark", {
-      body: {
-        color: `${darkColors.foreground} !important`,
-        background: `${darkColors.background} !important`,
-      },
-      a: { color: "inherit !important" },
-    });
+    registerThemeColors(rendition);
 
     (async () => {
       await epubBook.ready;
@@ -400,7 +387,7 @@ function WorkspaceBookReaderInner({
                   BookService.pipe(Effect.andThen((s) => s.savePosition(key, val))),
                 ),
             }).catch((err) => console.error("Failed to save reading position:", err));
-          }, 1000);
+          }, POSITION_SAVE_DEBOUNCE_MS);
         },
       );
     })();
@@ -448,23 +435,7 @@ function WorkspaceBookReaderInner({
 
     // Re-resolve and re-register theme colors (they may have been stale at init time,
     // or the CSS variables may have changed since the last theme switch)
-    const lightColors = resolveThemeColors("light");
-    const darkColors = resolveThemeColors("dark");
-
-    rendition.themes.register("light", {
-      body: {
-        color: `${lightColors.foreground} !important`,
-        background: `${lightColors.background} !important`,
-      },
-      a: { color: "inherit !important" },
-    });
-    rendition.themes.register("dark", {
-      body: {
-        color: `${darkColors.foreground} !important`,
-        background: `${darkColors.background} !important`,
-      },
-      a: { color: "inherit !important" },
-    });
+    registerThemeColors(rendition);
 
     rendition.themes.select(resolveTheme(settings.theme));
   }, [settings.theme]);
@@ -500,23 +471,7 @@ function WorkspaceBookReaderInner({
       if (!rendition) return;
 
       // Re-resolve and re-register theme colors before selecting
-      const lightColors = resolveThemeColors("light");
-      const darkColors = resolveThemeColors("dark");
-
-      rendition.themes.register("light", {
-        body: {
-          color: `${lightColors.foreground} !important`,
-          background: `${lightColors.background} !important`,
-        },
-        a: { color: "inherit !important" },
-      });
-      rendition.themes.register("dark", {
-        body: {
-          color: `${darkColors.foreground} !important`,
-          background: `${darkColors.background} !important`,
-        },
-        a: { color: "inherit !important" },
-      });
+      registerThemeColors(rendition);
 
       rendition.themes.select(resolveTheme(settings.theme));
 

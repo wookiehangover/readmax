@@ -129,7 +129,7 @@ function TocPopoverItem({
         delay={200}
         closeDelay={300}
         nativeButton={false}
-        render={<NavLink to={`/books/${book.id}`} className={linkClassName} />}
+        render={<NavLink to={`/books/${book.id}/details`} className={linkClassName} />}
       >
         <BookItemContent book={book} collapsed={collapsed} />
       </PopoverTrigger>
@@ -193,7 +193,7 @@ export function BookList({ books, collapsed = false }: BookListProps) {
             );
           }
           return (
-            <NavLink key={book.id} to={`/books/${book.id}`} className={linkClassName}>
+            <NavLink key={book.id} to={`/books/${book.id}/details`} className={linkClassName}>
               <BookItemContent book={book} collapsed={collapsed} />
             </NavLink>
           );

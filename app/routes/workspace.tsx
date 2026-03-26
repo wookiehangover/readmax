@@ -10,7 +10,7 @@ import {
   type DockviewTheme,
   type IDockviewHeaderActionsProps,
 } from "dockview";
-import { BookOpen, NotebookPen, Plus, ArrowUpDown, Settings, Upload, Columns2, Ellipsis, Trash2, FileText, PanelLeft, PanelLeftClose } from "lucide-react";
+import { BookOpen, NotebookPen, Plus, ArrowUpDown, Settings, Upload, Columns2, Ellipsis, Trash2, PanelLeft, PanelLeftClose } from "lucide-react";
 import { BookCover, TocList } from "~/components/book-list";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { ScrollArea } from "~/components/ui/scroll-area";
@@ -229,6 +229,43 @@ function NotebookPanel({ params }: IDockviewPanelProps<{ bookId: string; bookTit
   );
 }
 
+function NewTabCoverImage({ coverImage, alt }: { coverImage: Blob; alt: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const objectUrl = URL.createObjectURL(coverImage);
+    setUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [coverImage]);
+
+  if (!url) return null;
+
+  return <img src={url} alt={alt} className="aspect-[2/3] w-full rounded-lg object-cover" />;
+}
+
+function NewTabCoverPlaceholder({ title, author }: { title: string; author: string }) {
+  return (
+    <div className="flex aspect-[2/3] w-full flex-col items-center justify-center rounded-lg bg-muted p-3 text-center">
+      <BookOpen className="mb-2 size-8 text-muted-foreground/50" />
+      <p className="line-clamp-3 text-sm font-medium text-muted-foreground">{title}</p>
+      {author && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground/70">{author}</p>}
+    </div>
+  );
+}
+
+function NewTabAddBookCard({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex aspect-[2/3] w-full flex-col items-center justify-center rounded-lg border-2 border-dashed border-muted-foreground/25 bg-muted/50 text-muted-foreground transition-colors hover:border-muted-foreground/50 hover:bg-muted"
+    >
+      <Plus className="mb-2 size-8" />
+      <span className="text-sm font-medium">Add book</span>
+    </button>
+  );
+}
+
 function NewTabPanel(_props: IDockviewPanelProps<Record<string, never>>) {
   const [books, setBooks] = useState<Book[]>(booksRefGlobal);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -307,43 +344,23 @@ function NewTabPanel(_props: IDockviewPanelProps<Record<string, never>>) {
   }, []);
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto bg-background">
-      <div className="flex items-center justify-between border-b px-4 py-3">
-        <h2 className="text-sm font-medium text-foreground">Library</h2>
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
-        >
-          <Upload className="size-3.5" />
-          Add book
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".epub"
-          multiple
-          className="hidden"
-          onChange={handleFileInput}
-        />
-      </div>
+    <>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".epub"
+        multiple
+        className="hidden"
+        onChange={handleFileInput}
+      />
       {books.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center p-6">
-          <div className="flex flex-col items-center text-center">
-            <BookOpen className="mb-3 size-10 text-muted-foreground/40" />
-            <p className="text-sm text-muted-foreground">No books yet</p>
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
-            >
-              <Upload className="size-3.5" />
-              Upload an epub
-            </button>
+        <div className="flex h-full items-center justify-center p-6">
+          <div className="w-40">
+            <NewTabAddBookCard onClick={() => fileInputRef.current?.click()} />
           </div>
         </div>
       ) : (
-        <div className="p-4 md:p-6">
+        <div className="h-full overflow-y-auto p-4 md:p-6">
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
             {books.map((book) => (
               <div key={book.id} className="group relative">
@@ -354,19 +371,9 @@ function NewTabPanel(_props: IDockviewPanelProps<Record<string, never>>) {
                 >
                   <div className="overflow-hidden rounded-lg shadow-sm transition-shadow group-hover:shadow-md">
                     {book.coverImage ? (
-                      <BookCover coverImage={book.coverImage} />
+                      <NewTabCoverImage coverImage={book.coverImage} alt={book.title} />
                     ) : (
-                      <div className="flex aspect-[2/3] w-full flex-col items-center justify-center rounded-lg bg-muted p-3 text-center">
-                        <BookOpen className="mb-2 size-8 text-muted-foreground/50" />
-                        <p className="line-clamp-3 text-sm font-medium text-muted-foreground">
-                          {book.title}
-                        </p>
-                        {book.author && (
-                          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground/70">
-                            {book.author}
-                          </p>
-                        )}
-                      </div>
+                      <NewTabCoverPlaceholder title={book.title} author={book.author} />
                     )}
                   </div>
                   <p className="mt-2 truncate text-sm font-medium">{book.title}</p>
@@ -381,13 +388,9 @@ function NewTabPanel(_props: IDockviewPanelProps<Record<string, never>>) {
                     <Ellipsis className="size-4" />
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      onClick={() => {
-                        window.location.href = `/books/${book.id}/details`;
-                      }}
-                    >
-                      <FileText className="size-4" />
-                      Details
+                    <DropdownMenuItem onClick={() => handleOpenNotebook(book)}>
+                      <NotebookPen className="size-4" />
+                      Open notebook
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       variant="destructive"
@@ -401,19 +404,12 @@ function NewTabPanel(_props: IDockviewPanelProps<Record<string, never>>) {
               </div>
             ))}
             <div>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="flex aspect-[2/3] w-full flex-col items-center justify-center rounded-lg border-2 border-dashed border-muted-foreground/25 bg-muted/50 text-muted-foreground transition-colors hover:border-muted-foreground/50 hover:bg-muted"
-              >
-                <Plus className="mb-2 size-8" />
-                <span className="text-sm font-medium">Add book</span>
-              </button>
+              <NewTabAddBookCard onClick={() => fileInputRef.current?.click()} />
             </div>
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 

@@ -423,7 +423,7 @@ const components: Record<string, React.FunctionComponent<IDockviewPanelProps<any
   "new-tab": NewTabPanel,
 };
 
-function RightHeaderActions({ containerApi }: IDockviewHeaderActionsProps) {
+function LeftHeaderActions({ containerApi }: IDockviewHeaderActionsProps) {
   const handleClick = useCallback(() => {
     const panelId = `new-tab-${crypto.randomUUID().slice(0, 8)}`;
     containerApi.addPanel({
@@ -438,7 +438,7 @@ function RightHeaderActions({ containerApi }: IDockviewHeaderActionsProps) {
     <button
       type="button"
       onClick={handleClick}
-      className="flex items-center justify-center px-1 text-muted-foreground hover:text-foreground"
+      className="flex items-center justify-center border-l border-border px-1 text-muted-foreground hover:text-foreground"
       title="New Library tab"
     >
       <Plus className="size-3.5" />
@@ -1110,7 +1110,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
             theme={dockviewTheme}
             components={components}
             watermarkComponent={WatermarkPanel}
-            rightHeaderActionsComponent={RightHeaderActions}
+            leftHeaderActionsComponent={LeftHeaderActions}
             onReady={onReady}
           />
         </div>

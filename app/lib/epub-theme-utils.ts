@@ -65,12 +65,19 @@ export function registerThemeColors(rendition: {
   const lightColors = resolveThemeColors("light");
   const darkColors = resolveThemeColors("dark");
 
+  const imgContainment = {
+    "max-height": "95vh !important",
+    "max-width": "100% !important",
+    "object-fit": "contain !important",
+  };
+
   rendition.themes.register("light", {
     body: {
       color: `${lightColors.foreground} !important`,
       background: `${lightColors.background} !important`,
     },
     a: { color: "inherit !important" },
+    img: imgContainment,
   });
   rendition.themes.register("dark", {
     body: {
@@ -78,5 +85,6 @@ export function registerThemeColors(rendition: {
       background: `${darkColors.background} !important`,
     },
     a: { color: "inherit !important" },
+    img: imgContainment,
   });
 }

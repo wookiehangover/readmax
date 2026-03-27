@@ -72,27 +72,17 @@ export function registerThemeColors(rendition: {
   };
 
   rendition.themes.register("light", {
-    html: {
-      overflow: "hidden !important",
-    },
     body: {
       color: `${lightColors.foreground} !important`,
       background: `${lightColors.background} !important`,
-      overflow: "hidden !important",
-      position: "relative !important",
     },
     a: { color: "inherit !important" },
     img: imgContainment,
   });
   rendition.themes.register("dark", {
-    html: {
-      overflow: "hidden !important",
-    },
     body: {
       color: `${darkColors.foreground} !important`,
       background: `${darkColors.background} !important`,
-      overflow: "hidden !important",
-      position: "relative !important",
     },
     a: { color: "inherit !important" },
     img: imgContainment,

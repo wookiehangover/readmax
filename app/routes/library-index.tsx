@@ -16,6 +16,13 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { Button } from "~/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "~/components/ui/dialog";
 import { StandardEbooksBrowser } from "~/components/standard-ebooks-browser";
 
 export function meta(_args: Route.MetaArgs) {
@@ -132,11 +139,11 @@ export default function LibraryIndex({ loaderData }: Route.ComponentProps) {
           </div>
         </div>
       )}
-      <StandardEbooksBrowser
-        open={seBrowserOpen}
-        onOpenChange={setSeBrowserOpen}
-        onBookAdded={handleBookAdded}
-      />
+      <Dialog open={seBrowserOpen} onOpenChange={setSeBrowserOpen}>
+        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col p-0 gap-0 overflow-hidden">
+          <StandardEbooksBrowser onBookAdded={handleBookAdded} />
+        </DialogContent>
+      </Dialog>
     </DropZone>
   );
 }

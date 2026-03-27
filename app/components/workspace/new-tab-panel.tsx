@@ -12,13 +12,11 @@ import type { Book } from "~/lib/book-store";
 import { useBookUpload } from "~/lib/use-book-upload";
 import { useBookDeletion } from "~/lib/use-book-deletion";
 import { useWorkspace } from "~/lib/workspace-context";
-import { StandardEbooksBrowser } from "~/components/standard-ebooks-browser";
 
 export function NewTabPanel(_props: IDockviewPanelProps<Record<string, never>>) {
   const ws = useWorkspace();
   const [books, setBooks] = useState<Book[]>(ws.booksRef.current);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [seBrowserOpen, setSeBrowserOpen] = useState(false);
 
   useEffect(() => {
     // Subscribe to book list changes
@@ -80,7 +78,7 @@ export function NewTabPanel(_props: IDockviewPanelProps<Record<string, never>>) 
           </div>
           <button
             type="button"
-            onClick={() => setSeBrowserOpen(true)}
+            onClick={() => ws.openStandardEbooksRef.current?.()}
             className="flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
           >
             <Globe className="size-4" />
@@ -137,7 +135,7 @@ export function NewTabPanel(_props: IDockviewPanelProps<Record<string, never>>) 
             <div>
               <button
                 type="button"
-                onClick={() => setSeBrowserOpen(true)}
+                onClick={() => ws.openStandardEbooksRef.current?.()}
                 className="flex aspect-[2/3] w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-muted-foreground/25 text-muted-foreground transition-colors hover:border-muted-foreground/50 hover:text-foreground"
               >
                 <Globe className="size-6" />
@@ -147,11 +145,6 @@ export function NewTabPanel(_props: IDockviewPanelProps<Record<string, never>>) 
           </div>
         </div>
       )}
-      <StandardEbooksBrowser
-        open={seBrowserOpen}
-        onOpenChange={setSeBrowserOpen}
-        onBookAdded={handleBookAddedNewTab}
-      />
     </>
   );
 }

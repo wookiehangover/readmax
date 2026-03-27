@@ -1,16 +1,8 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Effect } from "effect";
 import { Globe, Loader2, Plus, Check, Search, ChevronLeft, ChevronRight } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
-import { ScrollArea } from "~/components/ui/scroll-area";
 import { Skeleton } from "~/components/ui/skeleton";
 import { StandardEbooksService, type SEBook, type SESearchResult } from "~/lib/standard-ebooks";
 import { BookService, type Book } from "~/lib/book-store";
@@ -20,14 +12,10 @@ import { useEffectQuery } from "~/lib/use-effect-query";
 import { cn } from "~/lib/utils";
 
 interface StandardEbooksBrowserProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
   onBookAdded: (book: Book) => void;
 }
 
 export function StandardEbooksBrowser({
-  open,
-  onOpenChange,
   onBookAdded,
 }: StandardEbooksBrowserProps) {
   const [query, setQuery] = useState("");
@@ -55,17 +43,14 @@ export function StandardEbooksBrowser({
     };
   }, [query]);
 
-  // Load new releases when dialog opens
+  // Load new releases on mount
   const {
     data: newReleases,
     error: newReleasesError,
     isLoading: newReleasesLoading,
   } = useEffectQuery(
-    () =>
-      open
-        ? StandardEbooksService.pipe(Effect.andThen((s) => s.getNewReleases()))
-        : Effect.succeed([] as SEBook[]),
-    [open],
+    () => StandardEbooksService.pipe(Effect.andThen((s) => s.getNewReleases())),
+    [],
   );
 
   // Search books when debounced query changes
@@ -87,16 +72,6 @@ export function StandardEbooksBrowser({
   const books = isSearching ? (searchResult?.books ?? []) : (newReleases ?? []);
   const isLoading = isSearching ? searchLoading : newReleasesLoading;
   const loadError = isSearching ? searchError : newReleasesError;
-
-  // Reset state when dialog closes
-  useEffect(() => {
-    if (!open) {
-      setQuery("");
-      setDebouncedQuery("");
-      setSearchPage(1);
-      setError(null);
-    }
-  }, [open]);
 
   const handleDownload = useCallback(
     async (seBook: SEBook) => {
@@ -139,14 +114,14 @@ export function StandardEbooksBrowser({
   );
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
-        <DialogHeader>
-          <DialogTitle>Browse Standard Ebooks</DialogTitle>
-          <DialogDescription>
+    <div className="flex h-full flex-col overflow-hidden">
+      <div className="shrink-0 space-y-3 p-4 pb-0">
+        <div>
+          <h2 className="text-lg font-semibold">Browse Standard Ebooks</h2>
+          <p className="text-sm text-muted-foreground">
             Search and import free, beautifully formatted public domain ebooks.
-          </DialogDescription>
-        </DialogHeader>
+          </p>
+        </div>
 
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -167,68 +142,68 @@ export function StandardEbooksBrowser({
             Failed to load books. Check your network connection and try again.
           </p>
         )}
+      </div>
 
-        <ScrollArea className="flex-1 -mx-6 px-6">
-          {!isSearching && !isLoading && books.length > 0 && (
-            <p className="mb-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              New Releases
+      <div className="flex-1 overflow-y-auto p-4">
+        {!isSearching && !isLoading && books.length > 0 && (
+          <p className="mb-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            New Releases
+          </p>
+        )}
+
+        {isLoading ? (
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <SkeletonCard key={i} />
+            ))}
+          </div>
+        ) : books.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <p className="text-sm text-muted-foreground">
+              {isSearching ? "No books found for this search." : "No new releases available."}
             </p>
-          )}
-
-          {isLoading ? (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <SkeletonCard key={i} />
-              ))}
-            </div>
-          ) : books.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <p className="text-sm text-muted-foreground">
-                {isSearching ? "No books found for this search." : "No new releases available."}
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-              {books.map((book) => (
-                <SEBookCard
-                  key={book.urlPath}
-                  book={book}
-                  isDownloading={downloadingUrls.has(book.urlPath)}
-                  isAdded={addedUrls.has(book.urlPath)}
-                  onDownload={handleDownload}
-                />
-              ))}
-            </div>
-          )}
-        </ScrollArea>
-
-        {isSearching && searchResult && searchResult.totalPages > 1 && (
-          <div className="flex items-center justify-center gap-2 pt-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={searchPage <= 1}
-              onClick={() => setSearchPage(searchPage - 1)}
-            >
-              <ChevronLeft className="size-4" />
-              Previous
-            </Button>
-            <span className="text-sm text-muted-foreground">
-              Page {searchResult.currentPage} of {searchResult.totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={searchPage >= searchResult.totalPages}
-              onClick={() => setSearchPage(searchPage + 1)}
-            >
-              Next
-              <ChevronRight className="size-4" />
-            </Button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+            {books.map((book) => (
+              <SEBookCard
+                key={book.urlPath}
+                book={book}
+                isDownloading={downloadingUrls.has(book.urlPath)}
+                isAdded={addedUrls.has(book.urlPath)}
+                onDownload={handleDownload}
+              />
+            ))}
           </div>
         )}
-      </DialogContent>
-    </Dialog>
+      </div>
+
+      {isSearching && searchResult && searchResult.totalPages > 1 && (
+        <div className="flex shrink-0 items-center justify-center gap-2 border-t p-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={searchPage <= 1}
+            onClick={() => setSearchPage(searchPage - 1)}
+          >
+            <ChevronLeft className="size-4" />
+            Previous
+          </Button>
+          <span className="text-sm text-muted-foreground">
+            Page {searchResult.currentPage} of {searchResult.totalPages}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={searchPage >= searchResult.totalPages}
+            onClick={() => setSearchPage(searchPage + 1)}
+          >
+            Next
+            <ChevronRight className="size-4" />
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
 

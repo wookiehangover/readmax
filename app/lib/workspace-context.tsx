@@ -26,6 +26,8 @@ interface WorkspaceContextValue {
   openBookRef: React.MutableRefObject<((book: Book) => void) | null>;
   /** Callback to open a notebook panel */
   openNotebookRef: React.MutableRefObject<((book: Book) => void) | null>;
+  /** Callback to open the Standard Ebooks browser panel */
+  openStandardEbooksRef: React.MutableRefObject<(() => void) | null>;
   /** Find the navigation callback for a book by scanning dockview panels */
   findNavForBook: (bookId: string) => ((cfi: string) => void) | undefined;
   /** Find TOC entries for a book by scanning dockview panels */
@@ -55,6 +57,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const booksRef = useRef<Book[]>([]);
   const openBookRef = useRef<((book: Book) => void) | null>(null);
   const openNotebookRef = useRef<((book: Book) => void) | null>(null);
+  const openStandardEbooksRef = useRef<(() => void) | null>(null);
 
   const findNavForBook = useCallback(
     (bookId: string): ((cfi: string) => void) | undefined => {
@@ -103,6 +106,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     booksRef,
     openBookRef,
     openNotebookRef,
+    openStandardEbooksRef,
     findNavForBook,
     findTocForBook,
   };

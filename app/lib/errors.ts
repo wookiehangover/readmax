@@ -36,3 +36,8 @@ export class WorkspaceError extends Data.TaggedError("WorkspaceError")<{
   readonly operation: string;
   readonly cause?: unknown;
 }> {}
+
+export class StandardEbooksError extends Data.TaggedError("StandardEbooksError")<{
+  readonly operation: string;
+  readonly cause?: unknown;
+}> {}

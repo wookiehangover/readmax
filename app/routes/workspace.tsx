@@ -19,6 +19,7 @@ import { truncateTitle, sortBooks } from "~/lib/workspace-utils";
 import { WorkspaceProvider, useWorkspace } from "~/lib/workspace-context";
 import { BookReaderPanel, NotebookPanel } from "~/components/workspace/panel-components";
 import { NewTabPanel } from "~/components/workspace/new-tab-panel";
+import { StandardEbooksPanel } from "~/components/workspace/standard-ebooks-panel";
 import { WatermarkPanel } from "~/components/workspace/watermark-panel";
 import { LeftHeaderActions } from "~/components/workspace/left-header-actions";
 import { WorkspaceSidebar } from "~/components/workspace/workspace-sidebar";
@@ -52,6 +53,7 @@ const components: Record<string, React.FunctionComponent<IDockviewPanelProps<any
   "book-reader": BookReaderPanel,
   notebook: NotebookPanel,
   "new-tab": NewTabPanel,
+  "standard-ebooks": StandardEbooksPanel,
 };
 
 export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
@@ -339,12 +341,49 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     });
   }, []);
 
+  const openStandardEbooks = useCallback(() => {
+    const api = apiRef.current;
+    if (!api) return;
+    const existing = api.panels.find((p) => p.id.startsWith("standard-ebooks-"));
+    if (existing) {
+      existing.focus();
+      return;
+    }
+    const panelId = `standard-ebooks-${crypto.randomUUID().slice(0, 8)}`;
+    api.addPanel({
+      id: panelId,
+      component: "standard-ebooks",
+      title: "Standard Ebooks",
+      params: {},
+    });
+  }, []);
+
+  // Wrap setBooks to also update booksRef and notify booksChangeListener
+  const updateBooks = useCallback(
+    (updater: (prev: Book[]) => Book[]) => {
+      setBooks((prev) => {
+        const next = updater(prev);
+        ws.booksRef.current = next;
+        ws.booksChangeListener.current?.();
+        return next;
+      });
+    },
+    [ws],
+  );
+
   const handleBookAdded = useCallback(
     (book: Book) => {
-      setBooks((prev) => [...prev, book]);
+      updateBooks((prev) => [...prev, book]);
       openBook(book);
     },
-    [openBook],
+    [openBook, updateBooks],
+  );
+
+  const handleBookDeleted = useCallback(
+    (bookId: string) => {
+      updateBooks((prev) => prev.filter((b) => b.id !== bookId));
+    },
+    [updateBooks],
   );
 
   const { handleFileInput } = useBookUpload({ onBookAdded: handleBookAdded });
@@ -352,6 +391,9 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   // Sync context refs so child panels can open books/notebooks and trigger uploads
   ws.openBookRef.current = openBook;
   ws.openNotebookRef.current = openNotebook;
+  ws.openStandardEbooksRef.current = openStandardEbooks;
+  ws.onBookAddedRef.current = handleBookAdded;
+  ws.onBookDeletedRef.current = handleBookDeleted;
 
   return (
     <DropZone onBookAdded={handleBookAdded}>

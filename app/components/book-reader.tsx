@@ -23,6 +23,7 @@ import { registerThemeColors } from "~/lib/epub-theme-utils";
 import { useBookSearch } from "~/lib/use-book-search";
 import { SearchBar } from "~/components/search-bar";
 
+
 /** Debounce delay for persisting reading position changes (ms) */
 const POSITION_SAVE_DEBOUNCE_MS = 1000;
 
@@ -82,6 +83,7 @@ export function BookReader({ book }: BookReaderProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const bookRef = useRef<EpubBook | null>(null);
   const renditionRef = useRef<Rendition | null>(null);
+
   const [settings, updateSettings] = useSettings();
   const layoutRef = useRef(settings.readerLayout);
   const typographyRef = useRef({
@@ -134,11 +136,34 @@ export function BookReader({ book }: BookReaderProps) {
     const epubBook = ePub(book.data);
     bookRef.current = epubBook;
 
+    // Inject layout fix CSS via spine hooks — must run before iframe load
+    // so epubjs textWidth() calculation sees corrected layout
+    epubBook.spine.hooks.content.register((doc: Document, _section: any) => {
+      const style = doc.createElement("style");
+      style.textContent = `
+        /* Prevent off-screen positioned elements from inflating pagination width */
+        section[class*="titlepage"] h1,
+        section[class*="titlepage"] p,
+        section[class*="colophon"] h2,
+        section[class*="imprint"] h2 {
+          position: static !important;
+          left: auto !important;
+        }
+        img {
+          max-height: 95vh !important;
+          max-width: 100% !important;
+          object-fit: contain !important;
+        }
+      `;
+      doc.head.appendChild(style);
+    });
+
     const rendition = epubBook.renderTo(el, {
       width: "100%",
       height: "100%",
       spread: opts.spread,
       flow: opts.flow,
+      allowScriptedContent: true,
       ...("gap" in opts && { gap: opts.gap }),
     });
     renditionRef.current = rendition;
@@ -183,6 +208,7 @@ export function BookReader({ book }: BookReaderProps) {
         if (e.key === "ArrowLeft") rendition.prev();
         else if (e.key === "ArrowRight") rendition.next();
       });
+
     });
 
     registerThemeColors(rendition);
@@ -272,6 +298,7 @@ export function BookReader({ book }: BookReaderProps) {
               BookService.pipe(Effect.andThen((s) => s.savePosition(book.id, location.start.cfi))),
             ).catch((err) => console.error("Failed to save reading position:", err));
           }, POSITION_SAVE_DEBOUNCE_MS);
+
         },
       );
     })();

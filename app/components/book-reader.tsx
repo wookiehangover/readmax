@@ -175,6 +175,11 @@ export function BookReader({ book }: BookReaderProps) {
         if (e.key === "ArrowLeft") rendition.prev();
         else if (e.key === "ArrowRight") rendition.next();
       });
+
+      // Force epubjs to recalculate layout with new CSS applied
+      setTimeout(() => {
+        renditionRef.current?.resize();
+      }, 100);
     });
 
     registerThemeColors(rendition);

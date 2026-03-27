@@ -4,8 +4,10 @@ import ePub from "epubjs";
 import type EpubBook from "epubjs/types/book";
 import type Rendition from "epubjs/types/rendition";
 import { Button } from "~/components/ui/button";
-import { ChevronLeft, ChevronRight, Notebook, TableOfContents } from "lucide-react";
+import { ChevronLeft, ChevronRight, Notebook, Search, TableOfContents } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover";
+import { SearchBar } from "~/components/search-bar";
+import { useBookSearch } from "~/lib/use-book-search";
 import { TocList } from "~/components/book-list";
 import { Effect } from "effect";
 import { BookService, type Book } from "~/lib/book-store";
@@ -192,6 +194,122 @@ function WorkspaceBookReaderInner({
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestCfiRef = useRef<string | null>(null);
 
+  // Search state
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const {
+    search: executeSearch,
+    results: searchResults,
+    currentIndex: searchIndex,
+    next: searchNext,
+    prev: searchPrev,
+    clear: clearSearch,
+  } = useBookSearch(bookRef);
+
+  // Track previous search annotations so we can remove them
+  const prevSearchCfisRef = useRef<string[]>([]);
+
+  // Navigate to current search result when index changes
+  useEffect(() => {
+    if (searchResults.length > 0 && searchResults[searchIndex]) {
+      renditionRef.current?.display(searchResults[searchIndex].cfi).catch((err: unknown) => {
+        console.warn("Search navigation failed:", err);
+      });
+    }
+  }, [searchIndex, searchResults]);
+
+  // Apply/remove search highlight annotations in the epub
+  useEffect(() => {
+    const rendition = renditionRef.current;
+    if (!rendition) return;
+
+    // Remove previous annotations
+    for (const cfi of prevSearchCfisRef.current) {
+      try {
+        rendition.annotations.remove(cfi, "highlight");
+      } catch {
+        // annotation may not exist
+      }
+    }
+
+    if (searchResults.length === 0) {
+      prevSearchCfisRef.current = [];
+      return;
+    }
+
+    // Add highlight annotations for all results
+    const cfis: string[] = [];
+    for (let i = 0; i < searchResults.length; i++) {
+      const cfi = searchResults[i].cfi;
+      cfis.push(cfi);
+      const isCurrent = i === searchIndex;
+      const className = isCurrent ? "search-hl-current" : "search-hl";
+      try {
+        rendition.annotations.highlight(
+          cfi,
+          {},
+          undefined,
+          className,
+          { fill: isCurrent ? "rgba(59, 130, 246, 0.6)" : "rgba(59, 130, 246, 0.25)", "fill-opacity": "1", "mix-blend-mode": "multiply" },
+        );
+      } catch {
+        // annotation may fail for invalid CFIs
+      }
+    }
+    prevSearchCfisRef.current = cfis;
+  }, [searchResults, searchIndex]);
+
+  // Clear search when book changes
+  useEffect(() => {
+    setSearchOpen(false);
+    setSearchQuery("");
+    clearSearch();
+  }, [book.id, clearSearch]);
+
+  const handleSearchOpen = useCallback(() => {
+    setSearchOpen(true);
+  }, []);
+
+  const handleSearchClose = useCallback(() => {
+    setSearchOpen(false);
+    setSearchQuery("");
+    clearSearch();
+  }, [clearSearch]);
+
+  const handleSearchQueryChange = useCallback(
+    (query: string) => {
+      setSearchQuery(query);
+      executeSearch(query);
+    },
+    [executeSearch],
+  );
+
+  // Ref for search open state (accessible in iframe keydown handler)
+  const searchOpenRef = useRef(searchOpen);
+  searchOpenRef.current = searchOpen;
+
+  // Intercept Cmd/Ctrl+F on the parent document (when focus is outside the iframe)
+  useEffect(() => {
+    const handleFindShortcut = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "f") {
+        // Only intercept if this panel (or a descendant) has focus
+        if (
+          !panelRef.current?.contains(document.activeElement) &&
+          document.activeElement !== panelRef.current
+        )
+          return;
+        e.preventDefault();
+        e.stopPropagation();
+        setSearchOpen(true);
+      }
+    };
+
+    document.addEventListener("keydown", handleFindShortcut);
+    return () => {
+      document.removeEventListener("keydown", handleFindShortcut);
+    };
+  }, []);
+
   const flushPositionSave = useCallback(() => {
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
@@ -284,11 +402,24 @@ function WorkspaceBookReaderInner({
           background-color: rgba(255, 213, 79, 0.4) !important;
           cursor: pointer;
         }
+        .search-hl {
+          background-color: rgba(59, 130, 246, 0.25) !important;
+        }
+        .search-hl-current {
+          background-color: rgba(59, 130, 246, 0.6) !important;
+        }
       `;
       doc.head.appendChild(highlightStyle);
 
-      // Forward arrow-key navigation from the epub iframe
+      // Forward arrow-key navigation and intercept Cmd/Ctrl+F from the epub iframe
       doc.addEventListener("keydown", (e: KeyboardEvent) => {
+        // Intercept Cmd/Ctrl+F to open in-book search
+        if ((e.metaKey || e.ctrlKey) && e.key === "f") {
+          e.preventDefault();
+          e.stopPropagation();
+          setSearchOpen(true);
+          return;
+        }
         if (layoutRef.current === "scroll") return;
         if (e.key === "ArrowLeft") rendition.prev();
         else if (e.key === "ArrowRight") rendition.next();
@@ -563,10 +694,25 @@ function WorkspaceBookReaderInner({
   return (
     <div ref={panelRef} className="flex h-full outline-none" tabIndex={0}>
       <div className="flex min-w-0 flex-1 flex-col">
-        <div
-          ref={containerRef}
-          className={cn("flex-1 overflow-hidden", { "px-8 pt-10 pb-4": localReaderLayout })}
-        />
+        <div className="relative flex-1 overflow-hidden">
+          {searchOpen && (
+            <div className="absolute top-0 right-0 left-0 z-10">
+              <SearchBar
+                query={searchQuery}
+                onQueryChange={handleSearchQueryChange}
+                resultCount={searchResults.length}
+                currentIndex={searchIndex}
+                onNext={searchNext}
+                onPrev={searchPrev}
+                onClose={handleSearchClose}
+              />
+            </div>
+          )}
+          <div
+            ref={containerRef}
+            className={cn("h-full overflow-hidden", { "px-8 pt-10 pb-4": localReaderLayout })}
+          />
+        </div>
         <div className="relative flex items-center justify-center border-t px-2 h-10">
           <div className="absolute left-2 flex items-center gap-1.5">
             {totalPages !== null && currentPage !== null ? (
@@ -592,6 +738,10 @@ function WorkspaceBookReaderInner({
             </div>
           )}
           <div className="absolute right-2 flex items-center gap-1">
+            <Button variant="ghost" size="icon" onClick={handleSearchOpen} title="Search in book (Cmd+F)">
+              <Search className="size-4" />
+              <span className="sr-only">Search in book</span>
+            </Button>
             {onOpenNotebook && (
               <Button variant="ghost" size="icon" onClick={onOpenNotebook} title="Open Notebook">
                 <Notebook className="size-4" />

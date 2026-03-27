@@ -3,7 +3,7 @@ import ePub from "epubjs";
 import type EpubBook from "epubjs/types/book";
 import type Rendition from "epubjs/types/rendition";
 import { Button } from "~/components/ui/button";
-import { ChevronLeft, ChevronRight, Notebook, TableOfContents } from "lucide-react";
+import { ChevronLeft, ChevronRight, Notebook, Search, TableOfContents } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover";
 import { TocList } from "~/components/book-list";
 import { Effect } from "effect";
@@ -20,6 +20,8 @@ import type { TiptapEditorHandle } from "~/components/tiptap-editor";
 import type { HighlightReferenceAttrs } from "~/lib/tiptap-highlight-node";
 import { cn } from "~/lib/utils";
 import { registerThemeColors } from "~/lib/epub-theme-utils";
+import { useBookSearch } from "~/lib/use-book-search";
+import { SearchBar } from "~/components/search-bar";
 
 /** Debounce delay for persisting reading position changes (ms) */
 const POSITION_SAVE_DEBOUNCE_MS = 1000;
@@ -101,6 +103,9 @@ export function BookReader({ book }: BookReaderProps) {
   const [pendingHighlight, setPendingHighlight] = useState<HighlightReferenceAttrs | null>(null);
   const { toc, navigateToHref, setToc, setNavigateToHref } = useReaderNavigation();
   const [tocOpen, setTocOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const { search, results, currentIndex, next: searchNext, prev: searchPrev, clear: searchClear } = useBookSearch(bookRef);
 
   const navigateToCfi = useCallback((cfi: string) => {
     renditionRef.current?.display(cfi).catch((err: unknown) => {
@@ -162,6 +167,12 @@ export function BookReader({ book }: BookReaderProps) {
         .epubjs-hl {
           background-color: rgba(255, 213, 79, 0.4) !important;
           cursor: pointer;
+        }
+        .search-hl {
+          background-color: rgba(59, 130, 246, 0.25) !important;
+        }
+        .search-hl-current {
+          background-color: rgba(59, 130, 246, 0.6) !important;
         }
       `;
       doc.head.appendChild(highlightStyle);
@@ -329,6 +340,129 @@ export function BookReader({ book }: BookReaderProps) {
     return () => clearTimeout(timer);
   }, [annotationsPanelOpen]);
 
+  // Track previous search annotations so we can remove them
+  const prevSearchCfisRef = useRef<string[]>([]);
+
+  // Navigate to the current search result when it changes
+  useEffect(() => {
+    if (results.length > 0 && results[currentIndex]) {
+      renditionRef.current?.display(results[currentIndex].cfi).catch((err: unknown) => {
+        console.warn("Search navigation failed:", err);
+      });
+    }
+  }, [results, currentIndex]);
+
+  // Apply/remove search highlight annotations in the epub
+  useEffect(() => {
+    const rendition = renditionRef.current;
+    if (!rendition) return;
+
+    // Remove previous annotations
+    for (const cfi of prevSearchCfisRef.current) {
+      try {
+        rendition.annotations.remove(cfi, "highlight");
+      } catch {
+        // annotation may not exist
+      }
+    }
+
+    if (results.length === 0) {
+      prevSearchCfisRef.current = [];
+      return;
+    }
+
+    // Add highlight annotations for all results
+    const cfis: string[] = [];
+    for (let i = 0; i < results.length; i++) {
+      const cfi = results[i].cfi;
+      cfis.push(cfi);
+      const isCurrent = i === currentIndex;
+      const className = isCurrent ? "search-hl-current" : "search-hl";
+      try {
+        rendition.annotations.highlight(
+          cfi,
+          {},
+          undefined,
+          className,
+          { fill: isCurrent ? "rgba(59, 130, 246, 0.6)" : "rgba(59, 130, 246, 0.25)", "fill-opacity": "1", "mix-blend-mode": "multiply" },
+        );
+      } catch {
+        // annotation may fail for invalid CFIs
+      }
+    }
+    prevSearchCfisRef.current = cfis;
+  }, [results, currentIndex]);
+
+  // Clear search state when book changes
+  useEffect(() => {
+    setSearchOpen(false);
+    setSearchQuery("");
+    searchClear();
+  }, [book.id, searchClear]);
+
+  // Intercept Cmd/Ctrl+F in parent page and epub iframe
+  useEffect(() => {
+    const handleFindShortcut = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "f") {
+        e.preventDefault();
+        e.stopPropagation();
+        setSearchOpen(true);
+      }
+    };
+
+    document.addEventListener("keydown", handleFindShortcut);
+
+    // Also intercept in the epub iframe
+    const rendition = renditionRef.current;
+    const contents = (rendition as any)?.getContents?.() as any[] | undefined;
+    contents?.forEach((content: any) => {
+      content.document?.addEventListener("keydown", handleFindShortcut);
+    });
+
+    return () => {
+      document.removeEventListener("keydown", handleFindShortcut);
+      contents?.forEach((content: any) => {
+        content.document?.removeEventListener("keydown", handleFindShortcut);
+      });
+    };
+  }, []);
+
+  // Re-register Cmd/Ctrl+F handler in iframe when content changes
+  useEffect(() => {
+    const rendition = renditionRef.current;
+    if (!rendition) return;
+
+    const registerHandler = (contents: any) => {
+      const doc = contents.document;
+      if (!doc) return;
+      const handler = (e: KeyboardEvent) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === "f") {
+          e.preventDefault();
+          e.stopPropagation();
+          setSearchOpen(true);
+        }
+      };
+      doc.addEventListener("keydown", handler);
+      (contents as any).__searchHandler = handler;
+    };
+
+    rendition.hooks.content.register(registerHandler);
+  }, []);
+
+  const handleSearchQueryChange = useCallback(
+    (query: string) => {
+      setSearchQuery(query);
+      search(query);
+    },
+    [search],
+  );
+
+  const handleSearchClose = useCallback(() => {
+    setSearchOpen(false);
+    setSearchQuery("");
+    searchClear();
+  }, [searchClear]);
+
   const handlePrev = useCallback(() => renditionRef.current?.prev(), []);
   const handleNext = useCallback(() => renditionRef.current?.next(), []);
 
@@ -381,10 +515,25 @@ export function BookReader({ book }: BookReaderProps) {
   return (
     <div className="flex h-full">
       <div className="flex min-w-0 flex-1 flex-col">
-        <div
-          ref={containerRef}
-          className={cn("flex-1 overflow-hidden", { "px-8 pt-10 pb-4": settings.readerLayout })}
-        />
+        <div className="relative flex-1 overflow-hidden">
+          {searchOpen && (
+            <div className="absolute top-0 right-0 left-0 z-10">
+              <SearchBar
+                query={searchQuery}
+                onQueryChange={handleSearchQueryChange}
+                resultCount={results.length}
+                currentIndex={currentIndex}
+                onNext={searchNext}
+                onPrev={searchPrev}
+                onClose={handleSearchClose}
+              />
+            </div>
+          )}
+          <div
+            ref={containerRef}
+            className={cn("h-full overflow-hidden", { "px-8 pt-10 pb-4": settings.readerLayout })}
+          />
+        </div>
         <div className="relative flex items-center justify-center border-t px-2 h-12 md:h-10">
           <div className="absolute left-2 flex items-center gap-1.5">
             {totalPages !== null && currentPage !== null ? (
@@ -420,6 +569,16 @@ export function BookReader({ book }: BookReaderProps) {
             </div>
           )}
           <div className="absolute right-2 flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-10 md:size-8"
+              onClick={() => setSearchOpen((prev) => !prev)}
+              title="Search in book (Cmd+F)"
+            >
+              <Search className="size-5 md:size-4" />
+              <span className="sr-only">Search in book</span>
+            </Button>
             <Button
               variant="ghost"
               size="icon"

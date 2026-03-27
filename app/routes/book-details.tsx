@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { Effect } from "effect";
-import { ArrowLeft, BookOpen } from "lucide-react";
+import { ArrowLeft, BookOpen, BookOpenText } from "lucide-react";
 import type { Route } from "./+types/book-details";
 import type { JSONContent } from "@tiptap/react";
 import { BookService, type Book } from "~/lib/book-store";
@@ -164,9 +164,13 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
             <Input id="author" value={author} onChange={(e) => setAuthor(e.target.value)} />
           </div>
 
-          <div className="mt-2">
+          <div className="mt-2 flex gap-2">
             <Button onClick={handleSave} disabled={saving}>
               {saving ? "Saving…" : saved ? "Saved" : "Save"}
+            </Button>
+            <Button variant="outline" render={<Link to={`/books/${book.id}`} />}>
+              <BookOpenText className="size-4" />
+              Read
             </Button>
           </div>
         </div>

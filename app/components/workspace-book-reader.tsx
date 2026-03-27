@@ -17,10 +17,14 @@ import { HighlightPopover } from "~/components/highlight-popover";
 import { useHighlights } from "~/lib/use-highlights";
 import { useEffectQuery } from "~/lib/use-effect-query";
 import { cn } from "~/lib/utils";
-import { resolveThemeColors } from "~/lib/epub-theme-utils";
+import { registerThemeColors } from "~/lib/epub-theme-utils";
 import { resolveStartCfi, savePositionDualKey } from "~/lib/position-utils";
 import type { DockviewPanelApi } from "dockview";
 import type { TocEntry } from "~/lib/reader-context";
+import { getTypographyCss, getRenditionOptions } from "~/lib/epub-rendering-utils";
+
+/** Debounce delay for persisting reading position changes (ms) */
+const POSITION_SAVE_DEBOUNCE_MS = 1000;
 
 /** Typography overrides restored from dockview panel params */
 export interface PanelTypographyParams {
@@ -43,53 +47,7 @@ interface WorkspaceBookReaderProps {
   onHighlightCreated?: (highlight: { highlightId: string; cfiRange: string; text: string }) => void;
 }
 
-function getFontFallback(fontFamily: string): string {
-  if (fontFamily === "Geist") return "sans-serif";
-  if (fontFamily === "Geist Mono") return "monospace";
-  if (fontFamily === "Berkeley Mono") return "monospace";
-  return "serif";
-}
 
-function getTypographyCss(fontFamily: string, fontSize: number, lineHeight: number): string {
-  const fallback = getFontFallback(fontFamily);
-  return `
-    @font-face {
-      font-family: "Geist";
-      src: url("/fonts/Geist[wght].woff2") format("woff2");
-      font-weight: 100 900;
-      font-display: swap;
-    }
-    @font-face {
-      font-family: "Geist Mono";
-      src: url("/fonts/GeistMono[wght].woff2") format("woff2");
-      font-weight: 100 900;
-      font-display: swap;
-    }
-    @font-face {
-      font-family: "Berkeley Mono";
-      src: url("/fonts/BerkeleyMonoVariable.woff2") format("woff2");
-      font-weight: 100 900;
-      font-display: swap;
-    }
-    * {
-      font-family: "${fontFamily}", ${fallback} !important;
-      font-size: ${fontSize}% !important;
-      line-height: ${lineHeight} !important;
-    }
-  `;
-}
-
-function getRenditionOptions(layout: ReaderLayout) {
-  switch (layout) {
-    case "spread":
-      return { spread: "always" as const, flow: "paginated" as const, gap: 64 };
-    case "scroll":
-      return { spread: "none" as const, flow: "scrolled-doc" as const };
-    case "single":
-    default:
-      return { spread: "none" as const, flow: "paginated" as const };
-  }
-}
 
 export function WorkspaceBookReader({
   bookId,
@@ -337,23 +295,7 @@ function WorkspaceBookReaderInner({
       });
     });
 
-    const lightColors = resolveThemeColors("light");
-    const darkColors = resolveThemeColors("dark");
-
-    rendition.themes.register("light", {
-      body: {
-        color: `${lightColors.foreground} !important`,
-        background: `${lightColors.background} !important`,
-      },
-      a: { color: "inherit !important" },
-    });
-    rendition.themes.register("dark", {
-      body: {
-        color: `${darkColors.foreground} !important`,
-        background: `${darkColors.background} !important`,
-      },
-      a: { color: "inherit !important" },
-    });
+    registerThemeColors(rendition);
 
     (async () => {
       await epubBook.ready;
@@ -422,7 +364,6 @@ function WorkspaceBookReaderInner({
           };
         }) => {
           if (!renditionRef.current) return;
-          const { page, total } = location.start.displayed;
           setBookProgress(location.start.percentage * 100);
           const epubLocTotal = (bookRef.current?.locations as any)?.total as number | undefined;
           if (epubLocTotal && epubLocTotal > 0) {
@@ -446,7 +387,7 @@ function WorkspaceBookReaderInner({
                   BookService.pipe(Effect.andThen((s) => s.savePosition(key, val))),
                 ),
             }).catch((err) => console.error("Failed to save reading position:", err));
-          }, 1000);
+          }, POSITION_SAVE_DEBOUNCE_MS);
         },
       );
     })();
@@ -494,23 +435,7 @@ function WorkspaceBookReaderInner({
 
     // Re-resolve and re-register theme colors (they may have been stale at init time,
     // or the CSS variables may have changed since the last theme switch)
-    const lightColors = resolveThemeColors("light");
-    const darkColors = resolveThemeColors("dark");
-
-    rendition.themes.register("light", {
-      body: {
-        color: `${lightColors.foreground} !important`,
-        background: `${lightColors.background} !important`,
-      },
-      a: { color: "inherit !important" },
-    });
-    rendition.themes.register("dark", {
-      body: {
-        color: `${darkColors.foreground} !important`,
-        background: `${darkColors.background} !important`,
-      },
-      a: { color: "inherit !important" },
-    });
+    registerThemeColors(rendition);
 
     rendition.themes.select(resolveTheme(settings.theme));
   }, [settings.theme]);
@@ -546,23 +471,7 @@ function WorkspaceBookReaderInner({
       if (!rendition) return;
 
       // Re-resolve and re-register theme colors before selecting
-      const lightColors = resolveThemeColors("light");
-      const darkColors = resolveThemeColors("dark");
-
-      rendition.themes.register("light", {
-        body: {
-          color: `${lightColors.foreground} !important`,
-          background: `${lightColors.background} !important`,
-        },
-        a: { color: "inherit !important" },
-      });
-      rendition.themes.register("dark", {
-        body: {
-          color: `${darkColors.foreground} !important`,
-          background: `${darkColors.background} !important`,
-        },
-        a: { color: "inherit !important" },
-      });
+      registerThemeColors(rendition);
 
       rendition.themes.select(resolveTheme(settings.theme));
 

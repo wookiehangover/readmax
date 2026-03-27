@@ -1,60 +1,68 @@
-import { useState, useCallback, useRef } from "react";
-import { Link, useNavigate } from "react-router";
-import { Effect } from "effect";
-import { Ellipsis, FileText, Trash2 } from "lucide-react";
+import { useState, useCallback, useRef, useEffect } from "react";
+import type { IDockviewPanelProps } from "dockview";
+import { NotebookPen, Ellipsis, Trash2 } from "lucide-react";
 import { CoverImage, CoverPlaceholder, AddBookCard } from "~/components/book-grid";
-import type { Route } from "./+types/library-index";
-import { BookService, type Book } from "~/lib/book-store";
-import { AppRuntime } from "~/lib/effect-runtime";
-import { useBookUpload } from "~/lib/use-book-upload";
-import { useBookDeletion } from "~/lib/use-book-deletion";
-import { DropZone } from "~/components/drop-zone";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
+import type { Book } from "~/lib/book-store";
+import { useBookUpload } from "~/lib/use-book-upload";
+import { useBookDeletion } from "~/lib/use-book-deletion";
+import { useWorkspace } from "~/lib/workspace-context";
 
-export function meta(_args: Route.MetaArgs) {
-  return [{ title: "Reader" }, { name: "description", content: "A browser-based ebook reader" }];
-}
-
-export async function clientLoader() {
-  const books = await AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.getBooks())));
-  return { books };
-}
-
-clientLoader.hydrate = true as const;
-
-export function HydrateFallback() {
-  return (
-    <div className="flex h-dvh items-center justify-center">
-      <p className="text-muted-foreground">Loading library…</p>
-    </div>
-  );
-}
-
-
-
-export default function LibraryIndex({ loaderData }: Route.ComponentProps) {
-  const [books, setBooks] = useState<Book[]>(loaderData.books);
-  const navigate = useNavigate();
+export function NewTabPanel(_props: IDockviewPanelProps<Record<string, never>>) {
+  const ws = useWorkspace();
+  const [books, setBooks] = useState<Book[]>(ws.booksRef.current);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleBookAdded = useCallback((book: Book) => {
-    setBooks((prev) => [...prev, book]);
-  }, []);
+  useEffect(() => {
+    // Subscribe to book list changes
+    const prev = ws.booksChangeListener.current;
+    ws.booksChangeListener.current = () => setBooks([...ws.booksRef.current]);
+    return () => {
+      ws.booksChangeListener.current = prev;
+    };
+  }, [ws]);
 
-  const handleBookDeleted = useCallback((bookId: string) => {
-    setBooks((prev) => prev.filter((b) => b.id !== bookId));
-  }, []);
+  const handleOpenBook = useCallback(
+    (book: Book) => {
+      ws.openBookRef.current?.(book);
+    },
+    [ws],
+  );
 
-  const { handleFileInput } = useBookUpload({ onBookAdded: handleBookAdded });
-  const { handleDeleteBook } = useBookDeletion({ onBookDeleted: handleBookDeleted });
+  const handleOpenNotebook = useCallback(
+    (book: Book) => {
+      ws.openNotebookRef.current?.(book);
+    },
+    [ws],
+  );
+
+  const handleBookAddedNewTab = useCallback(
+    (book: Book) => {
+      ws.booksRef.current = [...ws.booksRef.current, book];
+      ws.booksChangeListener.current?.();
+      ws.openBookRef.current?.(book);
+    },
+    [ws],
+  );
+
+  const handleBookDeletedNewTab = useCallback(
+    (bookId: string) => {
+      ws.booksRef.current = ws.booksRef.current.filter((b) => b.id !== bookId);
+      ws.booksChangeListener.current?.();
+    },
+    [ws],
+  );
+
+  const { handleDeleteBook } = useBookDeletion({ onBookDeleted: handleBookDeletedNewTab });
+  const { handleFileInput } = useBookUpload({ onBookAdded: handleBookAddedNewTab });
 
   return (
-    <DropZone onBookAdded={handleBookAdded}>
+    <>
       <input
         ref={fileInputRef}
         type="file"
@@ -64,17 +72,21 @@ export default function LibraryIndex({ loaderData }: Route.ComponentProps) {
         onChange={handleFileInput}
       />
       {books.length === 0 ? (
-        <div className="flex h-dvh items-center justify-center p-6">
+        <div className="flex h-full items-center justify-center p-6">
           <div className="w-40">
             <AddBookCard onClick={() => fileInputRef.current?.click()} />
           </div>
         </div>
       ) : (
-        <div className="h-dvh overflow-y-auto p-4 md:p-6">
+        <div className="h-full overflow-y-auto p-4 md:p-6">
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
             {books.map((book) => (
               <div key={book.id} className="group relative">
-                <Link to={`/books/${book.id}`} className="block">
+                <button
+                  type="button"
+                  onClick={() => handleOpenBook(book)}
+                  className="block w-full text-left"
+                >
                   <div className="overflow-hidden rounded-lg shadow-sm transition-shadow group-hover:shadow-md">
                     {book.coverImage ? (
                       <CoverImage coverImage={book.coverImage} alt={book.title} />
@@ -84,7 +96,7 @@ export default function LibraryIndex({ loaderData }: Route.ComponentProps) {
                   </div>
                   <p className="mt-2 truncate text-sm font-medium">{book.title}</p>
                   <p className="truncate text-xs text-muted-foreground">{book.author}</p>
-                </Link>
+                </button>
                 <DropdownMenu>
                   <DropdownMenuTrigger
                     className="absolute top-1 right-1 flex size-7 items-center justify-center rounded-md bg-black/50 text-white opacity-0 backdrop-blur-sm transition-opacity hover:bg-black/70 focus-visible:opacity-100 group-hover:opacity-100"
@@ -94,9 +106,9 @@ export default function LibraryIndex({ loaderData }: Route.ComponentProps) {
                     <Ellipsis className="size-4" />
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => navigate(`/books/${book.id}/details`)}>
-                      <FileText className="size-4" />
-                      Details
+                    <DropdownMenuItem onClick={() => handleOpenNotebook(book)}>
+                      <NotebookPen className="size-4" />
+                      Open notebook
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       variant="destructive"
@@ -115,6 +127,6 @@ export default function LibraryIndex({ loaderData }: Route.ComponentProps) {
           </div>
         </div>
       )}
-    </DropZone>
+    </>
   );
 }

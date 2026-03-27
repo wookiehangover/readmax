@@ -19,7 +19,10 @@ import { useReaderNavigation, type TocEntry } from "~/lib/reader-context";
 import type { TiptapEditorHandle } from "~/components/tiptap-editor";
 import type { HighlightReferenceAttrs } from "~/lib/tiptap-highlight-node";
 import { cn } from "~/lib/utils";
-import { resolveThemeColors } from "~/lib/epub-theme-utils";
+import { registerThemeColors } from "~/lib/epub-theme-utils";
+
+/** Debounce delay for persisting reading position changes (ms) */
+const POSITION_SAVE_DEBOUNCE_MS = 1000;
 
 interface BookReaderProps {
   book: Book;
@@ -171,23 +174,7 @@ export function BookReader({ book }: BookReaderProps) {
       });
     });
 
-    const lightColors = resolveThemeColors("light");
-    const darkColors = resolveThemeColors("dark");
-
-    rendition.themes.register("light", {
-      body: {
-        color: `${lightColors.foreground} !important`,
-        background: `${lightColors.background} !important`,
-      },
-      a: { color: "inherit !important" },
-    });
-    rendition.themes.register("dark", {
-      body: {
-        color: `${darkColors.foreground} !important`,
-        background: `${darkColors.background} !important`,
-      },
-      a: { color: "inherit !important" },
-    });
+    registerThemeColors(rendition);
 
     (async () => {
       await epubBook.ready;
@@ -255,7 +242,6 @@ export function BookReader({ book }: BookReaderProps) {
           };
         }) => {
           if (!renditionRef.current) return;
-          const { page, total } = location.start.displayed;
           setBookProgress(location.start.percentage * 100);
           // Compute current page from locations if available
           const epubLocTotal = (bookRef.current?.locations as any)?.total as number | undefined;
@@ -274,7 +260,7 @@ export function BookReader({ book }: BookReaderProps) {
             AppRuntime.runPromise(
               BookService.pipe(Effect.andThen((s) => s.savePosition(book.id, location.start.cfi))),
             ).catch((err) => console.error("Failed to save reading position:", err));
-          }, 1000);
+          }, POSITION_SAVE_DEBOUNCE_MS);
         },
       );
     })();
@@ -313,23 +299,7 @@ export function BookReader({ book }: BookReaderProps) {
 
     // Re-resolve and re-register theme colors (they may have been stale at init time,
     // or the CSS variables may have changed since the last theme switch)
-    const lightColors = resolveThemeColors("light");
-    const darkColors = resolveThemeColors("dark");
-
-    rendition.themes.register("light", {
-      body: {
-        color: `${lightColors.foreground} !important`,
-        background: `${lightColors.background} !important`,
-      },
-      a: { color: "inherit !important" },
-    });
-    rendition.themes.register("dark", {
-      body: {
-        color: `${darkColors.foreground} !important`,
-        background: `${darkColors.background} !important`,
-      },
-      a: { color: "inherit !important" },
-    });
+    registerThemeColors(rendition);
 
     rendition.themes.select(resolveTheme(settings.theme));
   }, [settings.theme]);

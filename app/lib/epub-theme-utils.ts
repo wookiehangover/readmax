@@ -36,7 +36,7 @@ export function resolveThemeColors(mode: "light" | "dark") {
   document.body.appendChild(probe);
 
   // Force style recalculation before reading computed values
-  probe.offsetHeight;
+  void probe.offsetHeight;
 
   const computed = getComputedStyle(probe);
   const background = computed.backgroundColor;
@@ -50,4 +50,33 @@ export function resolveThemeColors(mode: "light" | "dark") {
   }
 
   return { background, foreground };
+}
+
+/**
+ * Resolve theme colors for both light and dark modes and register them on an
+ * epubjs rendition. This consolidates the repeated resolve-and-register pattern
+ * used across reader components.
+ */
+export function registerThemeColors(rendition: {
+  themes: {
+    register: (name: string, styles: Record<string, Record<string, string>>) => void;
+  };
+}) {
+  const lightColors = resolveThemeColors("light");
+  const darkColors = resolveThemeColors("dark");
+
+  rendition.themes.register("light", {
+    body: {
+      color: `${lightColors.foreground} !important`,
+      background: `${lightColors.background} !important`,
+    },
+    a: { color: "inherit !important" },
+  });
+  rendition.themes.register("dark", {
+    body: {
+      color: `${darkColors.foreground} !important`,
+      background: `${darkColors.background} !important`,
+    },
+    a: { color: "inherit !important" },
+  });
 }

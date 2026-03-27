@@ -81,13 +81,13 @@ function OptionButton({
 
 function StepperControl({
   label,
-  value,
+  _value,
   displayValue,
   onDecrement,
   onIncrement,
 }: {
   label: string;
-  value: number;
+  _value: number;
   displayValue: string;
   onDecrement: () => void;
   onIncrement: () => void;

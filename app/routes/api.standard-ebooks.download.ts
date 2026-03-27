@@ -5,7 +5,7 @@ const SE_BASE = "https://standardebooks.org";
 function deriveEpubDownloadUrl(urlPath: string): string {
   const segments = urlPath.replace(/^\/ebooks\//, "").split("/");
   const filename = segments.join("_") + ".epub";
-  return `${SE_BASE}${urlPath}/downloads/${filename}`;
+  return `${SE_BASE}${urlPath}/downloads/${filename}?source=feed`;
 }
 
 export async function loader({ request }: Route.LoaderArgs) {

@@ -57,6 +57,13 @@ export function BookReaderPanel({
       return;
     }
 
+    // Determine positioning: reuse an existing group to the right if one exists
+    const bookGroup = api.group;
+    const bookRect = bookGroup.element.getBoundingClientRect();
+    const rightGroup = dockApi.groups.find(
+      (g) => g !== bookGroup && g.element.getBoundingClientRect().left >= bookRect.right - 1,
+    );
+
     const title = params.bookTitle ?? "Untitled";
     dockApi.addPanel({
       id: panelId,
@@ -64,9 +71,11 @@ export function BookReaderPanel({
       title: truncateTitle(`Notes: ${title}`),
       params: { bookId: params.bookId, bookTitle: title },
       renderer: "always",
-      position: { referencePanel: api.id, direction: "right" },
+      position: rightGroup
+        ? { referenceGroup: rightGroup }
+        : { referencePanel: api.id, direction: "right" as const },
     });
-  }, [dockviewApi, params.bookId, params.bookTitle, api.id]);
+  }, [dockviewApi, params.bookId, params.bookTitle, api]);
 
   const handleHighlightCreated = useCallback(
     (highlight: { highlightId: string; cfiRange: string; text: string }) => {

@@ -311,20 +311,31 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       (p) => p.id.startsWith("book-") && (p.params as Record<string, unknown>)?.bookId === book.id,
     );
 
+    // Determine positioning: reuse an existing group to the right if one exists
+    let position: Record<string, unknown> | undefined;
+    if (bookPanel) {
+      const bookGroup = bookPanel.group;
+      const bookRect = bookGroup.element.getBoundingClientRect();
+      // Look for an existing group whose left edge is to the right of the book's group
+      const rightGroup = api.groups.find(
+        (g) => g !== bookGroup && g.element.getBoundingClientRect().left >= bookRect.right - 1,
+      );
+      if (rightGroup) {
+        // Add as a tab in the existing right group
+        position = { referenceGroup: rightGroup };
+      } else {
+        // No group to the right — split to create one
+        position = { referencePanel: bookPanel.id, direction: "right" as const };
+      }
+    }
+
     api.addPanel({
       id: panelId,
       component: "notebook",
       title: truncateTitle(`Notes: ${book.title}`),
       params: { bookId: book.id, bookTitle: book.title },
       renderer: "always",
-      ...(bookPanel
-        ? {
-            position: {
-              referencePanel: bookPanel.id,
-              direction: "right" as const,
-            },
-          }
-        : {}),
+      ...(position ? { position } : {}),
     });
   }, []);
 

@@ -1,5 +1,23 @@
 import type { ReaderLayout } from "~/lib/settings";
 
+/**
+ * CSS to prevent oversized images from breaking epubjs pagination.
+ * Standard Ebooks titlepages use a full-width PNG that overflows the
+ * viewport, causing epubjs to create phantom blank pages.
+ */
+export const EPUB_IMAGE_CONTAINMENT_CSS = `
+  /* Prevent oversized images from breaking epubjs pagination */
+  img {
+    max-height: 95vh;
+    max-width: 100%;
+    object-fit: contain;
+  }
+  /* Fix SE titlepage layout for epubjs pagination */
+  section[class*="titlepage"] img {
+    max-height: 80vh;
+  }
+`;
+
 export function getFontFallback(fontFamily: string): string {
   if (fontFamily === "Geist") return "sans-serif";
   if (fontFamily === "Geist Mono") return "monospace";

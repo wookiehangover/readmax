@@ -44,22 +44,17 @@ export async function loader({ request }: Route.LoaderArgs) {
   const query = url.searchParams.get("query") ?? "";
   const page = parseInt(url.searchParams.get("page") ?? "1", 10);
 
-  if (!query) {
-    return Response.json(
-      { books: [], currentPage: 1, totalPages: 1 } satisfies SESearchResult,
-      {
-        headers: {
-          "Cache-Control": "public, max-age=300, stale-while-revalidate=600",
-        },
-      },
-    );
-  }
-
-  const params = new URLSearchParams({
-    query,
-    "per-page": "12",
-    page: String(page),
-  });
+  const params = query
+    ? new URLSearchParams({
+        query,
+        "per-page": "12",
+        page: String(page),
+      })
+    : new URLSearchParams({
+        "per-page": "12",
+        page: String(page),
+        sort: "popularity",
+      });
 
   const res = await fetch(`${SE_BASE}/ebooks?${params.toString()}`);
   if (!res.ok) {

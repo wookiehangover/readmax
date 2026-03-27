@@ -4,7 +4,7 @@ import { Globe, Loader2, Plus, Check, Search, ChevronLeft, ChevronRight } from "
 import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
-import { StandardEbooksService, type SEBook, type SESearchResult } from "~/lib/standard-ebooks";
+import { StandardEbooksService, type SEBook } from "~/lib/standard-ebooks";
 import { BookService, type Book } from "~/lib/book-store";
 import { parseEpubEffect } from "~/lib/epub-service";
 import { AppRuntime } from "~/lib/effect-runtime";
@@ -43,35 +43,21 @@ export function StandardEbooksBrowser({
     };
   }, [query]);
 
-  // Load new releases on mount
-  const {
-    data: newReleases,
-    error: newReleasesError,
-    isLoading: newReleasesLoading,
-  } = useEffectQuery(
-    () => StandardEbooksService.pipe(Effect.andThen((s) => s.getNewReleases())),
-    [],
-  );
-
-  // Search books when debounced query changes
+  // Search books or load popular books (empty query = popular)
   const {
     data: searchResult,
-    error: searchError,
-    isLoading: searchLoading,
+    error: loadError,
+    isLoading,
   } = useEffectQuery(
     () =>
-      debouncedQuery
-        ? StandardEbooksService.pipe(
-            Effect.andThen((s) => s.searchBooks(debouncedQuery, searchPage)),
-          )
-        : Effect.succeed(null as SESearchResult | null),
+      StandardEbooksService.pipe(
+        Effect.andThen((s) => s.searchBooks(debouncedQuery, searchPage)),
+      ),
     [debouncedQuery, searchPage],
   );
 
   const isSearching = debouncedQuery.length > 0;
-  const books = isSearching ? (searchResult?.books ?? []) : (newReleases ?? []);
-  const isLoading = isSearching ? searchLoading : newReleasesLoading;
-  const loadError = isSearching ? searchError : newReleasesError;
+  const books = searchResult?.books ?? [];
 
   const handleDownload = useCallback(
     async (seBook: SEBook) => {
@@ -147,7 +133,7 @@ export function StandardEbooksBrowser({
       <div className="flex-1 overflow-y-auto p-4">
         {!isSearching && !isLoading && books.length > 0 && (
           <p className="mb-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-            New Releases
+            Most Popular
           </p>
         )}
 
@@ -160,7 +146,7 @@ export function StandardEbooksBrowser({
         ) : books.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <p className="text-sm text-muted-foreground">
-              {isSearching ? "No books found for this search." : "No new releases available."}
+              {isSearching ? "No books found for this search." : "No books available."}
             </p>
           </div>
         ) : (
@@ -176,9 +162,34 @@ export function StandardEbooksBrowser({
             ))}
           </div>
         )}
+
+        <div className="mt-6 border-t pt-4 pb-2 text-center">
+          <p className="text-xs text-muted-foreground">
+            Ebooks from{" "}
+            <a
+              href="https://standardebooks.org"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-foreground"
+            >
+              Standard Ebooks
+            </a>
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground/70">
+            Standard Ebooks is a volunteer-driven project dedicated to producing free, beautiful digital literature.
+          </p>
+          <a
+            href="https://standardebooks.org/donate"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-1 inline-block text-xs text-muted-foreground hover:text-foreground"
+          >
+            Support their mission →
+          </a>
+        </div>
       </div>
 
-      {isSearching && searchResult && searchResult.totalPages > 1 && (
+      {searchResult && searchResult.totalPages > 1 && (
         <div className="flex shrink-0 items-center justify-center gap-2 border-t p-2">
           <Button
             variant="outline"
@@ -238,7 +249,14 @@ function SEBookCard({
         )}
       </div>
       <div className="flex flex-1 flex-col gap-1 p-2">
-        <p className="line-clamp-2 text-sm font-medium leading-tight">{book.title}</p>
+        <a
+          href={`https://standardebooks.org${book.urlPath}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="line-clamp-2 text-sm font-medium leading-tight hover:underline"
+        >
+          {book.title}
+        </a>
         <p className="line-clamp-1 text-xs text-muted-foreground">{book.author}</p>
         <div className="mt-auto pt-1">
           <Button

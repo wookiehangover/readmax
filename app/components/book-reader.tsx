@@ -168,6 +168,12 @@ export function BookReader({ book }: BookReaderProps) {
           background-color: rgba(255, 213, 79, 0.4) !important;
           cursor: pointer;
         }
+        .search-hl {
+          background-color: rgba(59, 130, 246, 0.25) !important;
+        }
+        .search-hl-current {
+          background-color: rgba(59, 130, 246, 0.6) !important;
+        }
       `;
       doc.head.appendChild(highlightStyle);
 
@@ -334,6 +340,9 @@ export function BookReader({ book }: BookReaderProps) {
     return () => clearTimeout(timer);
   }, [annotationsPanelOpen]);
 
+  // Track previous search annotations so we can remove them
+  const prevSearchCfisRef = useRef<string[]>([]);
+
   // Navigate to the current search result when it changes
   useEffect(() => {
     if (results.length > 0 && results[currentIndex]) {
@@ -343,32 +352,46 @@ export function BookReader({ book }: BookReaderProps) {
     }
   }, [results, currentIndex]);
 
-  // Add/remove search highlight styling in the epub iframe
+  // Apply/remove search highlight annotations in the epub
   useEffect(() => {
     const rendition = renditionRef.current;
     if (!rendition) return;
 
-    const styleId = "reader-search-highlights";
-    const css = `
-      .search-highlight {
-        background-color: rgba(59, 130, 246, 0.3) !important;
-        border-bottom: 2px solid rgba(59, 130, 246, 0.8) !important;
+    // Remove previous annotations
+    for (const cfi of prevSearchCfisRef.current) {
+      try {
+        rendition.annotations.remove(cfi, "highlight");
+      } catch {
+        // annotation may not exist
       }
-    `;
+    }
 
-    const contents = (rendition as any).getContents() as any[];
-    contents.forEach((content: any) => {
-      const doc = content.document;
-      if (!doc) return;
-      let style = doc.getElementById(styleId);
-      if (!style) {
-        style = doc.createElement("style");
-        style.id = styleId;
-        doc.head.appendChild(style);
+    if (results.length === 0) {
+      prevSearchCfisRef.current = [];
+      return;
+    }
+
+    // Add highlight annotations for all results
+    const cfis: string[] = [];
+    for (let i = 0; i < results.length; i++) {
+      const cfi = results[i].cfi;
+      cfis.push(cfi);
+      const isCurrent = i === currentIndex;
+      const className = isCurrent ? "search-hl-current" : "search-hl";
+      try {
+        rendition.annotations.highlight(
+          cfi,
+          {},
+          undefined,
+          className,
+          { fill: isCurrent ? "rgba(59, 130, 246, 0.6)" : "rgba(59, 130, 246, 0.25)", "fill-opacity": "1", "mix-blend-mode": "multiply" },
+        );
+      } catch {
+        // annotation may fail for invalid CFIs
       }
-      style.textContent = results.length > 0 ? css : "";
-    });
-  }, [results]);
+    }
+    prevSearchCfisRef.current = cfis;
+  }, [results, currentIndex]);
 
   // Clear search state when book changes
   useEffect(() => {
@@ -492,21 +515,25 @@ export function BookReader({ book }: BookReaderProps) {
   return (
     <div className="flex h-full">
       <div className="flex min-w-0 flex-1 flex-col">
-        {searchOpen && (
-          <SearchBar
-            query={searchQuery}
-            onQueryChange={handleSearchQueryChange}
-            resultCount={results.length}
-            currentIndex={currentIndex}
-            onNext={searchNext}
-            onPrev={searchPrev}
-            onClose={handleSearchClose}
+        <div className="relative flex-1 overflow-hidden">
+          {searchOpen && (
+            <div className="absolute top-0 right-0 left-0 z-10">
+              <SearchBar
+                query={searchQuery}
+                onQueryChange={handleSearchQueryChange}
+                resultCount={results.length}
+                currentIndex={currentIndex}
+                onNext={searchNext}
+                onPrev={searchPrev}
+                onClose={handleSearchClose}
+              />
+            </div>
+          )}
+          <div
+            ref={containerRef}
+            className={cn("h-full overflow-hidden", { "px-8 pt-10 pb-4": settings.readerLayout })}
           />
-        )}
-        <div
-          ref={containerRef}
-          className={cn("flex-1 overflow-hidden", { "px-8 pt-10 pb-4": settings.readerLayout })}
-        />
+        </div>
         <div className="relative flex items-center justify-center border-t px-2 h-12 md:h-10">
           <div className="absolute left-2 flex items-center gap-1.5">
             {totalPages !== null && currentPage !== null ? (

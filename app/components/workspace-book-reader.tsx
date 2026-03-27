@@ -206,6 +206,9 @@ function WorkspaceBookReaderInner({
     clear: clearSearch,
   } = useBookSearch(bookRef);
 
+  // Track previous search annotations so we can remove them
+  const prevSearchCfisRef = useRef<string[]>([]);
+
   // Navigate to current search result when index changes
   useEffect(() => {
     if (searchResults.length > 0 && searchResults[searchIndex]) {
@@ -214,6 +217,47 @@ function WorkspaceBookReaderInner({
       });
     }
   }, [searchIndex, searchResults]);
+
+  // Apply/remove search highlight annotations in the epub
+  useEffect(() => {
+    const rendition = renditionRef.current;
+    if (!rendition) return;
+
+    // Remove previous annotations
+    for (const cfi of prevSearchCfisRef.current) {
+      try {
+        rendition.annotations.remove(cfi, "highlight");
+      } catch {
+        // annotation may not exist
+      }
+    }
+
+    if (searchResults.length === 0) {
+      prevSearchCfisRef.current = [];
+      return;
+    }
+
+    // Add highlight annotations for all results
+    const cfis: string[] = [];
+    for (let i = 0; i < searchResults.length; i++) {
+      const cfi = searchResults[i].cfi;
+      cfis.push(cfi);
+      const isCurrent = i === searchIndex;
+      const className = isCurrent ? "search-hl-current" : "search-hl";
+      try {
+        rendition.annotations.highlight(
+          cfi,
+          {},
+          undefined,
+          className,
+          { fill: isCurrent ? "rgba(59, 130, 246, 0.6)" : "rgba(59, 130, 246, 0.25)", "fill-opacity": "1", "mix-blend-mode": "multiply" },
+        );
+      } catch {
+        // annotation may fail for invalid CFIs
+      }
+    }
+    prevSearchCfisRef.current = cfis;
+  }, [searchResults, searchIndex]);
 
   // Clear search when book changes
   useEffect(() => {
@@ -265,33 +309,6 @@ function WorkspaceBookReaderInner({
       document.removeEventListener("keydown", handleFindShortcut);
     };
   }, []);
-
-  // Add/remove search highlight styling in the epub iframe
-  useEffect(() => {
-    const rendition = renditionRef.current;
-    if (!rendition) return;
-
-    const styleId = "reader-search-highlights";
-    const css = `
-      .search-highlight {
-        background-color: rgba(59, 130, 246, 0.3) !important;
-        border-bottom: 2px solid rgba(59, 130, 246, 0.8) !important;
-      }
-    `;
-
-    const contents = (rendition as any).getContents() as any[];
-    contents.forEach((content: any) => {
-      const doc = content.document;
-      if (!doc) return;
-      let style = doc.getElementById(styleId);
-      if (!style) {
-        style = doc.createElement("style");
-        style.id = styleId;
-        doc.head.appendChild(style);
-      }
-      style.textContent = searchResults.length > 0 ? css : "";
-    });
-  }, [searchResults]);
 
   const flushPositionSave = useCallback(() => {
     if (saveTimerRef.current) {
@@ -384,6 +401,12 @@ function WorkspaceBookReaderInner({
         .epubjs-hl {
           background-color: rgba(255, 213, 79, 0.4) !important;
           cursor: pointer;
+        }
+        .search-hl {
+          background-color: rgba(59, 130, 246, 0.25) !important;
+        }
+        .search-hl-current {
+          background-color: rgba(59, 130, 246, 0.6) !important;
         }
       `;
       doc.head.appendChild(highlightStyle);
@@ -671,21 +694,25 @@ function WorkspaceBookReaderInner({
   return (
     <div ref={panelRef} className="flex h-full outline-none" tabIndex={0}>
       <div className="flex min-w-0 flex-1 flex-col">
-        {searchOpen && (
-          <SearchBar
-            query={searchQuery}
-            onQueryChange={handleSearchQueryChange}
-            resultCount={searchResults.length}
-            currentIndex={searchIndex}
-            onNext={searchNext}
-            onPrev={searchPrev}
-            onClose={handleSearchClose}
+        <div className="relative flex-1 overflow-hidden">
+          {searchOpen && (
+            <div className="absolute top-0 right-0 left-0 z-10">
+              <SearchBar
+                query={searchQuery}
+                onQueryChange={handleSearchQueryChange}
+                resultCount={searchResults.length}
+                currentIndex={searchIndex}
+                onNext={searchNext}
+                onPrev={searchPrev}
+                onClose={handleSearchClose}
+              />
+            </div>
+          )}
+          <div
+            ref={containerRef}
+            className={cn("h-full overflow-hidden", { "px-8 pt-10 pb-4": localReaderLayout })}
           />
-        )}
-        <div
-          ref={containerRef}
-          className={cn("flex-1 overflow-hidden", { "px-8 pt-10 pb-4": localReaderLayout })}
-        />
+        </div>
         <div className="relative flex items-center justify-center border-t px-2 h-10">
           <div className="absolute left-2 flex items-center gap-1.5">
             {totalPages !== null && currentPage !== null ? (

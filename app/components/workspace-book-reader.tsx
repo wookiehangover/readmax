@@ -4,7 +4,7 @@ import ePub from "epubjs";
 import type EpubBook from "epubjs/types/book";
 import type Rendition from "epubjs/types/rendition";
 import { Button } from "~/components/ui/button";
-import { ChevronLeft, ChevronRight, Notebook, Search, TableOfContents } from "lucide-react";
+import { ChevronLeft, ChevronRight, MessageSquare, Notebook, Search, TableOfContents } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover";
 import { SearchBar } from "~/components/search-bar";
 import { useBookSearch } from "~/lib/use-book-search";
@@ -46,6 +46,7 @@ interface WorkspaceBookReaderProps {
   onRegisterToc?: (panelId: string, toc: TocEntry[]) => void;
   onUnregisterToc?: (panelId: string) => void;
   onOpenNotebook?: () => void;
+  onOpenChat?: () => void;
   onHighlightCreated?: (highlight: { highlightId: string; cfiRange: string; text: string }) => void;
 }
 
@@ -60,6 +61,7 @@ export function WorkspaceBookReader({
   onRegisterToc,
   onUnregisterToc,
   onOpenNotebook,
+  onOpenChat,
   onHighlightCreated,
 }: WorkspaceBookReaderProps) {
   // Load book data via useEffectQuery
@@ -102,6 +104,7 @@ export function WorkspaceBookReader({
       onRegisterToc={onRegisterToc}
       onUnregisterToc={onUnregisterToc}
       onOpenNotebook={onOpenNotebook}
+      onOpenChat={onOpenChat}
       onHighlightCreated={onHighlightCreated}
     />
   );
@@ -120,6 +123,7 @@ function WorkspaceBookReaderInner({
   onRegisterToc,
   onUnregisterToc,
   onOpenNotebook,
+  onOpenChat,
   onHighlightCreated,
 }: {
   book: Book;
@@ -130,6 +134,7 @@ function WorkspaceBookReaderInner({
   onRegisterToc?: (panelId: string, toc: TocEntry[]) => void;
   onUnregisterToc?: (panelId: string) => void;
   onOpenNotebook?: () => void;
+  onOpenChat?: () => void;
   onHighlightCreated?: (highlight: { highlightId: string; cfiRange: string; text: string }) => void;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -772,6 +777,12 @@ function WorkspaceBookReaderInner({
               <Button variant="ghost" size="icon" onClick={onOpenNotebook} title="Open Notebook">
                 <Notebook className="size-4" />
                 <span className="sr-only">Open Notebook</span>
+              </Button>
+            )}
+            {onOpenChat && (
+              <Button variant="ghost" size="icon" onClick={onOpenChat} title="Chat about book">
+                <MessageSquare className="size-4" />
+                <span className="sr-only">Chat about book</span>
               </Button>
             )}
             {toc.length > 0 && (

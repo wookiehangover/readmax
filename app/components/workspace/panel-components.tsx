@@ -6,6 +6,7 @@ import {
   type PanelTypographyParams,
 } from "~/components/workspace-book-reader";
 import { WorkspaceNotebook } from "~/components/workspace-notebook";
+import { ChatPanel as ChatPanelComponent } from "~/components/chat-panel";
 import { truncateTitle } from "~/lib/workspace-utils";
 import { useWorkspace } from "~/lib/workspace-context";
 
@@ -77,6 +78,36 @@ export function BookReaderPanel({
     });
   }, [dockviewApi, params.bookId, params.bookTitle, api]);
 
+  const handleOpenChat = useCallback(() => {
+    const dockApi = dockviewApi.current;
+    if (!dockApi) return;
+
+    const panelId = `chat-${params.bookId}`;
+    const existing = dockApi.panels.find((p) => p.id === panelId);
+    if (existing) {
+      existing.focus();
+      return;
+    }
+
+    const bookGroup = api.group;
+    const bookRect = bookGroup.element.getBoundingClientRect();
+    const rightGroup = dockApi.groups.find(
+      (g) => g !== bookGroup && g.element.getBoundingClientRect().left >= bookRect.right - 1,
+    );
+
+    const title = params.bookTitle ?? "Untitled";
+    dockApi.addPanel({
+      id: panelId,
+      component: "chat",
+      title: truncateTitle(`Chat: ${title}`),
+      params: { bookId: params.bookId, bookTitle: title },
+      renderer: "always",
+      position: rightGroup
+        ? { referenceGroup: rightGroup }
+        : { referencePanel: api.id, direction: "right" as const },
+    });
+  }, [dockviewApi, params.bookId, params.bookTitle, api]);
+
   const handleHighlightCreated = useCallback(
     (highlight: { highlightId: string; cfiRange: string; text: string }) => {
       const appendFn = notebookCallbackMap.current.get(params.bookId);
@@ -108,6 +139,7 @@ export function BookReaderPanel({
       onRegisterToc={handleRegisterToc}
       onUnregisterToc={handleUnregisterToc}
       onOpenNotebook={handleOpenNotebook}
+      onOpenChat={handleOpenChat}
       onHighlightCreated={handleHighlightCreated}
     />
   );
@@ -147,6 +179,18 @@ export function NotebookPanel({ params }: IDockviewPanelProps<{ bookId: string; 
       onNavigateToCfi={handleNavigateToCfi}
       onRegisterAppendHighlight={handleRegisterAppendHighlight}
       onUnregisterAppendHighlight={handleUnregisterAppendHighlight}
+    />
+  );
+}
+
+
+export function ChatPanel({
+  params,
+}: IDockviewPanelProps<{ bookId: string; bookTitle: string }>) {
+  return (
+    <ChatPanelComponent
+      bookId={params.bookId}
+      bookTitle={params.bookTitle}
     />
   );
 }

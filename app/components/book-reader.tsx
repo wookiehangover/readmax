@@ -131,6 +131,28 @@ export function BookReader({ book }: BookReaderProps) {
     const epubBook = ePub(book.data);
     bookRef.current = epubBook;
 
+    // Inject layout fix CSS via spine hooks — must run before iframe load
+    // so epubjs textWidth() calculation sees corrected layout
+    epubBook.spine.hooks.content.register((doc: Document, _section: any) => {
+      const style = doc.createElement("style");
+      style.textContent = `
+        /* Prevent off-screen positioned elements from inflating pagination width */
+        section[class*="titlepage"] h1,
+        section[class*="titlepage"] p,
+        section[class*="colophon"] h2,
+        section[class*="imprint"] h2 {
+          position: static !important;
+          left: auto !important;
+        }
+        img {
+          max-height: 95vh !important;
+          max-width: 100% !important;
+          object-fit: contain !important;
+        }
+      `;
+      doc.head.appendChild(style);
+    });
+
     const rendition = epubBook.renderTo(el, {
       width: "100%",
       height: "100%",
@@ -176,10 +198,6 @@ export function BookReader({ book }: BookReaderProps) {
         else if (e.key === "ArrowRight") rendition.next();
       });
 
-      // Force epubjs to recalculate layout with new CSS applied
-      setTimeout(() => {
-        renditionRef.current?.resize();
-      }, 100);
     });
 
     registerThemeColors(rendition);

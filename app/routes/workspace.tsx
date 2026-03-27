@@ -106,18 +106,21 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     className: "dockview-theme-app",
   };
 
-  // Debounced layout save
-  const saveLayout = useCallback(() => {
+  // Flush layout to IndexedDB immediately (non-debounced)
+  const flushLayout = useCallback(() => {
     const api = apiRef.current;
     if (!api) return;
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      const layout = api.toJSON();
-      AppRuntime.runPromise(
-        WorkspaceService.pipe(Effect.andThen((s) => s.saveLayout(layout))),
-      ).catch(console.error);
-    }, LAYOUT_SAVE_DEBOUNCE_MS);
+    const layout = api.toJSON();
+    AppRuntime.runPromise(
+      WorkspaceService.pipe(Effect.andThen((s) => s.saveLayout(layout))),
+    ).catch(console.error);
   }, []);
+
+  // Debounced layout save
+  const saveLayout = useCallback(() => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(flushLayout, LAYOUT_SAVE_DEBOUNCE_MS);
+  }, [flushLayout]);
 
   const onReady = useCallback(
     (event: DockviewReadyEvent) => {
@@ -172,6 +175,30 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     },
     [saveLayout, ws],
   );
+
+  // Flush pending layout save on page unload / tab hide
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+        flushLayout();
+      }
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden" && saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+        flushLayout();
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [flushLayout]);
 
   // Register TOC change listener and cleanup on unmount
   useEffect(() => {

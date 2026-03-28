@@ -15,6 +15,24 @@ import { extractBookChapters, type BookChapter } from "~/lib/epub-text-extract";
 import { cn } from "~/lib/utils";
 import { useWorkspace } from "~/lib/workspace-context";
 
+/** Extract a normalized tool info object from an AI SDK tool part (static or dynamic). */
+function getToolInfo(part: any): {
+  toolName: string;
+  state: string;
+  input?: Record<string, unknown>;
+  output?: any;
+} | null {
+  // Static tool parts have type "tool-{toolName}", dynamic have "dynamic-tool"
+  if (part.type === "dynamic-tool") {
+    return { toolName: part.toolName, state: part.state, input: part.input, output: part.output };
+  }
+  if (typeof part.type === "string" && part.type.startsWith("tool-")) {
+    const toolName = part.type.slice(5); // strip "tool-" prefix
+    return { toolName, state: part.state, input: part.input, output: part.output };
+  }
+  return null;
+}
+
 interface ChatPanelProps {
   bookId: string;
   bookTitle: string;
@@ -174,7 +192,7 @@ function ChatPanelInner({
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   inputRef: React.MutableRefObject<string>;
 }) {
-  const { chatContextMap, notebookCallbackMap, findNavForBook, findTocForBook } = useWorkspace();
+  const { chatContextMap, notebookCallbackMap, findNavForBook, findTocForBook, applyTempHighlightForBook } = useWorkspace();
 
   // Load notebook markdown for the AI's read_notes tool
   const [notebookMarkdown, setNotebookMarkdown] = useState<string>("");
@@ -231,15 +249,14 @@ function ChatPanelInner({
 
       // Handle append_to_notes tool calls
       const msg = event.message;
-      const appendParts = msg.parts?.filter(
-        (p: any) =>
-          p.type === "tool-invocation" &&
-          p.toolInvocation?.toolName === "append_to_notes" &&
-          p.toolInvocation?.state === "result",
-      ) ?? [];
+      const appendParts = (msg.parts ?? []).filter((p: any) => {
+        const info = getToolInfo(p);
+        return info && info.toolName === "append_to_notes" && info.state === "output-available";
+      });
 
       for (const part of appendParts) {
-        const text = (part as any).toolInvocation?.args?.text;
+        const info = getToolInfo(part);
+        const text = typeof info?.input?.text === "string" ? info.input.text : undefined;
         if (!text || !bookId) continue;
 
         const newNodes = text.split("\n").filter(Boolean).map((line: string) => ({
@@ -268,18 +285,14 @@ function ChatPanelInner({
       }
 
       // Handle create_highlight tool calls
-      const highlightParts = msg.parts?.filter(
-        (p: any) =>
-          p.type === "tool-invocation" &&
-          p.toolInvocation?.toolName === "create_highlight" &&
-          p.toolInvocation?.state === "result",
-      ) ?? [];
+      const highlightParts = (msg.parts ?? []).filter((p: any) => {
+        const info = getToolInfo(p);
+        return info && info.toolName === "create_highlight" && info.state === "output-available";
+      });
 
       for (const part of highlightParts) {
-        const args = (part as any).toolInvocation?.args as
-          | { text?: string; note?: string }
-          | undefined;
-        const highlightText = args?.text;
+        const info = getToolInfo(part);
+        const highlightText = typeof info?.input?.text === "string" ? info.input.text : undefined;
         if (!highlightText || !bookId) continue;
 
         const data = bookDataRef.current;
@@ -289,11 +302,14 @@ function ChatPanelInner({
         (async () => {
           try {
             const ePub = (await import("epubjs")).default;
-            const { searchBookForCfi } = await import("~/lib/epub-search");
+            const { fuzzySearchBookForCfi } = await import("~/lib/epub-search");
             const tempBook = ePub(data.slice(0));
             try {
-              const results = await searchBookForCfi(tempBook, highlightText);
-              if (results.length === 0) return;
+              const results = await fuzzySearchBookForCfi(tempBook, highlightText);
+              if (results.length === 0) {
+                console.warn("create_highlight: no search results for:", highlightText.slice(0, 60));
+                return;
+              }
 
               const cfiRange = results[0].cfi;
               const highlight = {
@@ -313,13 +329,14 @@ function ChatPanelInner({
                 }),
               );
 
-              // Navigate to the highlight in the reader
+              // Navigate to the highlight and show temp highlight in the reader
               const navigate = findNavForBook(bookId);
               if (navigate) {
                 navigate(cfiRange);
               }
+              applyTempHighlightForBook(bookId, cfiRange);
 
-              // Add HighlightReference to the notebook
+              // Add HighlightReference to the notebook (fall back to direct save if panel isn't open)
               const appendFn = notebookCallbackMap.current.get(bookId);
               if (appendFn) {
                 appendFn({
@@ -327,6 +344,32 @@ function ChatPanelInner({
                   cfiRange: highlight.cfiRange,
                   text: highlight.text,
                 });
+              } else {
+                // Notebook panel not open — append directly via AnnotationService
+                AppRuntime.runPromise(
+                  Effect.gen(function* () {
+                    const svc = yield* AnnotationService;
+                    const notebook = yield* svc.getNotebook(bookId);
+                    const existingContent = notebook?.content?.content ?? [];
+                    const highlightNode = {
+                      type: "highlightReference" as const,
+                      attrs: {
+                        highlightId: highlight.id,
+                        cfiRange: highlight.cfiRange,
+                        text: highlight.text,
+                      },
+                    };
+                    const updatedContent = {
+                      type: "doc" as const,
+                      content: [...existingContent, highlightNode],
+                    };
+                    yield* svc.saveNotebook({
+                      bookId,
+                      content: updatedContent,
+                      updatedAt: Date.now(),
+                    });
+                  }),
+                ).catch(console.error);
               }
             } finally {
               tempBook.destroy();
@@ -543,7 +586,7 @@ function ChatMessage({
       (p): p is { type: "text"; text: string } => p.type === "text",
     ) ?? [];
   const toolParts =
-    message.parts?.filter((p) => p.type === "tool-invocation") ?? [];
+    message.parts?.filter((p: any) => getToolInfo(p) !== null) ?? [];
   const reasoningParts =
     message.parts?.filter((p) => p.type === "reasoning") ?? [];
 
@@ -575,18 +618,10 @@ function ChatMessage({
 
         try {
           const ePub = (await import("epubjs")).default;
-          const { searchBookForCfi } = await import("~/lib/epub-search");
+          const { fuzzySearchBookForCfi } = await import("~/lib/epub-search");
           const book = ePub(data.slice(0));
           try {
-            // Try full query first
-            let results = await searchBookForCfi(book, queryStr);
-
-            // If no results, try a shorter prefix (first 40 chars)
-            if (results.length === 0 && queryStr.length > 40) {
-              const shortQuery = queryStr.slice(0, 40);
-              console.debug("Ref navigation: retrying with shorter query:", shortQuery);
-              results = await searchBookForCfi(book, shortQuery);
-            }
+            const results = await fuzzySearchBookForCfi(book, queryStr);
 
             if (results.length > 0) {
               const cfi = results[0].cfi;
@@ -650,16 +685,14 @@ function ChatMessage({
             <summary className="cursor-pointer text-[11px] text-muted-foreground font-mono flex items-center gap-1 list-none [&::-webkit-details-marker]:hidden">
               <ChevronRight className="size-3 transition-transform group-open:rotate-90" />
               {toolParts.map((part) => {
-                const inv = (part as any).toolInvocation as
-                  | { toolName: string }
-                  | undefined;
-                if (!inv) return null;
-                if (inv.toolName === "search_book") return "Searched book";
-                if (inv.toolName === "read_chapter") return "Read chapter";
-                if (inv.toolName === "read_notes") return "Read notebook";
-                if (inv.toolName === "append_to_notes") return "Added to notebook";
-                if (inv.toolName === "create_highlight") return "Highlighted";
-                return inv.toolName;
+                const info = getToolInfo(part);
+                if (!info) return null;
+                if (info.toolName === "search_book") return "Searched book";
+                if (info.toolName === "read_chapter") return "Read chapter";
+                if (info.toolName === "read_notes") return "Read notebook";
+                if (info.toolName === "append_to_notes") return "Added to notebook";
+                if (info.toolName === "create_highlight") return "Highlighted";
+                return info.toolName;
               }).filter(Boolean).join(", ")}
               {toolParts.length > 0 && ` → ${toolParts.length} step${toolParts.length > 1 ? "s" : ""}`}
               {reasoningParts.length > 0 && toolParts.length === 0 && "Reasoning"}
@@ -669,40 +702,33 @@ function ChatMessage({
               { "max-h-[4.5rem] overflow-y-auto": isStreaming },
             )}>
               {toolParts.map((part, i) => {
-                const inv = (part as any).toolInvocation as
-                  | {
-                      toolName: string;
-                      args?: Record<string, unknown>;
-                      state?: string;
-                      result?: any;
-                    }
-                  | undefined;
-                if (!inv) return null;
-                const isComplete = inv.state === "result";
-                let label = inv.toolName;
-                if (inv.toolName === "search_book") {
-                  const query = typeof inv.args?.query === "string" ? inv.args.query : "";
-                  if (isComplete && Array.isArray(inv.result)) {
-                    label = `Searched for "${query}" → ${inv.result.length} result${inv.result.length !== 1 ? "s" : ""}`;
+                const info = getToolInfo(part);
+                if (!info) return null;
+                const isComplete = info.state === "output-available";
+                let label = info.toolName;
+                if (info.toolName === "search_book") {
+                  const query = typeof info.input?.query === "string" ? info.input.query : "";
+                  if (isComplete && Array.isArray(info.output)) {
+                    label = `Searched for "${query}" → ${info.output.length} result${info.output.length !== 1 ? "s" : ""}`;
                   } else {
                     label = `Searching for "${query}"...`;
                   }
-                } else if (inv.toolName === "read_chapter") {
-                  const title = inv.args?.chapterTitle
-                    ? String(inv.args.chapterTitle)
-                    : `chapter ${inv.args?.chapterIndex}`;
-                  if (isComplete && inv.result?.text) {
-                    label = `Read ${title} → ${inv.result.text.length.toLocaleString()} chars`;
+                } else if (info.toolName === "read_chapter") {
+                  const title = info.input?.chapterTitle
+                    ? String(info.input.chapterTitle)
+                    : `chapter ${info.input?.chapterIndex}`;
+                  if (isComplete && (info.output as any)?.text) {
+                    label = `Read ${title} → ${(info.output as any).text.length.toLocaleString()} chars`;
                   } else {
                     label = `Reading ${title}...`;
                   }
-                } else if (inv.toolName === "read_notes") {
+                } else if (info.toolName === "read_notes") {
                   label = isComplete ? "Read notebook" : "Reading notebook...";
-                } else if (inv.toolName === "append_to_notes") {
+                } else if (info.toolName === "append_to_notes") {
                   label = isComplete ? "Added to notebook" : "Adding to notebook...";
-                } else if (inv.toolName === "create_highlight") {
-                  const snippet = typeof inv.args?.text === "string"
-                    ? inv.args.text.slice(0, 30) + (inv.args.text.length > 30 ? "…" : "")
+                } else if (info.toolName === "create_highlight") {
+                  const snippet = typeof info.input?.text === "string"
+                    ? (info.input.text as string).slice(0, 30) + ((info.input.text as string).length > 30 ? "…" : "")
                     : "";
                   label = isComplete
                     ? `Highlighted: "${snippet}"`
@@ -721,7 +747,7 @@ function ChatMessage({
               })}
               {reasoningParts.map((part, i) => (
                 <div key={`r-${i}`} className="italic leading-tight">
-                  {(part as any).reasoning}
+                  {(part as any).text}
                 </div>
               ))}
             </div>

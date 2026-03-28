@@ -4,7 +4,7 @@ import ePub from "epubjs";
 import type EpubBook from "epubjs/types/book";
 import type Rendition from "epubjs/types/rendition";
 import { Button } from "~/components/ui/button";
-import { ChevronLeft, ChevronRight, Notebook, Search, TableOfContents } from "lucide-react";
+import { ChevronLeft, ChevronRight, MessageSquare, Notebook, Search, TableOfContents } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover";
 import { SearchBar } from "~/components/search-bar";
 import { useBookSearch } from "~/lib/use-book-search";
@@ -46,7 +46,14 @@ interface WorkspaceBookReaderProps {
   onRegisterToc?: (panelId: string, toc: TocEntry[]) => void;
   onUnregisterToc?: (panelId: string) => void;
   onOpenNotebook?: () => void;
+  onOpenChat?: () => void;
   onHighlightCreated?: (highlight: { highlightId: string; cfiRange: string; text: string }) => void;
+  /** Shared ref for tracking current chapter position per book (for chat context) */
+  chatContextMap?: React.MutableRefObject<
+    Map<string, { currentChapterIndex: number; currentSpineHref: string; visibleText: string }>
+  >;
+  onRegisterTempHighlight?: (panelId: string, fn: (cfi: string) => void) => void;
+  onUnregisterTempHighlight?: (panelId: string) => void;
 }
 
 
@@ -60,7 +67,11 @@ export function WorkspaceBookReader({
   onRegisterToc,
   onUnregisterToc,
   onOpenNotebook,
+  onOpenChat,
   onHighlightCreated,
+  chatContextMap,
+  onRegisterTempHighlight,
+  onUnregisterTempHighlight,
 }: WorkspaceBookReaderProps) {
   // Load book data via useEffectQuery
   const {
@@ -102,7 +113,11 @@ export function WorkspaceBookReader({
       onRegisterToc={onRegisterToc}
       onUnregisterToc={onUnregisterToc}
       onOpenNotebook={onOpenNotebook}
+      onOpenChat={onOpenChat}
       onHighlightCreated={onHighlightCreated}
+      chatContextMap={chatContextMap}
+      onRegisterTempHighlight={onRegisterTempHighlight}
+      onUnregisterTempHighlight={onUnregisterTempHighlight}
     />
   );
 }
@@ -120,7 +135,11 @@ function WorkspaceBookReaderInner({
   onRegisterToc,
   onUnregisterToc,
   onOpenNotebook,
+  onOpenChat,
   onHighlightCreated,
+  chatContextMap,
+  onRegisterTempHighlight,
+  onUnregisterTempHighlight,
 }: {
   book: Book;
   panelApi?: DockviewPanelApi;
@@ -130,7 +149,13 @@ function WorkspaceBookReaderInner({
   onRegisterToc?: (panelId: string, toc: TocEntry[]) => void;
   onUnregisterToc?: (panelId: string) => void;
   onOpenNotebook?: () => void;
+  onOpenChat?: () => void;
   onHighlightCreated?: (highlight: { highlightId: string; cfiRange: string; text: string }) => void;
+  chatContextMap?: React.MutableRefObject<
+    Map<string, { currentChapterIndex: number; currentSpineHref: string; visibleText: string }>
+  >;
+  onRegisterTempHighlight?: (panelId: string, fn: (cfi: string) => void) => void;
+  onUnregisterTempHighlight?: (panelId: string) => void;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -346,6 +371,36 @@ function WorkspaceBookReaderInner({
     };
   }, [book.id, panelApi, navigateToCfi, onRegisterNavigation, onUnregisterNavigation]);
 
+  // Temporary highlight: briefly flash a CFI range in the reader
+  const applyTempHighlight = useCallback((cfi: string) => {
+    const rendition = renditionRef.current;
+    if (!rendition) return;
+    try {
+      rendition.annotations.highlight(
+        cfi, {}, undefined as any, undefined as any,
+        { fill: "rgba(255, 213, 79, 0.4)", "fill-opacity": "0.4" } as any,
+      );
+      setTimeout(() => {
+        try {
+          rendition.annotations.remove(cfi, "highlight");
+        } catch {
+          // annotation may already be gone
+        }
+      }, 3000);
+    } catch (err) {
+      console.debug("Temp highlight failed:", err);
+    }
+  }, []);
+
+  // Register temp highlight callback
+  useEffect(() => {
+    const id = panelApi?.id ?? book.id;
+    onRegisterTempHighlight?.(id, applyTempHighlight);
+    return () => {
+      onUnregisterTempHighlight?.(id);
+    };
+  }, [book.id, panelApi, applyTempHighlight, onRegisterTempHighlight, onUnregisterTempHighlight]);
+
   const {
     selectionPopover,
     editPopover,
@@ -481,6 +536,31 @@ function WorkspaceBookReaderInner({
       });
       await rendition.display(startCfi || undefined);
 
+      // Eagerly populate chatContextMap so the chat panel has context
+      // even before the first 'relocated' event fires.
+      if (chatContextMap) {
+        let visibleText = "";
+        try {
+          const contents = (rendition as any).getContents?.() as any[];
+          if (contents?.length > 0) {
+            visibleText = contents
+              .map((c: any) => c.document?.body?.textContent?.trim() ?? "")
+              .filter(Boolean)
+              .join("\n\n");
+          }
+        } catch {
+          // fallback: no visible text
+        }
+        const loc = rendition.currentLocation() as any;
+        if (loc?.start) {
+          chatContextMap.current.set(book.id, {
+            currentChapterIndex: loc.start.index ?? 0,
+            currentSpineHref: loc.start.href ?? "",
+            visibleText,
+          });
+        }
+      }
+
       const effectiveTheme = resolveTheme(settings.theme);
       rendition.themes.select(effectiveTheme);
 
@@ -517,6 +597,8 @@ function WorkspaceBookReaderInner({
             cfi: string;
             percentage: number;
             displayed: { page: number; total: number };
+            index?: number;
+            href?: string;
           };
         }) => {
           if (!renditionRef.current) return;
@@ -532,6 +614,29 @@ function WorkspaceBookReaderInner({
             setTotalPages(epubLocTotal);
           }
           latestCfiRef.current = location.start.cfi;
+
+          // Update chat context with current chapter position and visible text
+          if (chatContextMap && location.start.index != null) {
+            let visibleText = "";
+            try {
+              const contents = (renditionRef.current as any)?.getContents?.() as any[];
+              if (contents?.length > 0) {
+                visibleText = contents
+                  .map((c: any) => c.document?.body?.textContent?.trim() ?? "")
+                  .filter(Boolean)
+                  .join("\n\n");
+              }
+            } catch {
+              // fallback: no visible text
+            }
+
+            chatContextMap.current.set(book.id, {
+              currentChapterIndex: location.start.index,
+              currentSpineHref: location.start.href ?? "",
+              visibleText,
+            });
+          }
+
           if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
           saveTimerRef.current = setTimeout(() => {
             savePositionDualKey({
@@ -772,6 +877,12 @@ function WorkspaceBookReaderInner({
               <Button variant="ghost" size="icon" onClick={onOpenNotebook} title="Open Notebook">
                 <Notebook className="size-4" />
                 <span className="sr-only">Open Notebook</span>
+              </Button>
+            )}
+            {onOpenChat && (
+              <Button variant="ghost" size="icon" onClick={onOpenChat} title="Chat about book">
+                <MessageSquare className="size-4" />
+                <span className="sr-only">Chat about book</span>
               </Button>
             )}
             {toc.length > 0 && (

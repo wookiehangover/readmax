@@ -6,6 +6,7 @@ import {
   type IDockviewPanelProps,
   type DockviewApi,
   type DockviewTheme,
+  type AddPanelPositionOptions,
 } from "dockview";
 import type { Route } from "./+types/workspace";
 import { BookService, type Book } from "~/lib/book-store";
@@ -17,7 +18,7 @@ import { useSettings } from "~/lib/settings";
 import { useEffectQuery } from "~/lib/use-effect-query";
 import { truncateTitle, sortBooks } from "~/lib/workspace-utils";
 import { WorkspaceProvider, useWorkspace } from "~/lib/workspace-context";
-import { BookReaderPanel, NotebookPanel } from "~/components/workspace/panel-components";
+import { BookReaderPanel, NotebookPanel, ChatPanel } from "~/components/workspace/panel-components";
 import { NewTabPanel } from "~/components/workspace/new-tab-panel";
 import { StandardEbooksPanel } from "~/components/workspace/standard-ebooks-panel";
 import { WatermarkPanel } from "~/components/workspace/watermark-panel";
@@ -54,6 +55,7 @@ const components: Record<string, React.FunctionComponent<IDockviewPanelProps<any
   notebook: NotebookPanel,
   "new-tab": NewTabPanel,
   "standard-ebooks": StandardEbooksPanel,
+  chat: ChatPanel,
 };
 
 export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
@@ -213,6 +215,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       ws.navigationMap.current.clear();
       ws.tocMap.current.clear();
       ws.notebookCallbackMap.current.clear();
+      ws.tempHighlightMap.current.clear();
     };
   }, [ws]);
 
@@ -314,7 +317,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     );
 
     // Determine positioning: reuse an existing group to the right if one exists
-    let position: Record<string, unknown> | undefined;
+    let position: AddPanelPositionOptions | undefined;
     if (bookPanel) {
       const bookGroup = bookPanel.group;
       const bookRect = bookGroup.element.getBoundingClientRect();
@@ -358,6 +361,46 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     });
   }, []);
 
+  const openChat = useCallback((book: Book) => {
+    const api = apiRef.current;
+    if (!api) return;
+
+    const panelId = `chat-${book.id}`;
+    const existing = api.panels.find((p) => p.id === panelId);
+    if (existing) {
+      existing.focus();
+      return;
+    }
+
+    // Find an open book panel to position the chat to its right
+    const bookPanel = api.panels.find(
+      (p) => p.id.startsWith("book-") && (p.params as Record<string, unknown>)?.bookId === book.id,
+    );
+
+    let position: AddPanelPositionOptions | undefined;
+    if (bookPanel) {
+      const bookGroup = bookPanel.group;
+      const bookRect = bookGroup.element.getBoundingClientRect();
+      const rightGroup = api.groups.find(
+        (g) => g !== bookGroup && g.element.getBoundingClientRect().left >= bookRect.right - 1,
+      );
+      if (rightGroup) {
+        position = { referenceGroup: rightGroup };
+      } else {
+        position = { referencePanel: bookPanel.id, direction: "right" as const };
+      }
+    }
+
+    api.addPanel({
+      id: panelId,
+      component: "chat",
+      title: truncateTitle(`Chat: ${book.title}`),
+      params: { bookId: book.id, bookTitle: book.title },
+      renderer: "always",
+      ...(position ? { position } : {}),
+    });
+  }, []);
+
   // Wrap setBooks to also update booksRef and notify booksChangeListener
   const updateBooks = useCallback(
     (updater: (prev: Book[]) => Book[]) => {
@@ -388,9 +431,10 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
 
   const { handleFileInput } = useBookUpload({ onBookAdded: handleBookAdded });
 
-  // Sync context refs so child panels can open books/notebooks and trigger uploads
+  // Sync context refs so child panels can open books/notebooks/chats and trigger uploads
   ws.openBookRef.current = openBook;
   ws.openNotebookRef.current = openNotebook;
+  ws.openChatRef.current = openChat;
   ws.openStandardEbooksRef.current = openStandardEbooks;
   ws.onBookAddedRef.current = handleBookAdded;
   ws.onBookDeletedRef.current = handleBookDeleted;

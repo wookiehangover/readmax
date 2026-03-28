@@ -26,6 +26,8 @@ interface WorkspaceContextValue {
   openBookRef: React.MutableRefObject<((book: Book) => void) | null>;
   /** Callback to open a notebook panel */
   openNotebookRef: React.MutableRefObject<((book: Book) => void) | null>;
+  /** Callback to open a chat panel */
+  openChatRef: React.MutableRefObject<((book: Book) => void) | null>;
   /** Callback to open the Standard Ebooks browser panel */
   openStandardEbooksRef: React.MutableRefObject<(() => void) | null>;
   /** Find the navigation callback for a book by scanning dockview panels */
@@ -34,8 +36,16 @@ interface WorkspaceContextValue {
   onBookAddedRef: React.MutableRefObject<((book: Book) => void) | null>;
   /** Callback ref for when a book is deleted (calls setBooks in workspace.tsx) */
   onBookDeletedRef: React.MutableRefObject<((bookId: string) => void) | null>;
+  /** bookId -> current chapter context for chat */
+  chatContextMap: React.MutableRefObject<
+    Map<string, { currentChapterIndex: number; currentSpineHref: string; visibleText: string }>
+  >;
   /** Find TOC entries for a book by scanning dockview panels */
   findTocForBook: (bookId: string) => TocEntry[] | undefined;
+  /** panelId -> temporary highlight callback */
+  tempHighlightMap: React.MutableRefObject<Map<string, (cfi: string) => void>>;
+  /** Apply a temporary highlight in the reader for a book */
+  applyTempHighlightForBook: (bookId: string, cfi: string) => void;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -61,9 +71,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const booksRef = useRef<Book[]>([]);
   const openBookRef = useRef<((book: Book) => void) | null>(null);
   const openNotebookRef = useRef<((book: Book) => void) | null>(null);
+  const openChatRef = useRef<((book: Book) => void) | null>(null);
   const openStandardEbooksRef = useRef<(() => void) | null>(null);
   const onBookAddedRef = useRef<((book: Book) => void) | null>(null);
   const onBookDeletedRef = useRef<((bookId: string) => void) | null>(null);
+  const chatContextMap = useRef(
+    new Map<string, { currentChapterIndex: number; currentSpineHref: string; visibleText: string }>(),
+  );
+  const tempHighlightMap = useRef(new Map<string, (cfi: string) => void>());
 
   const findNavForBook = useCallback(
     (bookId: string): ((cfi: string) => void) | undefined => {
@@ -79,6 +94,26 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }
       }
       return undefined;
+    },
+    [],
+  );
+
+  const applyTempHighlightForBook = useCallback(
+    (bookId: string, cfi: string): void => {
+      const api = dockviewApi.current;
+      if (!api) return;
+      for (const panel of api.panels) {
+        if (
+          panel.id.startsWith("book-") &&
+          (panel.params as Record<string, unknown>)?.bookId === bookId
+        ) {
+          const fn = tempHighlightMap.current.get(panel.id);
+          if (fn) {
+            fn(cfi);
+            return;
+          }
+        }
+      }
     },
     [],
   );
@@ -112,11 +147,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     booksRef,
     openBookRef,
     openNotebookRef,
+    openChatRef,
     openStandardEbooksRef,
     onBookAddedRef,
     onBookDeletedRef,
+    chatContextMap,
     findNavForBook,
     findTocForBook,
+    tempHighlightMap,
+    applyTempHighlightForBook,
   };
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;

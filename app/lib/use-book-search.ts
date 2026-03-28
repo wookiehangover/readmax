@@ -1,11 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import type EpubBook from "epubjs/types/book";
+import { searchBookForCfi } from "~/lib/epub-search";
 
-export interface SearchResult {
-  cfi: string;
-  excerpt: string;
-  section: string;
-}
+export type { SearchResult } from "~/lib/epub-search";
 
 interface UseBookSearchReturn {
   search: (query: string) => void;
@@ -47,6 +44,8 @@ export function useBookSearch(
     }
   }, []);
 
+  const abortRef = useRef<AbortController | null>(null);
+
   const executeSearch = useCallback(
     async (query: string, searchId: number) => {
       const book = bookRef.current;
@@ -55,51 +54,20 @@ export function useBookSearch(
         return;
       }
 
+      // Abort any previous in-flight search
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       try {
-        await book.ready;
-
-        // Ensure spine is loaded
-        const spine = book.spine as any;
-        if (typeof spine.each !== "function") {
-          setIsSearching(false);
-          return;
-        }
-
-        // Collect all spine items
-        const spineItems: any[] = [];
-        spine.each((item: any) => {
-          spineItems.push(item);
+        const allResults = await searchBookForCfi(book, query, {
+          signal: controller.signal,
         });
-
-        const allResults: SearchResult[] = [];
-
-        for (const item of spineItems) {
-          // Abort if a newer search has been triggered
-          if (searchIdRef.current !== searchId) return;
-
-          try {
-            await item.load(book.load.bind(book));
-            const sectionResults: { cfi: string; excerpt: string }[] =
-              await item.find(query);
-
-            for (const result of sectionResults) {
-              allResults.push({
-                cfi: result.cfi,
-                excerpt: result.excerpt,
-                section: item.label || item.href || "",
-              });
-            }
-
-            item.unload();
-          } catch {
-            // Individual section search failures are non-fatal
-          }
-        }
 
         // Only update state if this is still the latest search
         if (searchIdRef.current === searchId) {
           setResults(allResults);
-          setCurrentIndex(allResults.length > 0 ? 0 : 0);
+          setCurrentIndex(0);
           setIsSearching(false);
         }
       } catch {
@@ -149,12 +117,13 @@ export function useBookSearch(
     );
   }, [results.length]);
 
-  // Cleanup debounce timer on unmount
+  // Cleanup debounce timer and abort in-flight search on unmount
   useEffect(() => {
     return () => {
       if (debounceTimer.current) {
         clearTimeout(debounceTimer.current);
       }
+      abortRef.current?.abort();
     };
   }, []);
 

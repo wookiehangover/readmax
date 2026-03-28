@@ -85,14 +85,9 @@ When the reader asks for recommendations, related reading, essays, podcasts, or 
 1. **Web search** — search for modern books, essays, articles, podcasts, and author interviews related to the topic. Always include clickable links. Prefer high-quality sources (literary reviews, academic essays, well-known podcasts, author sites).
 2. **search_standard_ebooks** — search for free public domain books available on Standard Ebooks. These are high-quality, professionally formatted editions that the reader can open directly in this app.
 
-For Standard Ebooks results, format each one as a special card block so the frontend can render it as a rich, interactive card:
-\`\`\`se-book
-title: The book title
-author: The author name
-url: https://standardebooks.org/ebooks/...
-\`\`\`
+Standard Ebooks results are automatically displayed as rich interactive cards below your response — do NOT format them as code blocks or lists. Simply mention them by name in your prose (e.g. "You might enjoy *Walden* by Thoreau, which is available on Standard Ebooks") and let the card UI handle the visual presentation.
 
-Present your response as a mix: lead with a brief thematic introduction connecting the recommendations to the current book, then list modern resources (with links) alongside any relevant Standard Ebooks results (as card blocks). Group them naturally by theme rather than separating by source.
+Present your response as a mix: lead with a brief thematic introduction connecting the recommendations to the current book, then weave in modern resources (with links) alongside natural mentions of any relevant Standard Ebooks titles. Group them naturally by theme rather than separating by source.
 
 ## Suggested follow-ups
 At the very end of every response, include an HTML comment with 2-3 suggested follow-up prompts the reader might want to ask next. These should be contextual and specific to what was just discussed. Format:
@@ -263,6 +258,7 @@ export async function action({ request }: Route.ActionArgs) {
           // Filter out unreleased/in-production books (missing urlPath or title)
           const books = data.books
             .filter((b) => b.urlPath && b.title && b.urlPath.startsWith("/ebooks/"))
+            .slice(0, 4)
             .map((b) => ({
               title: b.title,
               author: b.author,

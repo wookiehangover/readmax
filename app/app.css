@@ -3,6 +3,7 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
 @import "dockview/dist/styles/dockview.css";
+@import "streamdown/styles.css";
 
 @plugin "@tailwindcss/typography";
 

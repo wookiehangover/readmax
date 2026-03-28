@@ -3,7 +3,8 @@ import { useChat, type UIMessage } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { Effect } from "effect";
 import { Button } from "~/components/ui/button";
-import { SendHorizonal, Loader2, Trash2 } from "lucide-react";
+import { SendHorizonal, Loader2, Trash2, ChevronRight } from "lucide-react";
+import { Streamdown } from "streamdown";
 import { ChatService, type ChatMessage } from "~/lib/chat-store";
 import { BookService } from "~/lib/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
@@ -374,20 +375,82 @@ function ChatEmptyState({
 
 function ChatMessage({ message }: { message: UIMessage }) {
   const isUser = message.role === "user";
-  const text = message.parts
-    ?.filter((p): p is { type: "text"; text: string } => p.type === "text")
-    .map((p) => p.text)
-    .join("") ?? "";
+
+  const textParts =
+    message.parts?.filter(
+      (p): p is { type: "text"; text: string } => p.type === "text",
+    ) ?? [];
+  const toolParts =
+    message.parts?.filter((p) => p.type === "tool-invocation") ?? [];
+  const reasoningParts =
+    message.parts?.filter((p) => p.type === "reasoning") ?? [];
+
+  const text = textParts.map((p) => p.text).join("");
+  const hasProcessSteps = toolParts.length > 0 || reasoningParts.length > 0;
 
   return (
-    <div className={cn("flex", { "justify-end": isUser, "justify-start": !isUser })}>
+    <div
+      className={cn("flex", {
+        "justify-end": isUser,
+        "justify-start": !isUser,
+      })}
+    >
       <div
         className={cn("max-w-[85%] rounded-lg px-3 py-2 text-sm", {
           "bg-secondary text-secondary-foreground": isUser,
           "bg-muted text-foreground": !isUser,
         })}
       >
-        <p className="whitespace-pre-wrap">{text}</p>
+        {hasProcessSteps && (
+          <details className="group mb-2">
+            <summary className="cursor-pointer text-xs text-muted-foreground flex items-center gap-1 list-none [&::-webkit-details-marker]:hidden">
+              <ChevronRight className="size-3 transition-transform group-open:rotate-90" />
+              {toolParts.length > 0 &&
+                `${toolParts.length} step${toolParts.length > 1 ? "s" : ""}`}
+              {reasoningParts.length > 0 &&
+                toolParts.length === 0 &&
+                "Reasoning"}
+            </summary>
+            <div className="mt-1 space-y-1 pl-4 text-xs text-muted-foreground">
+              {toolParts.map((part, i) => {
+                const inv = (part as any).toolInvocation as
+                  | {
+                      toolName: string;
+                      args?: Record<string, unknown>;
+                    }
+                  | undefined;
+                if (!inv) return null;
+                let label = inv.toolName;
+                if (inv.toolName === "search_book")
+                  label = `Searched for "${inv.args?.query}"`;
+                else if (inv.toolName === "read_chapter") {
+                  label = inv.args?.chapterTitle
+                    ? `Read chapter: ${inv.args.chapterTitle}`
+                    : `Read chapter ${inv.args?.chapterIndex}`;
+                }
+                return (
+                  <div key={i} className="flex items-center gap-1.5">
+                    <span className="size-1 rounded-full bg-muted-foreground/50" />
+                    {label}
+                  </div>
+                );
+              })}
+              {reasoningParts.map((part, i) => (
+                <div key={`r-${i}`} className="italic">
+                  {(part as any).reasoning}
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
+        {text &&
+          (isUser ? (
+            <p className="whitespace-pre-wrap">{text}</p>
+          ) : (
+            <Streamdown className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+              {text}
+            </Streamdown>
+          ))}
       </div>
     </div>
   );

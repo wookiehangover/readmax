@@ -218,12 +218,8 @@ function ChatPanelInner({
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   inputRef: React.MutableRefObject<string>;
 }) {
-  const {
-    chatContextMap,
-    notebookCallbackMap,
-    findNavForBook,
-    applyTempHighlightForBook,
-  } = useWorkspace();
+  const { chatContextMap, notebookCallbackMap, findNavForBook, applyTempHighlightForBook } =
+    useWorkspace();
 
   // Load notebook markdown for the AI's read_notes tool
   const [notebookMarkdown, setNotebookMarkdown] = useState<string>("");

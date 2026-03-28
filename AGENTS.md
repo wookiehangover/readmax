@@ -140,3 +140,5 @@ export class MyError extends Data.TaggedError("MyError")<{
 - shadcn components use Base UI (not Radix) — check component APIs accordingly (e.g., `DropdownMenuLabel` must be inside `DropdownMenuGroup`)
 - When adding shadcn components: `pnpx shadcn@latest add <component>`
 - Prefer self-hosted fonts over CDN when font files are available locally
+- Always run `pnpm oxfmt .` before committing to ensure consistent formatting
+- Always run `pnpm oxlint` before committing and fix any warnings

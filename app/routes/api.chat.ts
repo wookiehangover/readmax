@@ -246,7 +246,7 @@ export async function action({ request }: Route.ActionArgs) {
         execute: async ({ query }) => {
           const params = new URLSearchParams({
             query,
-            "per-page": "12",
+            "per-page": "6",
             page: "1",
           });
           const res = await fetch(`${SE_BASE}/ebooks?${params.toString()}`);
@@ -258,6 +258,7 @@ export async function action({ request }: Route.ActionArgs) {
           // Filter out unreleased/in-production books (missing urlPath or title)
           const books = data.books
             .filter((b) => b.urlPath && b.title && b.urlPath.startsWith("/ebooks/"))
+            .filter((b) => b.title.toLowerCase() !== bookContext.title.toLowerCase())
             .slice(0, 4)
             .map((b) => ({
               title: b.title,

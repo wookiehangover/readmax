@@ -862,7 +862,7 @@ function ChatMessage({
         }
       }
     }
-    return results;
+    return results.slice(0, 4);
   }, [toolParts]);
 
   const streamdownComponents = useMemo<Components>(

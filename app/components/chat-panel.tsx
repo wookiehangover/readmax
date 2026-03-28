@@ -487,11 +487,11 @@ function ChatPanelInner({
       {/* Messages */}
       <div
         ref={scrollRef}
-        className={cn("flex-1 overflow-y-auto px-4 py-3 relative", {
+        className={cn("flex-1 overflow-y-auto px-4 py-3 relative flex flex-col", {
           "scroll-fog": messages.length > 0,
         })}
       >
-        <div ref={contentRef} className="min-h-full">
+        <div ref={contentRef} className="flex-1">
           {messages.length === 0 && (
             <ChatEmptyState bookTitle={bookTitle} sendMessage={sendMessage} />
           )}

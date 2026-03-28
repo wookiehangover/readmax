@@ -4,7 +4,7 @@ import { Effect } from "effect";
 import { Ellipsis, FileText, Globe, Trash2 } from "lucide-react";
 import { CoverImage, CoverPlaceholder, AddBookCard } from "~/components/book-grid";
 import type { Route } from "./+types/library-index";
-import { BookService, type Book } from "~/lib/book-store";
+import { BookService, type BookMeta } from "~/lib/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { useBookUpload } from "~/lib/use-book-upload";
 import { useBookDeletion } from "~/lib/use-book-deletion";
@@ -47,12 +47,12 @@ export function HydrateFallback() {
 
 
 export default function LibraryIndex({ loaderData }: Route.ComponentProps) {
-  const [books, setBooks] = useState<Book[]>(loaderData.books);
+  const [books, setBooks] = useState<BookMeta[]>(loaderData.books);
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [seBrowserOpen, setSeBrowserOpen] = useState(false);
 
-  const handleBookAdded = useCallback((book: Book) => {
+  const handleBookAdded = useCallback((book: BookMeta) => {
     setBooks((prev) => [...prev, book]);
   }, []);
 

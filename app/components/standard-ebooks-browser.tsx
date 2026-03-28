@@ -5,14 +5,14 @@ import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import { StandardEbooksService, type SEBook } from "~/lib/standard-ebooks";
-import { BookService, type Book } from "~/lib/book-store";
+import { BookService, type BookMeta } from "~/lib/book-store";
 import { parseEpubEffect } from "~/lib/epub-service";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { useEffectQuery } from "~/lib/use-effect-query";
 import { cn } from "~/lib/utils";
 
 interface StandardEbooksBrowserProps {
-  onBookAdded: (book: Book) => void;
+  onBookAdded: (book: BookMeta) => void;
 }
 
 export function StandardEbooksBrowser({
@@ -70,14 +70,13 @@ export function StandardEbooksBrowser({
         const seSvc = yield* StandardEbooksService;
         const arrayBuffer = yield* seSvc.downloadEpub(seBook.urlPath);
         const metadata = yield* parseEpubEffect(arrayBuffer);
-        const book: Book = {
+        const book: BookMeta = {
           id: crypto.randomUUID(),
           title: metadata.title,
           author: metadata.author,
           coverImage: metadata.coverImage,
-          data: arrayBuffer,
         };
-        yield* BookService.pipe(Effect.andThen((s) => s.saveBook(book)));
+        yield* BookService.pipe(Effect.andThen((s) => s.saveBook(book, arrayBuffer)));
         return book;
       });
 

@@ -4,12 +4,12 @@ import { Search } from "lucide-react";
 import { Input } from "~/components/ui/input";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
-import type { Book } from "~/lib/book-store";
+import type { BookMeta } from "~/lib/book-store";
 import { useReaderNavigation, type TocEntry } from "~/lib/reader-context";
 import { cn } from "~/lib/utils";
 
 interface BookListProps {
-  books: Book[];
+  books: BookMeta[];
   collapsed?: boolean;
 }
 
@@ -62,7 +62,7 @@ export function TocList({
   );
 }
 
-function BookItemContent({ book, collapsed }: { book: Book; collapsed: boolean }) {
+function BookItemContent({ book, collapsed }: { book: BookMeta; collapsed: boolean }) {
   return (
     <>
       {book.coverImage ? (
@@ -89,7 +89,7 @@ function TocPopoverItem({
   toc,
   navigateToHref,
 }: {
-  book: Book;
+  book: BookMeta;
   collapsed: boolean;
   linkClassName: string;
   toc: TocEntry[];
@@ -152,7 +152,7 @@ function TocPopoverItem({
 
 export const FILTER_THRESHOLD = 9;
 
-export function filterBooks(books: Book[], query: string): Book[] {
+export function filterBooks(books: BookMeta[], query: string): BookMeta[] {
   const q = query.toLowerCase();
   return books.filter(
     (book) =>

@@ -218,8 +218,8 @@ export function BookReader({ book }: BookReaderProps) {
       // Forward arrow-key navigation from the epub iframe
       doc.addEventListener("keydown", (e: KeyboardEvent) => {
         if (layoutRef.current === "scroll") return;
-        if (e.key === "ArrowLeft") rendition.prev();
-        else if (e.key === "ArrowRight") rendition.next();
+        if (e.key === "ArrowLeft") rendition!.prev();
+        else if (e.key === "ArrowRight") rendition!.next();
       });
 
     });
@@ -243,7 +243,7 @@ export function BookReader({ book }: BookReaderProps) {
 
       // Provide chapter navigation via rendition.display
       setNavigateToHref((href: string) => {
-        rendition.display(href).catch((err: unknown) => {
+        rendition!.display(href).catch((err: unknown) => {
           console.warn("TOC navigation failed:", err);
         });
       });

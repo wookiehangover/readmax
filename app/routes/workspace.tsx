@@ -9,7 +9,7 @@ import {
   type AddPanelPositionOptions,
 } from "dockview";
 import type { Route } from "./+types/workspace";
-import { BookService, type Book } from "~/lib/book-store";
+import { BookService, type BookMeta } from "~/lib/book-store";
 import { useBookUpload } from "~/lib/use-book-upload";
 import { DropZone } from "~/components/drop-zone";
 import { WorkspaceService } from "~/lib/workspace-store";
@@ -68,7 +68,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
 
 function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps["loaderData"] }) {
   const ws = useWorkspace();
-  const [books, setBooks] = useState<Book[]>(loaderData.books);
+  const [books, setBooks] = useState<BookMeta[]>(loaderData.books);
   const [settings, updateSettings] = useSettings();
   const collapsed = settings.sidebarCollapsed;
   const sortBy = settings.workspaceSortBy;
@@ -91,8 +91,8 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   );
 
   const { openBooks, otherBooks } = useMemo(() => {
-    const open: Book[] = [];
-    const other: Book[] = [];
+    const open: BookMeta[] = [];
+    const other: BookMeta[] = [];
     for (const book of books) {
       if (openBookIds.has(book.id)) {
         open.push(book);
@@ -254,7 +254,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     });
   }, []);
 
-  const openBook = useCallback((book: Book, forceNew = false) => {
+  const openBook = useCallback((book: BookMeta, forceNew = false) => {
     const api = apiRef.current;
     if (!api) return;
 
@@ -300,7 +300,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     }
   }, []);
 
-  const openNotebook = useCallback((book: Book) => {
+  const openNotebook = useCallback((book: BookMeta) => {
     const api = apiRef.current;
     if (!api) return;
 
@@ -403,7 +403,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
 
   // Wrap setBooks to also update booksRef and notify booksChangeListener
   const updateBooks = useCallback(
-    (updater: (prev: Book[]) => Book[]) => {
+    (updater: (prev: BookMeta[]) => BookMeta[]) => {
       setBooks((prev) => {
         const next = updater(prev);
         ws.booksRef.current = next;
@@ -415,7 +415,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   );
 
   const handleBookAdded = useCallback(
-    (book: Book) => {
+    (book: BookMeta) => {
       updateBooks((prev) => [...prev, book]);
       openBook(book);
     },

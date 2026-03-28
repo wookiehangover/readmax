@@ -61,6 +61,11 @@ function makeTestLayer() {
         if (!data) return yield* Effect.fail(new BookNotFoundError({ bookId: id }));
         return data;
       }),
+    updateBookMeta: (meta: BookMeta) =>
+      Effect.tryPromise({
+        try: () => set(meta.id, meta, bookStore),
+        catch: (cause) => new StorageError({ operation: "updateBookMeta", cause }),
+      }),
     deleteBook: (id: string) =>
       Effect.tryPromise({
         try: () => del(id, bookStore),

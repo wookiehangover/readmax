@@ -513,8 +513,8 @@ function WorkspaceBookReaderInner({
           return;
         }
         if (layoutRef.current === "scroll") return;
-        if (e.key === "ArrowLeft") rendition.prev();
-        else if (e.key === "ArrowRight") rendition.next();
+        if (e.key === "ArrowLeft") rendition!.prev();
+        else if (e.key === "ArrowRight") rendition!.next();
       });
 
     });

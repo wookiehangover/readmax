@@ -491,7 +491,7 @@ function ChatPanelInner({
           "scroll-fog": messages.length > 0,
         })}
       >
-        <div ref={contentRef}>
+        <div ref={contentRef} className="min-h-full">
           {messages.length === 0 && (
             <ChatEmptyState bookTitle={bookTitle} sendMessage={sendMessage} />
           )}

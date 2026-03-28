@@ -262,7 +262,7 @@ body {
       mask-down both linear;
     animation-timeline: scroll(self);
     animation-range:
-      0 calc(var(--scroll-fog-size) * 1px),
+      1px calc(var(--scroll-fog-size) * 1px),
       calc(100% - (var(--scroll-fog-size) * 1px)) 100%;
     mask:
       linear-gradient(white, transparent) 0 0 / 100% 0 no-repeat,

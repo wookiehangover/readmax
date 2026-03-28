@@ -432,7 +432,7 @@ function ChatPanelInner({
   // Auto-scroll on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, messagesEndRef]);
+  }, [messages, messagesEndRef, status]);
 
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
@@ -862,6 +862,7 @@ function ChatMessage({
             <p className="whitespace-pre-wrap">{text}</p>
           ) : (
             <Streamdown
+              caret="circle"
               allowedTags={{ ref: ["chapter", "query"] }}
               components={streamdownComponents}
             >

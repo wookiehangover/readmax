@@ -819,6 +819,33 @@ function ChatMessage({
   const text = isUser ? rawText : stripSuggestedPrompts(rawText);
   const hasProcessSteps = toolParts.length > 0 || reasoningParts.length > 0;
 
+  // Extract SE book results from search_standard_ebooks tool parts
+  const seBooks = useMemo(() => {
+    const results: SEBook[] = [];
+    for (const part of toolParts) {
+      const info = getToolInfo(part);
+      if (
+        info &&
+        info.toolName === "search_standard_ebooks" &&
+        info.state === "output-available" &&
+        info.output?.books &&
+        Array.isArray(info.output.books)
+      ) {
+        for (const b of info.output.books) {
+          if (b.title && b.urlPath) {
+            results.push({
+              title: b.title,
+              author: b.author ?? "",
+              urlPath: b.urlPath,
+              coverUrl: b.coverUrl ?? null,
+            });
+          }
+        }
+      }
+    }
+    return results;
+  }, [toolParts]);
+
   const streamdownComponents = useMemo<Components>(
     () => ({
       ref: ({ children, chapter, query }: Record<string, unknown>) => {
@@ -925,6 +952,7 @@ function ChatMessage({
                   if (info.toolName === "read_notes") return "Read notebook";
                   if (info.toolName === "append_to_notes") return "Added to notebook";
                   if (info.toolName === "create_highlight") return "Highlighted";
+                  if (info.toolName === "search_standard_ebooks") return "Searched Standard Ebooks";
                   return info.toolName;
                 })
                 .filter(Boolean)
@@ -972,6 +1000,13 @@ function ChatMessage({
                   label = isComplete
                     ? `Highlighted: "${snippet}"`
                     : `Highlighting: "${snippet}"...`;
+                } else if (info.toolName === "search_standard_ebooks") {
+                  const q = typeof info.input?.query === "string" ? info.input.query : "";
+                  if (isComplete && info.output?.books) {
+                    label = `Searched Standard Ebooks for "${q}" → ${(info.output.books as any[]).length} result${(info.output.books as any[]).length !== 1 ? "s" : ""}`;
+                  } else {
+                    label = `Searching Standard Ebooks for "${q}"...`;
+                  }
                 }
                 return (
                   <div key={i} className="flex items-center gap-1.5 leading-tight">
@@ -992,6 +1027,7 @@ function ChatMessage({
             </div>
           </details>
         )}
+        {seBooks.length > 0 && <SEBookCardsInChat books={seBooks} />}
         {text &&
           (isUser ? (
             <p className="whitespace-pre-wrap">{text}</p>

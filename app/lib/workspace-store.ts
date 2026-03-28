@@ -1,7 +1,20 @@
 import { createStore, get, set, entries } from "idb-keyval";
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Schema } from "effect";
 import type { SerializedDockview } from "dockview";
-import { WorkspaceError } from "~/lib/errors";
+import { WorkspaceError, DecodeError } from "~/lib/errors";
+
+// --- Schema ---
+
+/**
+ * SerializedDockview is an external type we don't deeply validate.
+ * We only check that it's a non-null object with expected top-level shape.
+ */
+const SerializedDockviewSchema = Schema.Record({ key: Schema.String, value: Schema.Unknown });
+
+const decodeLayout = (raw: unknown): SerializedDockview => {
+  Schema.decodeUnknownSync(SerializedDockviewSchema)(raw);
+  return raw as SerializedDockview;
+};
 
 // --- idb-keyval stores (lazy-initialized for SSR safety) ---
 
@@ -27,7 +40,7 @@ export class WorkspaceService extends Context.Tag("WorkspaceService")<
   WorkspaceService,
   {
     readonly saveLayout: (layout: SerializedDockview) => Effect.Effect<void, WorkspaceError>;
-    readonly getLayout: () => Effect.Effect<SerializedDockview | null, WorkspaceError>;
+    readonly getLayout: () => Effect.Effect<SerializedDockview | null, WorkspaceError | DecodeError>;
     readonly saveLastOpened: (
       bookId: string,
       timestamp: number,
@@ -44,12 +57,16 @@ export const WorkspaceServiceLive = Layer.succeed(WorkspaceService, {
     }),
 
   getLayout: () =>
-    Effect.tryPromise({
-      try: async () => {
-        const layout = await get<SerializedDockview>(LAYOUT_KEY, getLayoutStore());
-        return layout ?? null;
-      },
-      catch: (cause) => new WorkspaceError({ operation: "getLayout", cause }),
+    Effect.gen(function* () {
+      const raw = yield* Effect.tryPromise({
+        try: () => get<unknown>(LAYOUT_KEY, getLayoutStore()),
+        catch: (cause) => new WorkspaceError({ operation: "getLayout", cause }),
+      });
+      if (!raw) return null;
+      return yield* Effect.try({
+        try: () => decodeLayout(raw),
+        catch: (cause) => new DecodeError({ operation: "getLayout", cause }),
+      });
     }),
 
   saveLastOpened: (bookId: string, timestamp: number) =>

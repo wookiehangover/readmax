@@ -1,12 +1,16 @@
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Schema } from "effect";
 import ePub from "epubjs";
 import { EpubParseError } from "~/lib/errors";
 
-export interface EpubMetadata {
-  title: string;
-  author: string;
-  coverImage: Blob | null;
-}
+// --- Schema ---
+
+export const EpubMetadataSchema = Schema.Struct({
+  title: Schema.String,
+  author: Schema.String,
+  coverImage: Schema.NullOr(Schema.instanceOf(Blob)),
+});
+
+export type EpubMetadata = typeof EpubMetadataSchema.Type;
 
 export class EpubService extends Context.Tag("EpubService")<
   EpubService,

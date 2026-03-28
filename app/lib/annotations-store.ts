@@ -1,24 +1,44 @@
 import { createStore, get, set, del, entries } from "idb-keyval";
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Schema } from "effect";
 import type { JSONContent } from "@tiptap/react";
-import { HighlightError, NotebookError } from "~/lib/errors";
+import { HighlightError, NotebookError, DecodeError } from "~/lib/errors";
 
-// --- Types ---
+// --- Schemas ---
 
-export interface Highlight {
-  id: string;
-  bookId: string;
-  cfiRange: string;
-  text: string;
-  color: string;
-  createdAt: number;
-}
+export const HighlightSchema = Schema.Struct({
+  id: Schema.String,
+  bookId: Schema.String,
+  cfiRange: Schema.String,
+  text: Schema.String,
+  color: Schema.String,
+  createdAt: Schema.Number,
+});
 
+export type Highlight = typeof HighlightSchema.Type;
+
+const decodeHighlight = Schema.decodeUnknownSync(HighlightSchema);
+
+/**
+ * Notebook content is a TipTap JSONContent tree — opaque structure
+ * that we validate structurally (must be a record) but don't deeply schema-check.
+ */
+export const NotebookSchema = Schema.Struct({
+  bookId: Schema.String,
+  content: Schema.Unknown,
+  updatedAt: Schema.Number,
+});
+
+/** Notebook with TipTap JSONContent. The content field is validated as present but not deeply checked. */
 export interface Notebook {
   bookId: string;
   content: JSONContent;
   updatedAt: number;
 }
+
+const decodeNotebook = (raw: unknown): Notebook => {
+  const decoded = Schema.decodeUnknownSync(NotebookSchema)(raw);
+  return decoded as unknown as Notebook;
+};
 
 // --- Service interface ---
 
@@ -26,14 +46,14 @@ export class AnnotationService extends Context.Tag("AnnotationService")<
   AnnotationService,
   {
     readonly saveHighlight: (highlight: Highlight) => Effect.Effect<void, HighlightError>;
-    readonly getHighlightsByBook: (bookId: string) => Effect.Effect<Highlight[], HighlightError>;
+    readonly getHighlightsByBook: (bookId: string) => Effect.Effect<Highlight[], HighlightError | DecodeError>;
     readonly updateHighlight: (
       id: string,
       updates: Partial<Omit<Highlight, "id" | "bookId" | "createdAt">>,
-    ) => Effect.Effect<void, HighlightError>;
+    ) => Effect.Effect<void, HighlightError | DecodeError>;
     readonly deleteHighlight: (id: string) => Effect.Effect<void, HighlightError>;
     readonly saveNotebook: (notebook: Notebook) => Effect.Effect<void, NotebookError>;
-    readonly getNotebook: (bookId: string) => Effect.Effect<Notebook | null, NotebookError>;
+    readonly getNotebook: (bookId: string) => Effect.Effect<Notebook | null, NotebookError | DecodeError>;
   }
 >() {}
 
@@ -63,26 +83,38 @@ export const AnnotationServiceLive = Layer.succeed(AnnotationService, {
     }),
 
   getHighlightsByBook: (bookId) =>
-    Effect.tryPromise({
-      try: async () => {
-        const allEntries = await entries<string, Highlight>(getHighlightStore());
-        return allEntries.map(([, hl]) => hl).filter((hl) => hl && hl.bookId === bookId);
-      },
-      catch: (cause) => new HighlightError({ operation: "getHighlightsByBook", cause }),
+    Effect.gen(function* () {
+      const allEntries = yield* Effect.tryPromise({
+        try: () => entries<string, unknown>(getHighlightStore()),
+        catch: (cause) => new HighlightError({ operation: "getHighlightsByBook", cause }),
+      });
+      return yield* Effect.try({
+        try: () =>
+          allEntries
+            .map(([, raw]) => raw)
+            .filter(Boolean)
+            .map((raw) => decodeHighlight(raw))
+            .filter((hl) => hl.bookId === bookId),
+        catch: (cause) => new DecodeError({ operation: "getHighlightsByBook", cause }),
+      });
     }),
 
   updateHighlight: (id, updates) =>
     Effect.gen(function* () {
-      const existing = yield* Effect.tryPromise({
-        try: () => get<Highlight>(id, getHighlightStore()),
+      const raw = yield* Effect.tryPromise({
+        try: () => get<unknown>(id, getHighlightStore()),
         catch: (cause) =>
           new HighlightError({ operation: "updateHighlight", highlightId: id, cause }),
       });
-      if (!existing) {
+      if (!raw) {
         return yield* Effect.fail(
           new HighlightError({ operation: "updateHighlight", highlightId: id }),
         );
       }
+      const existing = yield* Effect.try({
+        try: () => decodeHighlight(raw),
+        catch: (cause) => new DecodeError({ operation: "updateHighlight", cause }),
+      });
       yield* Effect.tryPromise({
         try: () => set(id, { ...existing, ...updates }, getHighlightStore()),
         catch: (cause) =>
@@ -105,11 +137,15 @@ export const AnnotationServiceLive = Layer.succeed(AnnotationService, {
     }),
 
   getNotebook: (bookId) =>
-    Effect.tryPromise({
-      try: async () => {
-        const notebook = await get<Notebook>(bookId, getNotebookStore());
-        return notebook ?? null;
-      },
-      catch: (cause) => new NotebookError({ operation: "getNotebook", bookId, cause }),
+    Effect.gen(function* () {
+      const raw = yield* Effect.tryPromise({
+        try: () => get<unknown>(bookId, getNotebookStore()),
+        catch: (cause) => new NotebookError({ operation: "getNotebook", bookId, cause }),
+      });
+      if (!raw) return null;
+      return yield* Effect.try({
+        try: () => decodeNotebook(raw),
+        catch: (cause) => new DecodeError({ operation: "getNotebook", cause }),
+      });
     }),
 });

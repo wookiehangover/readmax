@@ -84,6 +84,8 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
 function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps["loaderData"] }) {
   const ws = useWorkspace();
   const isMobile = useIsMobile();
+  const isMobileRef = useRef(isMobile);
+  isMobileRef.current = isMobile;
   const [mobileOpen, setMobileOpen] = useState(false);
   const [books, setBooks] = useState<BookMeta[]>(loaderData.books);
   const [settings, updateSettings] = useSettings();
@@ -316,8 +318,8 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       renderer: "always",
     });
 
-    // When opening the first panel on a wide screen, add a companion chat panel to its right
-    if (isFirstPanel && window.innerWidth > 1000) {
+    // When opening the first panel on a wide screen (and not mobile), add a companion chat panel
+    if (isFirstPanel && !isMobileRef.current && window.innerWidth > 1000) {
       const chatId = `chat-${book.id}`;
       api.addPanel({
         id: chatId,
@@ -346,9 +348,9 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       (p) => p.id.startsWith("book-") && (p.params as Record<string, unknown>)?.bookId === book.id,
     );
 
-    // Determine positioning: reuse an existing group to the right if one exists
+    // On mobile, open as a tab in the same group (no split); on desktop, split right
     let position: AddPanelPositionOptions | undefined;
-    if (bookPanel) {
+    if (!isMobileRef.current && bookPanel) {
       const bookGroup = bookPanel.group;
       const bookRect = bookGroup.element.getBoundingClientRect();
       // Look for an existing group whose left edge is to the right of the book's group
@@ -407,8 +409,9 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       (p) => p.id.startsWith("book-") && (p.params as Record<string, unknown>)?.bookId === book.id,
     );
 
+    // On mobile, open as a tab in the same group (no split); on desktop, split right
     let position: AddPanelPositionOptions | undefined;
-    if (bookPanel) {
+    if (!isMobileRef.current && bookPanel) {
       const bookGroup = bookPanel.group;
       const bookRect = bookGroup.element.getBoundingClientRect();
       const rightGroup = api.groups.find(
@@ -503,11 +506,10 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
             <button
               type="button"
               onClick={() => setMobileOpen(true)}
-              className="fixed top-2 left-2 z-40 flex items-center gap-1.5 rounded-full border border-border/50 bg-card/80 px-3 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur-md transition-colors hover:bg-card hover:text-foreground active:bg-accent"
+              className="fixed top-2 left-2 z-40 flex items-center justify-center rounded-full border border-border/50 bg-card/80 p-2 text-muted-foreground shadow-sm backdrop-blur-md transition-colors hover:bg-card hover:text-foreground active:bg-accent"
               aria-label="Open sidebar"
             >
-              <PanelLeft className="size-3.5" />
-              <span>Library</span>
+              <PanelLeft className="size-4" />
             </button>
             <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
               <SheetContent side="left" className="w-75 p-0">

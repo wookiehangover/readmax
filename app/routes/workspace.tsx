@@ -8,7 +8,7 @@ import {
   type DockviewTheme,
   type AddPanelPositionOptions,
 } from "dockview";
-import { PanelLeft } from "lucide-react";
+import { PanelLeft, X } from "lucide-react";
 import type { Route } from "./+types/workspace";
 import { BookService, type BookMeta } from "~/lib/book-store";
 import { useBookUpload } from "~/lib/use-book-upload";
@@ -505,11 +505,11 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
           <>
             <button
               type="button"
-              onClick={() => setMobileOpen(true)}
-              className="fixed top-2 right-2 z-40 flex items-center justify-center rounded-full border border-border/50 bg-card/80 p-2 text-muted-foreground shadow-sm backdrop-blur-md transition-colors hover:bg-card hover:text-foreground active:bg-accent"
-              aria-label="Open sidebar"
+              onClick={() => setMobileOpen((prev) => !prev)}
+              className="fixed top-2 right-2 z-50 flex items-center justify-center rounded-full border border-border/50 bg-card/80 p-2 text-muted-foreground shadow-sm backdrop-blur-md transition-colors hover:bg-card hover:text-foreground active:bg-accent"
+              aria-label={mobileOpen ? "Close sidebar" : "Open sidebar"}
             >
-              <PanelLeft className="size-4" />
+              {mobileOpen ? <X className="size-4" /> : <PanelLeft className="size-4" />}
             </button>
             <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
               <SheetContent side="left" className="w-75 p-0">

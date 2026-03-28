@@ -39,10 +39,13 @@ export function useEffectQuery<A, E>(
 
     AppRuntime.runPromise(Fiber.join(fiber))
       .then((result) => {
+        if (fiberRef.current !== fiber) return; // stale fiber, ignore
         setData(result);
+        setError(undefined);
         setIsLoading(false);
       })
       .catch((err: unknown) => {
+        if (fiberRef.current !== fiber) return; // stale fiber, ignore
         // Ignore interruption errors — they mean cleanup cancelled this fiber
         if (err instanceof Error && Cause.InterruptedExceptionTypeId in err) {
           return;

@@ -23,8 +23,8 @@ export function useBookUpload({ onBookAdded }: UseBookUploadOptions) {
       if (!files) return;
       const epubFiles = Array.from(files).filter((f) => f.name.endsWith(".epub"));
 
-      const program = Effect.gen(function* () {
-        for (const file of epubFiles) {
+      const program = Effect.forEach(epubFiles, (file) =>
+        Effect.gen(function* () {
           const arrayBuffer = yield* Effect.promise(() => file.arrayBuffer());
           const metadata = yield* parseEpubEffect(arrayBuffer);
           const book: BookMeta = {
@@ -35,8 +35,8 @@ export function useBookUpload({ onBookAdded }: UseBookUploadOptions) {
           };
           yield* BookService.pipe(Effect.andThen((s) => s.saveBook(book, arrayBuffer)));
           onBookAdded(book);
-        }
-      }).pipe(
+        }),
+      ).pipe(
         Effect.catchAll((error) =>
           Effect.sync(() => {
             console.error("Failed to add book:", error);

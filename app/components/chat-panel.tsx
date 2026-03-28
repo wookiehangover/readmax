@@ -6,7 +6,7 @@ import { Button } from "~/components/ui/button";
 import { SendHorizonal, Loader2, Trash2, ChevronRight } from "lucide-react";
 import { Streamdown } from "streamdown";
 import type { Components } from "streamdown";
-import { ChatService, type ChatMessage } from "~/lib/chat-store";
+import { ChatService, type ChatMessage, type SerializedPart } from "~/lib/chat-store";
 import { BookService } from "~/lib/book-store";
 import { AnnotationService } from "~/lib/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
@@ -38,12 +38,36 @@ interface ChatPanelProps {
   bookTitle: string;
 }
 
+/** Serialize a UIMessage part for IndexedDB storage (strip non-serializable fields). */
+function serializePart(p: any): SerializedPart {
+  if (p.type === "text") {
+    return { type: "text", text: p.text };
+  }
+  if (p.type === "step-start") {
+    return { type: "step-start" };
+  }
+  // Tool parts have type "tool-{name}" — preserve key fields for display on reload
+  if (typeof p.type === "string" && p.type.startsWith("tool-")) {
+    return {
+      type: p.type,
+      toolCallId: p.toolCallId,
+      state: p.state,
+      input: p.input,
+      output: p.output,
+    };
+  }
+  // Fallback: store type only
+  return { type: p.type };
+}
+
 /** Convert our persisted ChatMessage[] to UIMessage[] for useChat */
 function toUIMessages(messages: ChatMessage[]): UIMessage[] {
   return messages.map((m) => ({
     id: m.id,
     role: m.role,
-    parts: [{ type: "text" as const, text: m.content }],
+    parts: m.parts && m.parts.length > 0
+      ? (m.parts as UIMessage["parts"])
+      : [{ type: "text" as const, text: m.content }],
   }));
 }
 
@@ -57,6 +81,7 @@ function toChatMessages(messages: UIMessage[]): ChatMessage[] {
       .map((p) => p.text)
       .join("") ?? "",
     createdAt: Date.now(),
+    parts: m.parts?.map(serializePart),
   }));
 }
 

@@ -4,11 +4,19 @@ import { ChatError } from "~/lib/errors";
 
 // --- Types ---
 
+/** Serializable representation of a UIMessage part for IndexedDB persistence. */
+export type SerializedPart =
+  | { type: "text"; text: string }
+  | { type: "step-start" }
+  | { type: string; toolCallId?: string; state?: string; toolName?: string; input?: Record<string, unknown>; output?: unknown };
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
   createdAt: number;
+  /** Full parts array from AI SDK UIMessage, preserved for tool call display on reload. */
+  parts?: SerializedPart[];
 }
 
 // --- idb-keyval store (lazy-initialized for SSR safety) ---

@@ -14,7 +14,7 @@ export function BookReaderPanel({
   params,
   api,
 }: IDockviewPanelProps<{ bookId: string; bookTitle?: string } & PanelTypographyParams>) {
-  const { navigationMap, tocMap, tocChangeListener, dockviewApi, notebookCallbackMap } =
+  const { navigationMap, tocMap, tocChangeListener, dockviewApi, notebookCallbackMap, chatContextMap } =
     useWorkspace();
 
   const handleRegister = useCallback(
@@ -141,6 +141,7 @@ export function BookReaderPanel({
       onOpenNotebook={handleOpenNotebook}
       onOpenChat={handleOpenChat}
       onHighlightCreated={handleHighlightCreated}
+      chatContextMap={chatContextMap}
     />
   );
 }

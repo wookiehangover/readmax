@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useChat, type UIMessage } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { Effect } from "effect";
@@ -9,6 +9,7 @@ import { BookService } from "~/lib/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { extractBookChapters, type BookChapter } from "~/lib/epub-text-extract";
 import { cn } from "~/lib/utils";
+import { useWorkspace } from "~/lib/workspace-context";
 
 interface ChatPanelProps {
   bookId: string;
@@ -112,6 +113,37 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   );
 }
 
+/**
+ * Creates a DefaultChatTransport that dynamically injects the current chapter
+ * index from a ref into every request body, rather than capturing a static value.
+ */
+function createDynamicTransport(
+  bookContext: { title: string; author: string; chapters: BookChapter[] },
+  currentChapterRef: React.MutableRefObject<number | undefined>,
+) {
+  const originalFetch = globalThis.fetch;
+  const dynamicFetch: typeof globalThis.fetch = async (input, init) => {
+    if (init?.body && typeof init.body === "string") {
+      try {
+        const parsed = JSON.parse(init.body);
+        if (parsed.bookContext) {
+          parsed.bookContext.currentChapterIndex = currentChapterRef.current;
+          init = { ...init, body: JSON.stringify(parsed) };
+        }
+      } catch {
+        // not JSON, pass through
+      }
+    }
+    return originalFetch(input, init);
+  };
+
+  return new DefaultChatTransport({
+    api: "/api/chat",
+    body: { bookContext },
+    fetch: dynamicFetch,
+  });
+}
+
 function ChatPanelInner({
   bookId,
   bookTitle,
@@ -129,12 +161,31 @@ function ChatPanelInner({
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   inputRef: React.MutableRefObject<string>;
 }) {
+  const { chatContextMap } = useWorkspace();
+
+  // Ref that stays up-to-date with the reader's current chapter index
+  const currentChapterRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    // Read initial value
+    const ctx = chatContextMap.current.get(bookId);
+    if (ctx) currentChapterRef.current = ctx.currentChapterIndex;
+
+    // Poll for updates (chatContextMap is updated by the reader's relocated event)
+    const interval = setInterval(() => {
+      const latest = chatContextMap.current.get(bookId);
+      if (latest) currentChapterRef.current = latest.currentChapterIndex;
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [bookId, chatContextMap]);
+
+  const transport = useMemo(
+    () => createDynamicTransport(bookContext, currentChapterRef),
+    [bookContext],
+  );
+
   const { messages, sendMessage, setMessages, status, stop } = useChat({
     id: `chat-${bookId}`,
-    transport: new DefaultChatTransport({
-      api: "/api/chat",
-      body: { bookContext },
-    }),
+    transport,
     messages: initialMessages,
     onFinish: () => {
       // Persist after assistant finishes

@@ -20,17 +20,45 @@ interface ChatRequestBody {
 }
 
 function buildSystemPrompt(bookContext: ChatRequestBody["bookContext"]): string {
-  let prompt = `You are a reading companion for "${bookContext.title}" by ${bookContext.author}. You have access to a search_book tool to find passages in the book. Always search before answering questions about specific content. Quote relevant passages when possible.`;
+  const toc = bookContext.chapters
+    .map((c) => `  ${c.index}. ${c.title}`)
+    .join("\n");
 
+  let currentChapterSection = "";
   if (bookContext.currentChapterIndex != null) {
     const chapter = bookContext.chapters[bookContext.currentChapterIndex];
     if (chapter) {
-      const excerpt = chapter.text.slice(0, 3000);
-      prompt += `\n\nThe reader is currently on this chapter:\n--- ${chapter.title} ---\n${excerpt}${chapter.text.length > 3000 ? "\n[truncated]" : ""}`;
+      const excerpt = chapter.text.slice(0, 2000);
+      currentChapterSection = `
+
+## Current context
+The reader is currently on: Chapter ${chapter.index} — "${chapter.title}"
+
+Here is the beginning of the chapter they are reading:
+---
+${excerpt}${chapter.text.length > 2000 ? "\n[continues...]" : ""}
+---`;
     }
   }
 
-  return prompt;
+  return `You are a reading companion for "${bookContext.title}" by ${bookContext.author}.
+
+## Your role
+You help the reader engage deeply with this book. You are curious, intellectually honest, and willing to challenge ideas. You are not a generic assistant — you are a close reader of this specific text.
+
+## How to respond
+- Always ground your answers in the book's actual text. Use search_book to find relevant passages before answering.
+- Quote specific passages when making claims about what the book says. Use quotation marks and cite the chapter.
+- Reference chapter numbers and titles so the reader can follow along.
+- When relevant, suggest other chapters the reader might find interesting.
+- If the reader asks something the book doesn't cover, say so honestly and offer what you can from the text.
+- Push back on misreadings. Offer alternative interpretations. Be intellectually honest.
+- Keep responses focused. Don't ramble.
+- Use read_chapter when you need to understand a chapter's full argument, not just keyword matches.
+
+## Book structure
+${toc}
+${currentChapterSection}`;
 }
 
 function searchChapters(
@@ -109,6 +137,37 @@ export async function action({ request }: Route.ActionArgs) {
         }),
         execute: async ({ query }) => {
           return searchChapters(bookContext.chapters, query);
+        },
+      }),
+      read_chapter: tool({
+        description:
+          "Read the full text of a specific chapter. Use this to understand a chapter's full argument before answering detailed questions about it.",
+        inputSchema: z.object({
+          chapterIndex: z
+            .number()
+            .optional()
+            .describe("The 0-based chapter index"),
+          chapterTitle: z
+            .string()
+            .optional()
+            .describe("The chapter title to look up (partial match OK)"),
+        }),
+        execute: async ({ chapterIndex, chapterTitle }) => {
+          let chapter: BookChapter | undefined;
+          if (chapterIndex != null) {
+            chapter = bookContext.chapters[chapterIndex];
+          } else if (chapterTitle) {
+            const lower = chapterTitle.toLowerCase();
+            chapter = bookContext.chapters.find((c) =>
+              c.title.toLowerCase().includes(lower),
+            );
+          }
+          if (!chapter) return { error: "Chapter not found" };
+          const text =
+            chapter.text.length > 15000
+              ? chapter.text.slice(0, 15000) + "\n[truncated — chapter continues]"
+              : chapter.text;
+          return { chapterIndex: chapter.index, title: chapter.title, text };
         },
       }),
     },

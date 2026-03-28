@@ -48,6 +48,10 @@ interface WorkspaceBookReaderProps {
   onOpenNotebook?: () => void;
   onOpenChat?: () => void;
   onHighlightCreated?: (highlight: { highlightId: string; cfiRange: string; text: string }) => void;
+  /** Shared ref for tracking current chapter position per book (for chat context) */
+  chatContextMap?: React.MutableRefObject<
+    Map<string, { currentChapterIndex: number; currentSpineHref: string }>
+  >;
 }
 
 
@@ -63,6 +67,7 @@ export function WorkspaceBookReader({
   onOpenNotebook,
   onOpenChat,
   onHighlightCreated,
+  chatContextMap,
 }: WorkspaceBookReaderProps) {
   // Load book data via useEffectQuery
   const {
@@ -106,6 +111,7 @@ export function WorkspaceBookReader({
       onOpenNotebook={onOpenNotebook}
       onOpenChat={onOpenChat}
       onHighlightCreated={onHighlightCreated}
+      chatContextMap={chatContextMap}
     />
   );
 }
@@ -125,6 +131,7 @@ function WorkspaceBookReaderInner({
   onOpenNotebook,
   onOpenChat,
   onHighlightCreated,
+  chatContextMap,
 }: {
   book: Book;
   panelApi?: DockviewPanelApi;
@@ -136,6 +143,9 @@ function WorkspaceBookReaderInner({
   onOpenNotebook?: () => void;
   onOpenChat?: () => void;
   onHighlightCreated?: (highlight: { highlightId: string; cfiRange: string; text: string }) => void;
+  chatContextMap?: React.MutableRefObject<
+    Map<string, { currentChapterIndex: number; currentSpineHref: string }>
+  >;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -522,6 +532,8 @@ function WorkspaceBookReaderInner({
             cfi: string;
             percentage: number;
             displayed: { page: number; total: number };
+            index?: number;
+            href?: string;
           };
         }) => {
           if (!renditionRef.current) return;
@@ -537,6 +549,15 @@ function WorkspaceBookReaderInner({
             setTotalPages(epubLocTotal);
           }
           latestCfiRef.current = location.start.cfi;
+
+          // Update chat context with current chapter position
+          if (chatContextMap && location.start.index != null) {
+            chatContextMap.current.set(book.id, {
+              currentChapterIndex: location.start.index,
+              currentSpineHref: location.start.href ?? "",
+            });
+          }
+
           if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
           saveTimerRef.current = setTimeout(() => {
             savePositionDualKey({

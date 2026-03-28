@@ -1,7 +1,7 @@
 import { createContext, useContext, useRef, useCallback, type ReactNode } from "react";
 import type { DockviewApi } from "dockview";
 import type { TocEntry } from "~/lib/reader-context";
-import type { Book } from "~/lib/book-store";
+import type { BookMeta } from "~/lib/book-store";
 
 interface WorkspaceContextValue {
   /** panelId -> navigateToCfi callback */
@@ -21,19 +21,19 @@ interface WorkspaceContextValue {
   /** File input element for triggering uploads */
   fileInputRef: React.MutableRefObject<HTMLInputElement | null>;
   /** Current books list */
-  booksRef: React.MutableRefObject<Book[]>;
+  booksRef: React.MutableRefObject<BookMeta[]>;
   /** Callback to open a book panel */
-  openBookRef: React.MutableRefObject<((book: Book) => void) | null>;
+  openBookRef: React.MutableRefObject<((book: BookMeta) => void) | null>;
   /** Callback to open a notebook panel */
-  openNotebookRef: React.MutableRefObject<((book: Book) => void) | null>;
+  openNotebookRef: React.MutableRefObject<((book: BookMeta) => void) | null>;
   /** Callback to open a chat panel */
-  openChatRef: React.MutableRefObject<((book: Book) => void) | null>;
+  openChatRef: React.MutableRefObject<((book: BookMeta) => void) | null>;
   /** Callback to open the Standard Ebooks browser panel */
   openStandardEbooksRef: React.MutableRefObject<(() => void) | null>;
   /** Find the navigation callback for a book by scanning dockview panels */
   findNavForBook: (bookId: string) => ((cfi: string) => void) | undefined;
   /** Callback ref for when a book is added (calls setBooks in workspace.tsx) */
-  onBookAddedRef: React.MutableRefObject<((book: Book) => void) | null>;
+  onBookAddedRef: React.MutableRefObject<((book: BookMeta) => void) | null>;
   /** Callback ref for when a book is deleted (calls setBooks in workspace.tsx) */
   onBookDeletedRef: React.MutableRefObject<((bookId: string) => void) | null>;
   /** bookId -> current chapter context for chat */
@@ -68,12 +68,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const booksChangeListener = useRef<(() => void) | null>(null);
   const dockviewApi = useRef<DockviewApi | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const booksRef = useRef<Book[]>([]);
-  const openBookRef = useRef<((book: Book) => void) | null>(null);
-  const openNotebookRef = useRef<((book: Book) => void) | null>(null);
-  const openChatRef = useRef<((book: Book) => void) | null>(null);
+  const booksRef = useRef<BookMeta[]>([]);
+  const openBookRef = useRef<((book: BookMeta) => void) | null>(null);
+  const openNotebookRef = useRef<((book: BookMeta) => void) | null>(null);
+  const openChatRef = useRef<((book: BookMeta) => void) | null>(null);
   const openStandardEbooksRef = useRef<(() => void) | null>(null);
-  const onBookAddedRef = useRef<((book: Book) => void) | null>(null);
+  const onBookAddedRef = useRef<((book: BookMeta) => void) | null>(null);
   const onBookDeletedRef = useRef<((bookId: string) => void) | null>(null);
   const chatContextMap = useRef(
     new Map<string, { currentChapterIndex: number; currentSpineHref: string; visibleText: string }>(),

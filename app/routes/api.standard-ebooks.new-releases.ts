@@ -40,7 +40,7 @@ function parseAtomFeed(xml: string): SEBook[] {
   return books;
 }
 
-export async function loader({ request }: Route.LoaderArgs) {
+export async function loader({ request: _request }: Route.LoaderArgs) {
   const res = await fetch(`${SE_BASE}/feeds/atom/new-releases`);
   if (!res.ok) {
     throw new Response(`Standard Ebooks returned ${res.status}`, {

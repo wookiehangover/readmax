@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { Effect, Layer } from "effect";
 import { createStore } from "idb-keyval";
 import { BookService, makeBookService } from "~/lib/book-store";
-import type { Book, BookMeta } from "~/lib/book-store";
+import type { Book } from "~/lib/book-store";
 import { ReadingPositionService, makePositionService } from "~/lib/position-store";
 
 function makeBook(overrides: Partial<Book> = {}): Book {

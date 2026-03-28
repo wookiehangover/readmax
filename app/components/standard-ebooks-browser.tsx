@@ -9,7 +9,7 @@ import { BookService, type BookMeta } from "~/lib/book-store";
 import { parseEpubEffect } from "~/lib/epub-service";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { useEffectQuery } from "~/lib/use-effect-query";
-import { cn } from "~/lib/utils";
+
 
 interface StandardEbooksBrowserProps {
   onBookAdded: (book: BookMeta) => void;

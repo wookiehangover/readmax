@@ -81,7 +81,7 @@ function OptionButton({
 
 function StepperControl({
   label,
-  value,
+  value: _value,
   displayValue,
   onDecrement,
   onIncrement,

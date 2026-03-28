@@ -222,7 +222,6 @@ function ChatPanelInner({
     chatContextMap,
     notebookCallbackMap,
     findNavForBook,
-    findTocForBook,
     applyTempHighlightForBook,
   } = useWorkspace();
 

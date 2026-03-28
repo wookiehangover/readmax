@@ -80,6 +80,41 @@ export function WorkspaceBookReader({
   onRegisterTempHighlight,
   onUnregisterTempHighlight,
 }: WorkspaceBookReaderProps) {
+  // Ref holding the real navigateToCfi from the inner component once it mounts.
+  // Before that, the placeholder callback queues CFIs into pendingCfiRef.
+  const realNavRef = useRef<((cfi: string) => void) | null>(null);
+  const pendingCfiRef = useRef<string | null>(null);
+
+  // Stable placeholder callback registered immediately so the navigation map
+  // has an entry even while book metadata is still loading.
+  const placeholderNav = useCallback((cfi: string) => {
+    if (realNavRef.current) {
+      realNavRef.current(cfi);
+    } else {
+      pendingCfiRef.current = cfi;
+    }
+  }, []);
+
+  // Register the placeholder immediately — no waiting for book data.
+  useEffect(() => {
+    const id = panelApi?.id ?? bookId;
+    onRegisterNavigation?.(id, placeholderNav);
+    return () => {
+      onUnregisterNavigation?.(id);
+    };
+  }, [bookId, panelApi, placeholderNav, onRegisterNavigation, onUnregisterNavigation]);
+
+  // Called by WorkspaceBookReaderInner once its rendition is ready
+  const onRenditionReady = useCallback((nav: (cfi: string) => void) => {
+    realNavRef.current = nav;
+    // Drain any CFI that arrived while loading
+    const pending = pendingCfiRef.current;
+    if (pending) {
+      pendingCfiRef.current = null;
+      nav(pending);
+    }
+  }, []);
+
   // Load book data via useEffectQuery
   const {
     data: book,
@@ -116,7 +151,7 @@ export function WorkspaceBookReader({
       panelApi={panelApi}
       panelTypography={panelTypography}
       onRegisterNavigation={onRegisterNavigation}
-      onUnregisterNavigation={onUnregisterNavigation}
+      onRenditionReady={onRenditionReady}
       onRegisterToc={onRegisterToc}
       onUnregisterToc={onUnregisterToc}
       onOpenNotebook={onOpenNotebook}
@@ -138,7 +173,7 @@ function WorkspaceBookReaderInner({
   panelApi,
   panelTypography,
   onRegisterNavigation,
-  onUnregisterNavigation,
+  onRenditionReady,
   onRegisterToc,
   onUnregisterToc,
   onOpenNotebook,
@@ -152,7 +187,8 @@ function WorkspaceBookReaderInner({
   panelApi?: DockviewPanelApi;
   panelTypography?: PanelTypographyParams;
   onRegisterNavigation?: (panelId: string, navigateToCfi: (cfi: string) => void) => void;
-  onUnregisterNavigation?: (panelId: string) => void;
+  /** Called once the rendition is ready so the outer component can connect the real navigate callback */
+  onRenditionReady?: (navigateToCfi: (cfi: string) => void) => void;
   onRegisterToc?: (panelId: string, toc: TocEntry[]) => void;
   onUnregisterToc?: (panelId: string) => void;
   onOpenNotebook?: () => void;
@@ -368,15 +404,14 @@ function WorkspaceBookReaderInner({
     });
   }, []);
 
-  // Register navigateToCfi with parent workspace for cross-panel coordination
-  // Use panelApi.id (unique per panel) so multiple copies of the same book each register independently
+  // Register the real navigateToCfi with the workspace navigation map.
+  // The outer WorkspaceBookReader already registered a placeholder immediately;
+  // this overwrites it with the real callback once the inner component mounts.
+  // Cleanup (unregister) is handled by the outer component.
   useEffect(() => {
     const id = panelApi?.id ?? book.id;
     onRegisterNavigation?.(id, navigateToCfi);
-    return () => {
-      onUnregisterNavigation?.(id);
-    };
-  }, [book.id, panelApi, navigateToCfi, onRegisterNavigation, onUnregisterNavigation]);
+  }, [book.id, panelApi, navigateToCfi, onRegisterNavigation]);
 
   // Temporary highlight: briefly flash a CFI range in the reader
   const applyTempHighlight = useCallback((cfi: string) => {
@@ -591,6 +626,10 @@ function WorkspaceBookReaderInner({
 
         // Register selection handler
         registerSelectionHandler(rendition);
+
+        // Notify outer component that rendition is ready so any pending
+        // CFI navigation (e.g. from chat panel click during load) can drain.
+        onRenditionReady?.(navigateToCfi);
 
         try {
           const cachedLocations = await AppRuntime.runPromise(

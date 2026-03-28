@@ -28,7 +28,7 @@ import { HighlightPopover } from "~/components/highlight-popover";
 import { useHighlights } from "~/lib/use-highlights";
 import { useEffectQuery } from "~/lib/use-effect-query";
 import { cn } from "~/lib/utils";
-import { registerThemeColors } from "~/lib/epub-theme-utils";
+import { registerThemeColors, getThemeColorCss, injectThemeColors } from "~/lib/epub-theme-utils";
 import { resolveStartCfi, savePositionDualKey } from "~/lib/position-utils";
 import type { DockviewPanelApi } from "dockview";
 import type { TocEntry } from "~/lib/reader-context";
@@ -551,6 +551,13 @@ function WorkspaceBookReaderInner({
       `;
         doc.head.appendChild(highlightStyle);
 
+        // Inject theme colors directly into the iframe (primary mechanism —
+        // epubjs themes.register() can leave its style elements empty)
+        const themeStyle = doc.createElement("style");
+        themeStyle.id = "reader-theme-colors";
+        themeStyle.textContent = getThemeColorCss(resolveTheme(settings.theme));
+        doc.head.appendChild(themeStyle);
+
         // Forward arrow-key navigation and intercept Cmd/Ctrl+F from the epub iframe
         doc.addEventListener("keydown", (e: KeyboardEvent) => {
           // Intercept Cmd/Ctrl+F to open in-book search
@@ -769,7 +776,11 @@ function WorkspaceBookReaderInner({
     // or the CSS variables may have changed since the last theme switch)
     registerThemeColors(rendition);
 
-    rendition.themes.select(resolveTheme(settings.theme));
+    // Directly inject updated theme CSS into iframe documents (primary mechanism)
+    const effectiveTheme = resolveTheme(settings.theme);
+    injectThemeColors(rendition, effectiveTheme);
+
+    rendition.themes.select(effectiveTheme);
   }, [settings.theme]);
 
   // Typography sync — uses per-panel local state
@@ -805,7 +816,11 @@ function WorkspaceBookReaderInner({
       // Re-resolve and re-register theme colors before selecting
       registerThemeColors(rendition);
 
-      rendition.themes.select(resolveTheme(settings.theme));
+      // Directly inject updated theme CSS into iframe documents
+      const effectiveTheme = resolveTheme(settings.theme);
+      injectThemeColors(rendition, effectiveTheme);
+
+      rendition.themes.select(effectiveTheme);
 
       // Save the current reading position before resize — epubjs resize()
       // recalculates pagination and can jump to a different page.

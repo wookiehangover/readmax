@@ -21,7 +21,7 @@ import { useReaderNavigation, type TocEntry } from "~/lib/reader-context";
 import type { TiptapEditorHandle } from "~/components/tiptap-editor";
 import type { HighlightReferenceAttrs } from "~/lib/tiptap-highlight-node";
 import { cn } from "~/lib/utils";
-import { registerThemeColors } from "~/lib/epub-theme-utils";
+import { registerThemeColors, getThemeColorCss, injectThemeColors } from "~/lib/epub-theme-utils";
 import { useBookSearch } from "~/lib/use-book-search";
 import { SearchBar } from "~/components/search-bar";
 
@@ -221,6 +221,13 @@ export function BookReader({ book }: BookReaderProps) {
       `;
         doc.head.appendChild(highlightStyle);
 
+        // Inject theme colors directly into the iframe (primary mechanism —
+        // epubjs themes.register() can leave its style elements empty)
+        const themeStyle = doc.createElement("style");
+        themeStyle.id = "reader-theme-colors";
+        themeStyle.textContent = getThemeColorCss(resolveTheme(settings.theme));
+        doc.head.appendChild(themeStyle);
+
         // Forward arrow-key navigation from the epub iframe
         doc.addEventListener("keydown", (e: KeyboardEvent) => {
           if (layoutRef.current === "scroll") return;
@@ -362,7 +369,11 @@ export function BookReader({ book }: BookReaderProps) {
     // or the CSS variables may have changed since the last theme switch)
     registerThemeColors(rendition);
 
-    rendition.themes.select(resolveTheme(settings.theme));
+    // Directly inject updated theme CSS into iframe documents (primary mechanism)
+    const effectiveTheme = resolveTheme(settings.theme);
+    injectThemeColors(rendition, effectiveTheme);
+
+    rendition.themes.select(effectiveTheme);
   }, [settings.theme]);
 
   useEffect(() => {

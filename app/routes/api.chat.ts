@@ -16,6 +16,7 @@ interface ChatRequestBody {
     author: string;
     chapters: BookChapter[];
     currentChapterIndex?: number;
+    notebookMarkdown?: string;
   };
 }
 
@@ -55,6 +56,9 @@ You help the reader engage deeply with this book. You are curious, intellectuall
 - Push back on misreadings. Offer alternative interpretations. Be intellectually honest.
 - Keep responses focused. Don't ramble.
 - Use read_chapter when you need to understand a chapter's full argument, not just keyword matches.
+- You can read and add to the reader's personal notebook using read_notes and append_to_notes.
+- When the reader asks you to "save this", "note that", or "add to my notes", use append_to_notes.
+- When they ask about their notes or want you to reference what they've written, use read_notes first.
 
 ## Book structure
 ${toc}
@@ -137,6 +141,26 @@ export async function action({ request }: Route.ActionArgs) {
         }),
         execute: async ({ query }) => {
           return searchChapters(bookContext.chapters, query);
+        },
+      }),
+      read_notes: tool({
+        description:
+          "Read the reader's personal notes and annotations for this book. Returns their notebook content as markdown.",
+        inputSchema: z.object({}),
+        execute: async () => {
+          return { content: bookContext.notebookMarkdown || "(No notes yet)" };
+        },
+      }),
+      append_to_notes: tool({
+        description:
+          "Add a note to the reader's notebook for this book. Use when they ask to save something, bookmark a passage, or jot down a thought. The text is appended to their existing notes.",
+        inputSchema: z.object({
+          text: z
+            .string()
+            .describe("The text to add (markdown format)"),
+        }),
+        execute: async ({ text }) => {
+          return { appended: true, text };
         },
       }),
       read_chapter: tool({

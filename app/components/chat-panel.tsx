@@ -7,7 +7,9 @@ import { SendHorizonal, Loader2, Trash2, ChevronRight } from "lucide-react";
 import { Streamdown } from "streamdown";
 import { ChatService, type ChatMessage } from "~/lib/chat-store";
 import { BookService } from "~/lib/book-store";
+import { AnnotationService } from "~/lib/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
+import { tiptapJsonToMarkdown } from "~/lib/tiptap-to-markdown";
 import { extractBookChapters, type BookChapter } from "~/lib/epub-text-extract";
 import { cn } from "~/lib/utils";
 import { useWorkspace } from "~/lib/workspace-context";
@@ -121,6 +123,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
 function createDynamicTransport(
   bookContext: { title: string; author: string; chapters: BookChapter[] },
   currentChapterRef: React.MutableRefObject<number | undefined>,
+  notebookMarkdownRef: React.MutableRefObject<string>,
 ) {
   const originalFetch = globalThis.fetch;
   const dynamicFetch: typeof globalThis.fetch = async (input, init) => {
@@ -129,6 +132,7 @@ function createDynamicTransport(
         const parsed = JSON.parse(init.body);
         if (parsed.bookContext) {
           parsed.bookContext.currentChapterIndex = currentChapterRef.current;
+          parsed.bookContext.notebookMarkdown = notebookMarkdownRef.current;
           init = { ...init, body: JSON.stringify(parsed) };
         }
       } catch {
@@ -164,6 +168,24 @@ function ChatPanelInner({
 }) {
   const { chatContextMap } = useWorkspace();
 
+  // Load notebook markdown for the AI's read_notes tool
+  const [notebookMarkdown, setNotebookMarkdown] = useState<string>("");
+  const notebookMarkdownRef = useRef(notebookMarkdown);
+  notebookMarkdownRef.current = notebookMarkdown;
+
+  useEffect(() => {
+    if (!bookId) return;
+    AppRuntime.runPromise(
+      AnnotationService.pipe(
+        Effect.andThen((svc) => svc.getNotebook(bookId)),
+      ),
+    ).then((notebook) => {
+      if (notebook?.content) {
+        setNotebookMarkdown(tiptapJsonToMarkdown(notebook.content));
+      }
+    }).catch(console.error);
+  }, [bookId]);
+
   // Ref that stays up-to-date with the reader's current chapter index
   const currentChapterRef = useRef<number | undefined>(undefined);
   useEffect(() => {
@@ -180,7 +202,7 @@ function ChatPanelInner({
   }, [bookId, chatContextMap]);
 
   const transport = useMemo(
-    () => createDynamicTransport(bookContext, currentChapterRef),
+    () => createDynamicTransport(bookContext, currentChapterRef, notebookMarkdownRef),
     [bookContext],
   );
 
@@ -188,9 +210,47 @@ function ChatPanelInner({
     id: `chat-${bookId}`,
     transport,
     messages: initialMessages,
-    onFinish: () => {
+    onFinish: (event) => {
       // Persist after assistant finishes
       persistMessages();
+
+      // Handle append_to_notes tool calls
+      const msg = event.message;
+      const appendParts = msg.parts?.filter(
+        (p: any) =>
+          p.type === "tool-invocation" &&
+          p.toolInvocation?.toolName === "append_to_notes" &&
+          p.toolInvocation?.state === "result",
+      ) ?? [];
+
+      for (const part of appendParts) {
+        const text = (part as any).toolInvocation?.args?.text;
+        if (!text || !bookId) continue;
+
+        const newNodes = text.split("\n").filter(Boolean).map((line: string) => ({
+          type: "paragraph" as const,
+          content: [{ type: "text" as const, text: line }],
+        }));
+
+        AppRuntime.runPromise(
+          Effect.gen(function* () {
+            const svc = yield* AnnotationService;
+            const notebook = yield* svc.getNotebook(bookId);
+            const existingContent = notebook?.content?.content ?? [];
+            const updatedContent = {
+              type: "doc" as const,
+              content: [...existingContent, ...newNodes],
+            };
+            yield* svc.saveNotebook({
+              bookId,
+              content: updatedContent,
+              updatedAt: Date.now(),
+            });
+          }),
+        ).then(() => {
+          setNotebookMarkdown((prev) => prev + "\n" + text);
+        }).catch(console.error);
+      }
     },
     onError: (err) => {
       console.error("Chat error:", err);
@@ -268,8 +328,12 @@ function ChatPanelInner({
           <ChatEmptyState bookTitle={bookTitle} sendMessage={sendMessage} />
         )}
         <div className="space-y-3">
-          {messages.map((message) => (
-            <ChatMessage key={message.id} message={message} />
+          {messages.map((message, i) => (
+            <ChatMessage
+              key={message.id}
+              message={message}
+              isStreaming={status === "streaming" && i === messages.length - 1}
+            />
           ))}
           <div ref={messagesEndRef} />
         </div>
@@ -373,7 +437,7 @@ function ChatEmptyState({
   );
 }
 
-function ChatMessage({ message }: { message: UIMessage }) {
+function ChatMessage({ message, isStreaming }: { message: UIMessage; isStreaming?: boolean }) {
   const isUser = message.role === "user";
 
   const textParts =
@@ -447,7 +511,11 @@ function ChatMessage({ message }: { message: UIMessage }) {
           (isUser ? (
             <p className="whitespace-pre-wrap">{text}</p>
           ) : (
-            <Streamdown className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+            <Streamdown
+              animated
+              isAnimating={isStreaming}
+              className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+            >
               {text}
             </Streamdown>
           ))}

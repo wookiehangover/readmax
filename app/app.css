@@ -5,6 +5,8 @@
 @import "dockview/dist/styles/dockview.css";
 @import "streamdown/styles.css";
 
+@source "../node_modules/streamdown/dist/*.js";
+
 @plugin "@tailwindcss/typography";
 
 @font-face {

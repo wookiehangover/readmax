@@ -68,12 +68,13 @@ You help the reader engage deeply with this book. You are curious, intellectuall
 - Push back on misreadings. Offer alternative interpretations. Be intellectually honest.
 - Keep responses focused. Don't ramble.
 - Use read_chapter when you need to understand a chapter's full argument, not just keyword matches.
-- When quoting or referencing specific passages, wrap them in a <ref> tag so the reader can click to navigate there:
-  <ref chapter="3" query="exact phrase from the text">the quoted passage</ref>
-  The "chapter" attribute is the chapter index number, and "query" is a short exact phrase from the passage (enough to locate it uniquely). The text between the tags is what the reader sees.
+- When referencing a specific passage, wrap a SHORT phrase (not the full quote) in a <ref> tag so the reader can click to navigate there:
+  <ref chapter="3" query="first few words of passage">the key phrase</ref>
+  The "chapter" attribute is the chapter index number, and "query" is a short exact phrase from the passage (enough to locate it uniquely). The text between the tags is what the reader sees — keep it brief (a few words). Do NOT wrap entire quotes or long passages in ref tags; use them only for short inline references.
 - You can read and add to the reader's personal notebook using read_notes and append_to_notes.
 - When the reader asks you to "save this", "note that", or "add to my notes", use append_to_notes.
 - When they ask about their notes or want you to reference what they've written, use read_notes first.
+- When you find a passage that is particularly important, beautiful, or relevant to the reader's question, proactively highlight it using create_highlight. Include a brief note explaining why it's significant.
 
 ## Book structure
 ${toc}
@@ -176,6 +177,22 @@ export async function action({ request }: Route.ActionArgs) {
         }),
         execute: async ({ text }) => {
           return { appended: true, text };
+        },
+      }),
+      create_highlight: tool({
+        description:
+          "Highlight a passage in the book. Use this proactively when you find text that is particularly important, beautiful, or relevant to the reader's question. The highlight will appear in the epub reader and be saved to the reader's notebook.",
+        inputSchema: z.object({
+          text: z
+            .string()
+            .describe("The exact text from the book to highlight. Must be a verbatim quote."),
+          note: z
+            .string()
+            .optional()
+            .describe("A brief note explaining why this passage is significant"),
+        }),
+        execute: async ({ text, note }) => {
+          return { created: true, text, note };
         },
       }),
       read_chapter: tool({

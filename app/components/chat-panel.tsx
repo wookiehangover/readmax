@@ -3,7 +3,7 @@ import { useChat, type UIMessage } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { Effect } from "effect";
 import { Button } from "~/components/ui/button";
-import { SendHorizonal, Loader2, Trash2, ChevronRight, BookOpen } from "lucide-react";
+import { SendHorizonal, Loader2, Trash2, ChevronRight } from "lucide-react";
 import { Streamdown } from "streamdown";
 import type { Components } from "streamdown";
 import { ChatService, type ChatMessage } from "~/lib/chat-store";
@@ -516,16 +516,9 @@ function ChatMessage({
         <button
           type="button"
           onClick={handleClick}
-          className={cn(
-            "inline-flex items-baseline gap-0.5 rounded px-0.5",
-            "text-amber-700 dark:text-amber-400",
-            "hover:bg-amber-100 dark:hover:bg-amber-900/30",
-            "cursor-pointer underline decoration-amber-400/50 underline-offset-2",
-            "transition-colors",
-          )}
+          className="underline decoration-dotted underline-offset-2 cursor-pointer hover:decoration-solid transition-all"
           title={`Go to: "${queryStr}"`}
         >
-          <BookOpen className="inline size-3 shrink-0 self-center" />
           {children as React.ReactNode}
         </button>
       );
@@ -593,7 +586,7 @@ function ChatMessage({
           ) : (
             <Streamdown
               animated={{
-                animation: "blurIn",
+                animation: "fadeIn",
                 duration: 150,
                 easing: "ease-out",
                 stagger: 20,

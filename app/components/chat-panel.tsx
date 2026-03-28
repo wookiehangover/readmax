@@ -2,8 +2,18 @@ import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useChat, type UIMessage } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { Effect } from "effect";
+import { useStickToBottom } from "use-stick-to-bottom";
 import { Button } from "~/components/ui/button";
-import { SendHorizonal, Loader2, Trash2, ChevronRight, Globe, Plus, Check } from "lucide-react";
+import {
+  SendHorizonal,
+  Loader2,
+  Trash2,
+  ChevronRight,
+  Globe,
+  Plus,
+  Check,
+  ArrowDown,
+} from "lucide-react";
 import { Streamdown } from "streamdown";
 import type { Components } from "streamdown";
 import { ChatService, type ChatMessage, type SerializedPart } from "~/lib/chat-store";
@@ -16,7 +26,6 @@ import { tiptapJsonToMarkdown } from "~/lib/tiptap-to-markdown";
 import { extractBookChapters, type BookChapter } from "~/lib/epub-text-extract";
 import { cn } from "~/lib/utils";
 import { useWorkspace } from "~/lib/workspace-context";
-import { ScrollArea } from "~/components/ui/scroll-area";
 
 /** Extract a normalized tool info object from an AI SDK tool part (static or dynamic). */
 function getToolInfo(part: any): {
@@ -99,7 +108,6 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const bookDataRef = useRef<ArrayBuffer | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const inputRef = useRef("");
 
@@ -160,7 +168,6 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
       initialMessages={initialMessages}
       bookContext={bookContext}
       bookDataRef={bookDataRef}
-      messagesEndRef={messagesEndRef}
       textareaRef={textareaRef}
       inputRef={inputRef}
     />
@@ -208,7 +215,6 @@ function ChatPanelInner({
   initialMessages,
   bookContext,
   bookDataRef,
-  messagesEndRef,
   textareaRef,
   inputRef,
 }: {
@@ -217,7 +223,6 @@ function ChatPanelInner({
   initialMessages: UIMessage[];
   bookContext: { title: string; author: string; chapters: BookChapter[] };
   bookDataRef: React.RefObject<ArrayBuffer | null>;
-  messagesEndRef: React.RefObject<HTMLDivElement | null>;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   inputRef: React.MutableRefObject<string>;
 }) {
@@ -431,10 +436,7 @@ function ChatPanelInner({
     ).catch(console.error);
   }, [bookId, messages]);
 
-  // Auto-scroll on new messages
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, messagesEndRef, status]);
+  const { scrollRef, contentRef, isAtBottom, scrollToBottom } = useStickToBottom();
 
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
@@ -483,40 +485,55 @@ function ChatPanelInner({
       </div>
 
       {/* Messages */}
-      <ScrollArea className="flex-1 px-4 py-3 h-full scroll-fog-container overflow-hidden">
-        {messages.length === 0 && (
-          <ChatEmptyState bookTitle={bookTitle} sendMessage={sendMessage} />
-        )}
-        <div className="space-y-3">
-          {messages.map((message, i) => {
-            const isLastAssistant = message.role === "assistant" && i === messages.length - 1;
-            const isCurrentlyStreaming = status === "streaming" && i === messages.length - 1;
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto px-4 py-3 scroll-fog-container relative"
+      >
+        <div ref={contentRef}>
+          {messages.length === 0 && (
+            <ChatEmptyState bookTitle={bookTitle} sendMessage={sendMessage} />
+          )}
+          <div className="space-y-3">
+            {messages.map((message, i) => {
+              const isLastAssistant = message.role === "assistant" && i === messages.length - 1;
+              const isCurrentlyStreaming = status === "streaming" && i === messages.length - 1;
 
-            return (
-              <div key={message.id}>
-                <ChatMessage
-                  message={message}
-                  bookId={bookId}
-                  bookDataRef={bookDataRef}
-                  isStreaming={isCurrentlyStreaming}
-                />
-                {isLastAssistant && !isLoading && (
-                  <SuggestedPrompts
-                    prompts={parseSuggestedPrompts(
-                      message.parts
-                        ?.filter((p): p is { type: "text"; text: string } => p.type === "text")
-                        .map((p) => p.text)
-                        .join("") ?? "",
-                    )}
-                    sendMessage={sendMessage}
+              return (
+                <div key={message.id}>
+                  <ChatMessage
+                    message={message}
+                    bookId={bookId}
+                    bookDataRef={bookDataRef}
+                    isStreaming={isCurrentlyStreaming}
                   />
-                )}
-              </div>
-            );
-          })}
-          <div ref={messagesEndRef} />
+                  {isLastAssistant && !isLoading && (
+                    <SuggestedPrompts
+                      prompts={parseSuggestedPrompts(
+                        message.parts
+                          ?.filter((p): p is { type: "text"; text: string } => p.type === "text")
+                          .map((p) => p.text)
+                          .join("") ?? "",
+                      )}
+                      sendMessage={sendMessage}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
-      </ScrollArea>
+        {!isAtBottom && (
+          <Button
+            variant="outline"
+            size="icon"
+            className="absolute bottom-2 left-1/2 z-10 size-8 -translate-x-1/2 rounded-full shadow-md"
+            onClick={() => scrollToBottom()}
+          >
+            <ArrowDown className="size-4" />
+            <span className="sr-only">Scroll to bottom</span>
+          </Button>
+        )}
+      </div>
 
       {/* Input */}
       <form onSubmit={handleSubmit} className="px-4 py-3">

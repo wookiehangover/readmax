@@ -32,6 +32,8 @@ interface WorkspaceContextValue {
   openStandardEbooksRef: React.MutableRefObject<(() => void) | null>;
   /** Find the navigation callback for a book by scanning dockview panels */
   findNavForBook: (bookId: string) => ((cfi: string) => void) | undefined;
+  /** Like findNavForBook but retries with short delays if the callback isn't registered yet */
+  waitForNavForBook: (bookId: string) => Promise<((cfi: string) => void) | undefined>;
   /** Callback ref for when a book is added (calls setBooks in workspace.tsx) */
   onBookAddedRef: React.MutableRefObject<((book: BookMeta) => void) | null>;
   /** Callback ref for when a book is deleted (calls setBooks in workspace.tsx) */
@@ -115,6 +117,22 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const waitForNavForBook = useCallback(
+    async (bookId: string): Promise<((cfi: string) => void) | undefined> => {
+      const maxAttempts = 5;
+      const delayMs = 500;
+      for (let i = 0; i < maxAttempts; i++) {
+        const nav = findNavForBook(bookId);
+        if (nav) return nav;
+        if (i < maxAttempts - 1) {
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
+      }
+      return undefined;
+    },
+    [findNavForBook],
+  );
+
   const findTocForBook = useCallback((bookId: string): TocEntry[] | undefined => {
     const api = dockviewApi.current;
     if (!api) return undefined;
@@ -147,6 +165,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     onBookDeletedRef,
     chatContextMap,
     findNavForBook,
+    waitForNavForBook,
     findTocForBook,
     tempHighlightMap,
     applyTempHighlightForBook,

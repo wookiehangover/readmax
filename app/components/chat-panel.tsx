@@ -218,7 +218,7 @@ function ChatPanelInner({
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   inputRef: React.MutableRefObject<string>;
 }) {
-  const { chatContextMap, notebookCallbackMap, findNavForBook, applyTempHighlightForBook } =
+  const { chatContextMap, notebookCallbackMap, waitForNavForBook, applyTempHighlightForBook } =
     useWorkspace();
 
   // Load notebook markdown for the AI's read_notes tool
@@ -364,7 +364,7 @@ function ChatPanelInner({
               );
 
               // Navigate to the highlight and show temp highlight in the reader
-              const navigate = findNavForBook(bookId);
+              const navigate = await waitForNavForBook(bookId);
               if (navigate) {
                 navigate(cfiRange);
               }
@@ -608,7 +608,7 @@ function ChatMessage({
   isStreaming?: boolean;
 }) {
   const isUser = message.role === "user";
-  const { findNavForBook, findTocForBook, applyTempHighlightForBook } = useWorkspace();
+  const { waitForNavForBook, findTocForBook, applyTempHighlightForBook } = useWorkspace();
 
   const textParts =
     message.parts?.filter((p): p is { type: "text"; text: string } => p.type === "text") ?? [];
@@ -636,7 +636,7 @@ function ChatMessage({
             return;
           }
 
-          const navigate = findNavForBook(bookId);
+          const navigate = await waitForNavForBook(bookId);
           if (!navigate) {
             console.warn("Ref navigation: no navigate callback for book", bookId);
             return;
@@ -694,7 +694,7 @@ function ChatMessage({
         );
       },
     }),
-    [bookId, bookDataRef, findNavForBook, findTocForBook, applyTempHighlightForBook],
+    [bookId, bookDataRef, waitForNavForBook, findTocForBook, applyTempHighlightForBook],
   );
 
   return (

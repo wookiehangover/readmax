@@ -27,20 +27,23 @@ function buildSystemPrompt(bookContext: ChatRequestBody["bookContext"]): string 
     .join("\n");
 
   let currentChapterSection = "";
-  if (bookContext.currentChapterIndex != null) {
-    const chapter = bookContext.chapters.find(
-      (c) => c.index === bookContext.currentChapterIndex,
-    );
 
-    // Prefer the actual visible text from the reader iframe
-    const pageText = bookContext.visibleText?.trim();
+  // Prefer the actual visible text from the reader iframe
+  const pageText = bookContext.visibleText?.trim();
+  const chapter = bookContext.currentChapterIndex != null
+    ? bookContext.chapters.find(
+        (c) => c.index === bookContext.currentChapterIndex,
+      )
+    : undefined;
 
-    if (chapter || pageText) {
-      const chapterLabel = chapter
-        ? `Chapter ${chapter.index} — "${chapter.title}"`
-        : `Chapter ${bookContext.currentChapterIndex}`;
+  if (pageText || chapter) {
+    const chapterLabel = chapter
+      ? `Chapter ${chapter.index} — "${chapter.title}"`
+      : bookContext.currentChapterIndex != null
+        ? `Chapter ${bookContext.currentChapterIndex}`
+        : "an unknown position";
 
-      currentChapterSection = `
+    currentChapterSection = `
 
 ## Current context
 The reader is currently on: ${chapterLabel}
@@ -49,7 +52,6 @@ Here is what they are currently looking at:
 ---
 ${pageText || chapter?.text.slice(0, 2000) || "(unable to extract page text)"}
 ---`;
-    }
   }
 
   return `You are a reading companion for "${bookContext.title}" by ${bookContext.author}.

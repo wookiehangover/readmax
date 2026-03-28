@@ -496,6 +496,31 @@ function WorkspaceBookReaderInner({
       });
       await rendition.display(startCfi || undefined);
 
+      // Eagerly populate chatContextMap so the chat panel has context
+      // even before the first 'relocated' event fires.
+      if (chatContextMap) {
+        let visibleText = "";
+        try {
+          const contents = (rendition as any).getContents?.() as any[];
+          if (contents?.length > 0) {
+            visibleText = contents
+              .map((c: any) => c.document?.body?.textContent?.trim() ?? "")
+              .filter(Boolean)
+              .join("\n\n");
+          }
+        } catch {
+          // fallback: no visible text
+        }
+        const loc = rendition.currentLocation() as any;
+        if (loc?.start) {
+          chatContextMap.current.set(book.id, {
+            currentChapterIndex: loc.start.index ?? 0,
+            currentSpineHref: loc.start.href ?? "",
+            visibleText,
+          });
+        }
+      }
+
       const effectiveTheme = resolveTheme(settings.theme);
       rendition.themes.select(effectiveTheme);
 

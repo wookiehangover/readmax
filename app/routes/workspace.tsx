@@ -506,7 +506,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
             <button
               type="button"
               onClick={() => setMobileOpen(true)}
-              className="fixed top-2 left-2 z-40 flex items-center justify-center rounded-full border border-border/50 bg-card/80 p-2 text-muted-foreground shadow-sm backdrop-blur-md transition-colors hover:bg-card hover:text-foreground active:bg-accent"
+              className="fixed top-2 right-2 z-40 flex items-center justify-center rounded-full border border-border/50 bg-card/80 p-2 text-muted-foreground shadow-sm backdrop-blur-md transition-colors hover:bg-card hover:text-foreground active:bg-accent"
               aria-label="Open sidebar"
             >
               <PanelLeft className="size-4" />

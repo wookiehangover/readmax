@@ -491,7 +491,7 @@ function ChatPanelInner({
           "scroll-fog": messages.length > 0,
         })}
       >
-        <div ref={contentRef} className="flex-1">
+        <div ref={contentRef} className="flex flex-col flex-1">
           {messages.length === 0 && (
             <ChatEmptyState bookTitle={bookTitle} sendMessage={sendMessage} />
           )}
@@ -650,7 +650,7 @@ function ChatEmptyState({
   sendMessage: (message: { text: string }) => void;
 }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-6 px-2">
+    <div className="flex flex-1 flex-col items-center justify-center gap-6 px-2">
       <p className="text-center text-sm text-muted-foreground">
         Ask about <span className="italic">{bookTitle}</span>
       </p>

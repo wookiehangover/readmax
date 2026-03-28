@@ -26,6 +26,26 @@ export async function extractBookChapters(
       return [];
     }
 
+    // Build a TOC lookup map for better chapter titles
+    const tocMap = new Map<string, string>();
+    try {
+      const nav = await book.loaded.navigation;
+      if (nav?.toc) {
+        for (const entry of nav.toc) {
+          const href = entry.href?.split("#")[0] ?? "";
+          if (entry.label) tocMap.set(href, entry.label.trim());
+          if (entry.subitems) {
+            for (const sub of entry.subitems) {
+              const subHref = sub.href?.split("#")[0] ?? "";
+              if (sub.label) tocMap.set(subHref, sub.label.trim());
+            }
+          }
+        }
+      }
+    } catch {
+      // Navigation may not be available for all epubs
+    }
+
     // Collect spine items
     const spineItems: any[] = [];
     spine.each((item: any) => {
@@ -44,12 +64,16 @@ export async function extractBookChapters(
 
         if (!text) continue;
 
-        // Derive title from href filename or fallback to "Chapter N"
+        // Resolve title from TOC navigation, href filename, or fallback
         const href: string = item.href ?? "";
         const filename = href.split("/").pop()?.replace(/\.\w+$/, "") ?? "";
-        const title = filename || `Chapter ${chapters.length + 1}`;
+        const title =
+          tocMap.get(item.href) ||
+          tocMap.get(filename) ||
+          filename ||
+          `Chapter ${i + 1}`;
 
-        chapters.push({ index: chapters.length, title, text });
+        chapters.push({ index: i, title, text });
       } catch (err) {
         console.warn(
           `Failed to load spine item "${item.href ?? "unknown"}":`,

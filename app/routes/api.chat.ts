@@ -27,7 +27,9 @@ function buildSystemPrompt(bookContext: ChatRequestBody["bookContext"]): string 
 
   let currentChapterSection = "";
   if (bookContext.currentChapterIndex != null) {
-    const chapter = bookContext.chapters[bookContext.currentChapterIndex];
+    const chapter = bookContext.chapters.find(
+      (c) => c.index === bookContext.currentChapterIndex,
+    );
     if (chapter) {
       const excerpt = chapter.text.slice(0, 2000);
       currentChapterSection = `
@@ -179,7 +181,9 @@ export async function action({ request }: Route.ActionArgs) {
         execute: async ({ chapterIndex, chapterTitle }) => {
           let chapter: BookChapter | undefined;
           if (chapterIndex != null) {
-            chapter = bookContext.chapters[chapterIndex];
+            chapter = bookContext.chapters.find(
+              (c) => c.index === chapterIndex,
+            );
           } else if (chapterTitle) {
             const lower = chapterTitle.toLowerCase();
             chapter = bookContext.chapters.find((c) =>

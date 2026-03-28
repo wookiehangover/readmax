@@ -1,4 +1,4 @@
-import { createContext, useContext, useRef, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useRef, useCallback, useMemo, type ReactNode } from "react";
 import type { DockviewApi } from "dockview";
 import type { TocEntry } from "~/lib/reader-context";
 import type { BookMeta } from "~/lib/book-store";
@@ -155,28 +155,31 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     return undefined;
   }, []);
 
-  const value: WorkspaceContextValue = {
-    navigationMap,
-    tocMap,
-    notebookCallbackMap,
-    tocChangeListener,
-    booksChangeListener,
-    dockviewApi,
-    fileInputRef,
-    booksRef,
-    openBookRef,
-    openNotebookRef,
-    openChatRef,
-    openStandardEbooksRef,
-    onBookAddedRef,
-    onBookDeletedRef,
-    chatContextMap,
-    findNavForBook,
-    waitForNavForBook,
-    findTocForBook,
-    tempHighlightMap,
-    applyTempHighlightForBook,
-  };
+  const value: WorkspaceContextValue = useMemo(
+    () => ({
+      navigationMap,
+      tocMap,
+      notebookCallbackMap,
+      tocChangeListener,
+      booksChangeListener,
+      dockviewApi,
+      fileInputRef,
+      booksRef,
+      openBookRef,
+      openNotebookRef,
+      openChatRef,
+      openStandardEbooksRef,
+      onBookAddedRef,
+      onBookDeletedRef,
+      chatContextMap,
+      findNavForBook,
+      waitForNavForBook,
+      findTocForBook,
+      tempHighlightMap,
+      applyTempHighlightForBook,
+    }),
+    [findNavForBook, waitForNavForBook, findTocForBook, applyTempHighlightForBook],
+  );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 }

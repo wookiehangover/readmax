@@ -166,14 +166,17 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       updateOpenBooks();
 
       // Store disposables for cleanup on unmount
+      // In dockview v5, onDidLayoutChange does not fire for panel add/remove/move,
+      // so we must also listen to those events to persist layout changes.
       disposablesRef.current = [
         event.api.onDidAddPanel(updatePanelCount),
         event.api.onDidRemovePanel(updatePanelCount),
         event.api.onDidAddPanel(updateOpenBooks),
         event.api.onDidRemovePanel(updateOpenBooks),
-        event.api.onDidLayoutChange(() => {
-          saveLayout();
-        }),
+        event.api.onDidAddPanel(saveLayout),
+        event.api.onDidRemovePanel(saveLayout),
+        event.api.onDidMovePanel(saveLayout),
+        event.api.onDidLayoutChange(saveLayout),
       ];
     },
     [saveLayout, ws],
@@ -203,11 +206,19 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     };
   }, [flushLayout]);
 
-  // Register TOC change listener and cleanup on unmount
+  // Register TOC change listener (safe to re-run when ws changes)
   useEffect(() => {
     ws.tocChangeListener.current = () => setTocVersion((v) => v + 1);
     return () => {
       ws.tocChangeListener.current = null;
+    };
+  }, [ws]);
+
+  // Cleanup dockview disposables and maps only on unmount —
+  // these must NOT be disposed on context value changes, because
+  // onReady only registers them once per mount.
+  useEffect(() => {
+    return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       for (const d of disposablesRef.current) d.dispose();
       disposablesRef.current = [];
@@ -216,7 +227,8 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       ws.notebookCallbackMap.current.clear();
       ws.tempHighlightMap.current.clear();
     };
-  }, [ws]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Update document title with panel count
   useEffect(() => {

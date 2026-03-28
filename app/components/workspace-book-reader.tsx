@@ -85,13 +85,38 @@ export function WorkspaceBookReader({
   const realNavRef = useRef<((cfi: string) => void) | null>(null);
   const pendingCfiRef = useRef<string | null>(null);
 
+  // Lifted from the inner component so the outer placeholder can force
+  // epub initialization when a navigation request arrives for a background panel.
+  const [hasBeenVisible, setHasBeenVisible] = useState(() =>
+    panelApi ? panelApi.isVisible : true,
+  );
+
+  useEffect(() => {
+    if (!panelApi || hasBeenVisible) return;
+    if (panelApi.isVisible) {
+      setHasBeenVisible(true);
+      return;
+    }
+    const disposable = panelApi.onDidVisibilityChange((e) => {
+      if (e.isVisible) {
+        setHasBeenVisible(true);
+        disposable.dispose();
+      }
+    });
+    return () => disposable.dispose();
+  }, [panelApi, hasBeenVisible]);
+
   // Stable placeholder callback registered immediately so the navigation map
   // has an entry even while book metadata is still loading.
+  // When the rendition isn't ready yet, queue the CFI and force the epub
+  // to start initializing by setting hasBeenVisible = true.
   const placeholderNav = useCallback((cfi: string) => {
     if (realNavRef.current) {
       realNavRef.current(cfi);
     } else {
       pendingCfiRef.current = cfi;
+      // Force epub initialization even if the panel hasn't been visible yet
+      setHasBeenVisible(true);
     }
   }, []);
 
@@ -150,7 +175,7 @@ export function WorkspaceBookReader({
       book={book}
       panelApi={panelApi}
       panelTypography={panelTypography}
-      onRegisterNavigation={onRegisterNavigation}
+      hasBeenVisible={hasBeenVisible}
       onRenditionReady={onRenditionReady}
       onRegisterToc={onRegisterToc}
       onUnregisterToc={onUnregisterToc}
@@ -172,7 +197,7 @@ function WorkspaceBookReaderInner({
   book,
   panelApi,
   panelTypography,
-  onRegisterNavigation,
+  hasBeenVisible,
   onRenditionReady,
   onRegisterToc,
   onUnregisterToc,
@@ -186,7 +211,8 @@ function WorkspaceBookReaderInner({
   book: BookMeta;
   panelApi?: DockviewPanelApi;
   panelTypography?: PanelTypographyParams;
-  onRegisterNavigation?: (panelId: string, navigateToCfi: (cfi: string) => void) => void;
+  /** Whether the panel has been visible at least once (controlled by outer component) */
+  hasBeenVisible: boolean;
   /** Called once the rendition is ready so the outer component can connect the real navigate callback */
   onRenditionReady?: (navigateToCfi: (cfi: string) => void) => void;
   onRegisterToc?: (panelId: string, toc: TocEntry[]) => void;
@@ -224,28 +250,6 @@ function WorkspaceBookReaderInner({
 
   const layoutRef = useRef(localReaderLayout);
 
-  // Defer epub initialization until the panel has been visible at least once.
-  // With renderer: "always", background tabs exist in the DOM but have zero
-  // dimensions. epubjs renderTo() on a zero-sized container produces broken layout.
-  const [hasBeenVisible, setHasBeenVisible] = useState(() =>
-    panelApi ? panelApi.isVisible : true,
-  );
-
-  useEffect(() => {
-    if (!panelApi || hasBeenVisible) return;
-    // Already visible on mount (race with state init)
-    if (panelApi.isVisible) {
-      setHasBeenVisible(true);
-      return;
-    }
-    const disposable = panelApi.onDidVisibilityChange((e) => {
-      if (e.isVisible) {
-        setHasBeenVisible(true);
-        disposable.dispose();
-      }
-    });
-    return () => disposable.dispose();
-  }, [panelApi, hasBeenVisible]);
   const typographyRef = useRef({
     fontFamily: localFontFamily,
     fontSize: localFontSize,
@@ -403,15 +407,6 @@ function WorkspaceBookReaderInner({
       console.warn("CFI navigation failed:", err);
     });
   }, []);
-
-  // Register the real navigateToCfi with the workspace navigation map.
-  // The outer WorkspaceBookReader already registered a placeholder immediately;
-  // this overwrites it with the real callback once the inner component mounts.
-  // Cleanup (unregister) is handled by the outer component.
-  useEffect(() => {
-    const id = panelApi?.id ?? book.id;
-    onRegisterNavigation?.(id, navigateToCfi);
-  }, [book.id, panelApi, navigateToCfi, onRegisterNavigation]);
 
   // Temporary highlight: briefly flash a CFI range in the reader
   const applyTempHighlight = useCallback((cfi: string) => {

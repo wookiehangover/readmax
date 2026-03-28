@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import { Effect, Layer } from "effect";
 import { createStore, set, get, del, entries } from "idb-keyval";
 import { BookService } from "~/lib/book-store";
-import type { Book } from "~/lib/book-store";
+import type { Book, BookMeta } from "~/lib/book-store";
+import { ReadingPositionService } from "~/lib/position-store";
 import { StorageError, BookNotFoundError, PositionError } from "~/lib/errors";
 
 function makeBook(overrides: Partial<Book> = {}): Book {
@@ -23,34 +24,51 @@ function makeTestLayer() {
   const posStore = createStore(`pos-db-${suffix}`, "positions");
   const locStore = createStore(`loc-db-${suffix}`, "locations");
 
-  return Layer.succeed(BookService, {
-    saveBook: (book: Book) =>
+  const bookDataStore = createStore(`book-data-db-${suffix}`, "book-data");
+
+  const bookLayer = Layer.succeed(BookService, {
+    saveBook: (meta: BookMeta, data: ArrayBuffer) =>
       Effect.tryPromise({
-        try: () => set(book.id, book, bookStore),
+        try: async () => {
+          await set(meta.id, meta, bookStore);
+          await set(meta.id, data, bookDataStore);
+        },
         catch: (cause) => new StorageError({ operation: "saveBook", cause }),
       }),
     getBooks: () =>
       Effect.tryPromise({
         try: async () => {
-          const allEntries = await entries<string, Book>(bookStore);
-          return allEntries.map(([, book]) => book).filter(Boolean);
+          const allEntries = await entries<string, BookMeta>(bookStore);
+          return allEntries.map(([, meta]) => meta).filter(Boolean);
         },
         catch: (cause) => new StorageError({ operation: "getBooks", cause }),
       }),
     getBook: (id: string) =>
       Effect.gen(function* () {
-        const book = yield* Effect.tryPromise({
-          try: () => get<Book>(id, bookStore),
+        const meta = yield* Effect.tryPromise({
+          try: () => get<BookMeta>(id, bookStore),
           catch: (cause) => new StorageError({ operation: "getBook", cause }),
         });
-        if (!book) return yield* Effect.fail(new BookNotFoundError({ bookId: id }));
-        return book;
+        if (!meta) return yield* Effect.fail(new BookNotFoundError({ bookId: id }));
+        return meta;
+      }),
+    getBookData: (id: string) =>
+      Effect.gen(function* () {
+        const data = yield* Effect.tryPromise({
+          try: () => get<ArrayBuffer>(id, bookDataStore),
+          catch: (cause) => new StorageError({ operation: "getBookData", cause }),
+        });
+        if (!data) return yield* Effect.fail(new BookNotFoundError({ bookId: id }));
+        return data;
       }),
     deleteBook: (id: string) =>
       Effect.tryPromise({
         try: () => del(id, bookStore),
         catch: (cause) => new StorageError({ operation: "deleteBook", cause }),
       }),
+  });
+
+  const positionLayer = Layer.succeed(ReadingPositionService, {
     savePosition: (bookId: string, cfi: string) =>
       Effect.tryPromise({
         try: () => set(bookId, cfi, posStore),
@@ -64,30 +82,19 @@ function makeTestLayer() {
         },
         catch: (cause) => new PositionError({ operation: "getPosition", bookId, cause }),
       }),
-    saveLocations: (bookId: string, json: string) =>
-      Effect.tryPromise({
-        try: () => set(bookId, json, locStore),
-        catch: (cause) => new StorageError({ operation: "saveLocations", cause }),
-      }),
-    getLocations: (bookId: string) =>
-      Effect.tryPromise({
-        try: async () => {
-          const loc = await get<string>(bookId, locStore);
-          return loc ?? null;
-        },
-        catch: (cause) => new StorageError({ operation: "getLocations", cause }),
-      }),
   });
+
+  return { bookLayer, positionLayer };
 }
 
 describe("BookService", () => {
   describe("saveBook + getBooks", () => {
     it("saves and retrieves books", async () => {
-      const layer = makeTestLayer();
+      const { bookLayer } = makeTestLayer();
       const run = <A, E>(e: Effect.Effect<A, E, BookService>) =>
-        Effect.runPromise(Effect.provide(e, layer));
+        Effect.runPromise(Effect.provide(e, bookLayer));
       const book = makeBook();
-      await run(BookService.pipe(Effect.andThen((s) => s.saveBook(book))));
+      await run(BookService.pipe(Effect.andThen((s) => s.saveBook(book, book.data))));
       const books = await run(BookService.pipe(Effect.andThen((s) => s.getBooks())));
       expect(books).toHaveLength(1);
       expect(books[0].id).toBe("book-1");
@@ -95,9 +102,9 @@ describe("BookService", () => {
     });
 
     it("returns empty array when no books", async () => {
-      const layer = makeTestLayer();
+      const { bookLayer } = makeTestLayer();
       const run = <A, E>(e: Effect.Effect<A, E, BookService>) =>
-        Effect.runPromise(Effect.provide(e, layer));
+        Effect.runPromise(Effect.provide(e, bookLayer));
       const books = await run(BookService.pipe(Effect.andThen((s) => s.getBooks())));
       expect(books).toEqual([]);
     });
@@ -105,20 +112,20 @@ describe("BookService", () => {
 
   describe("getBook", () => {
     it("retrieves a single book by id", async () => {
-      const layer = makeTestLayer();
+      const { bookLayer } = makeTestLayer();
       const run = <A, E>(e: Effect.Effect<A, E, BookService>) =>
-        Effect.runPromise(Effect.provide(e, layer));
+        Effect.runPromise(Effect.provide(e, bookLayer));
       const book = makeBook();
-      await run(BookService.pipe(Effect.andThen((s) => s.saveBook(book))));
+      await run(BookService.pipe(Effect.andThen((s) => s.saveBook(book, book.data))));
       const result = await run(BookService.pipe(Effect.andThen((s) => s.getBook("book-1"))));
       expect(result.id).toBe("book-1");
       expect(result.title).toBe("Test Book");
     });
 
     it("fails with BookNotFoundError for missing book", async () => {
-      const layer = makeTestLayer();
+      const { bookLayer } = makeTestLayer();
       const exit = await Effect.runPromiseExit(
-        Effect.provide(BookService.pipe(Effect.andThen((s) => s.getBook("nonexistent"))), layer),
+        Effect.provide(BookService.pipe(Effect.andThen((s) => s.getBook("nonexistent"))), bookLayer),
       );
       expect(exit._tag).toBe("Failure");
       if (exit._tag === "Failure") {
@@ -129,42 +136,44 @@ describe("BookService", () => {
 
   describe("deleteBook", () => {
     it("deletes a book", async () => {
-      const layer = makeTestLayer();
+      const { bookLayer } = makeTestLayer();
       const run = <A, E>(e: Effect.Effect<A, E, BookService>) =>
-        Effect.runPromise(Effect.provide(e, layer));
+        Effect.runPromise(Effect.provide(e, bookLayer));
       const book = makeBook();
-      await run(BookService.pipe(Effect.andThen((s) => s.saveBook(book))));
+      await run(BookService.pipe(Effect.andThen((s) => s.saveBook(book, book.data))));
       await run(BookService.pipe(Effect.andThen((s) => s.deleteBook("book-1"))));
       const books = await run(BookService.pipe(Effect.andThen((s) => s.getBooks())));
       expect(books).toEqual([]);
     });
   });
+});
 
+describe("ReadingPositionService", () => {
   describe("savePosition + getPosition", () => {
     it("saves and retrieves a reading position", async () => {
-      const layer = makeTestLayer();
-      const run = <A, E>(e: Effect.Effect<A, E, BookService>) =>
-        Effect.runPromise(Effect.provide(e, layer));
-      await run(BookService.pipe(Effect.andThen((s) => s.savePosition("book-1", "epubcfi(/6/4)"))));
-      const pos = await run(BookService.pipe(Effect.andThen((s) => s.getPosition("book-1"))));
+      const { positionLayer } = makeTestLayer();
+      const run = <A, E>(e: Effect.Effect<A, E, ReadingPositionService>) =>
+        Effect.runPromise(Effect.provide(e, positionLayer));
+      await run(ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition("book-1", "epubcfi(/6/4)"))));
+      const pos = await run(ReadingPositionService.pipe(Effect.andThen((s) => s.getPosition("book-1"))));
       expect(pos).toBe("epubcfi(/6/4)");
     });
 
     it("returns null for missing position", async () => {
-      const layer = makeTestLayer();
-      const run = <A, E>(e: Effect.Effect<A, E, BookService>) =>
-        Effect.runPromise(Effect.provide(e, layer));
-      const pos = await run(BookService.pipe(Effect.andThen((s) => s.getPosition("no-book"))));
+      const { positionLayer } = makeTestLayer();
+      const run = <A, E>(e: Effect.Effect<A, E, ReadingPositionService>) =>
+        Effect.runPromise(Effect.provide(e, positionLayer));
+      const pos = await run(ReadingPositionService.pipe(Effect.andThen((s) => s.getPosition("no-book"))));
       expect(pos).toBeNull();
     });
 
     it("overwrites an existing position", async () => {
-      const layer = makeTestLayer();
-      const run = <A, E>(e: Effect.Effect<A, E, BookService>) =>
-        Effect.runPromise(Effect.provide(e, layer));
-      await run(BookService.pipe(Effect.andThen((s) => s.savePosition("book-1", "epubcfi(/6/4)"))));
-      await run(BookService.pipe(Effect.andThen((s) => s.savePosition("book-1", "epubcfi(/6/8)"))));
-      const pos = await run(BookService.pipe(Effect.andThen((s) => s.getPosition("book-1"))));
+      const { positionLayer } = makeTestLayer();
+      const run = <A, E>(e: Effect.Effect<A, E, ReadingPositionService>) =>
+        Effect.runPromise(Effect.provide(e, positionLayer));
+      await run(ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition("book-1", "epubcfi(/6/4)"))));
+      await run(ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition("book-1", "epubcfi(/6/8)"))));
+      const pos = await run(ReadingPositionService.pipe(Effect.andThen((s) => s.getPosition("book-1"))));
       expect(pos).toBe("epubcfi(/6/8)");
     });
   });

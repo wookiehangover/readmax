@@ -10,8 +10,10 @@ import { SearchBar } from "~/components/search-bar";
 import { useBookSearch } from "~/lib/use-book-search";
 import { TocList } from "~/components/book-list";
 import { Effect } from "effect";
-import { BookService, type Book } from "~/lib/book-store";
+import { BookService, type BookMeta } from "~/lib/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
+import { LocationCacheService } from "~/lib/location-cache-store";
+import { ReadingPositionService } from "~/lib/position-store";
 import { useSettings, resolveTheme } from "~/lib/settings";
 import type { ReaderLayout, Settings } from "~/lib/settings";
 import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
@@ -82,7 +84,7 @@ export function WorkspaceBookReader({
     () =>
       BookService.pipe(
         Effect.andThen((s) => s.getBook(bookId)),
-        Effect.catchTag("BookNotFoundError", () => Effect.succeed(null as Book | null)),
+        Effect.catchTag("BookNotFoundError", () => Effect.succeed(null as BookMeta | null)),
       ),
     [bookId],
   );
@@ -141,7 +143,7 @@ function WorkspaceBookReaderInner({
   onRegisterTempHighlight,
   onUnregisterTempHighlight,
 }: {
-  book: Book;
+  book: BookMeta;
   panelApi?: DockviewPanelApi;
   panelTypography?: PanelTypographyParams;
   onRegisterNavigation?: (panelId: string, navigateToCfi: (cfi: string) => void) => void;
@@ -348,7 +350,7 @@ function WorkspaceBookReaderInner({
         bookId: book.id,
         cfi,
         savePosition: (key, val) =>
-          AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.savePosition(key, val)))),
+          AppRuntime.runPromise(ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition(key, val)))),
       }).catch((err) => console.error("Failed to flush reading position:", err));
     }
   }, [book.id, panelApi?.id]);
@@ -420,8 +422,19 @@ function WorkspaceBookReaderInner({
     const el = containerRef.current;
     if (!el) return;
 
+    let cancelled = false;
+    let epubBook: EpubBook | null = null;
+    let rendition: Rendition | null = null;
+
+    const init = async () => {
+      // Load binary data on demand
+      const bookData = await AppRuntime.runPromise(
+        BookService.pipe(Effect.andThen((s) => s.getBookData(book.id))),
+      );
+      if (cancelled) return;
+
     const opts = getRenditionOptions(localReaderLayout);
-    const epubBook = ePub(book.data);
+    epubBook = ePub(bookData);
     bookRef.current = epubBook;
 
     // Inject layout fix CSS via spine hooks — must run before iframe load
@@ -446,7 +459,7 @@ function WorkspaceBookReaderInner({
       doc.head.appendChild(style);
     });
 
-    const rendition = epubBook.renderTo(el, {
+    rendition = epubBook.renderTo(el, {
       width: "100%",
       height: "100%",
       spread: opts.spread,
@@ -532,7 +545,7 @@ function WorkspaceBookReaderInner({
         panelId: panelApi?.id,
         bookId: book.id,
         getPosition: (key) =>
-          AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.getPosition(key)))),
+          AppRuntime.runPromise(ReadingPositionService.pipe(Effect.andThen((s) => s.getPosition(key)))),
       });
       await rendition.display(startCfi || undefined);
 
@@ -572,7 +585,7 @@ function WorkspaceBookReaderInner({
 
       try {
         const cachedLocations = await AppRuntime.runPromise(
-          BookService.pipe(Effect.andThen((s) => s.getLocations(book.id))).pipe(
+          LocationCacheService.pipe(Effect.andThen((s) => s.getLocations(book.id))).pipe(
             Effect.catchAll(() => Effect.succeed(null)),
           ),
         );
@@ -582,7 +595,7 @@ function WorkspaceBookReaderInner({
           await epubBook.locations.generate(1500);
           const json = (epubBook.locations as any).save() as string;
           AppRuntime.runPromise(
-            BookService.pipe(Effect.andThen((s) => s.saveLocations(book.id, json))),
+            LocationCacheService.pipe(Effect.andThen((s) => s.saveLocations(book.id, json))),
           ).catch(console.error);
         }
         setTotalPages((epubBook.locations as any).total as number);
@@ -645,7 +658,7 @@ function WorkspaceBookReaderInner({
               cfi: location.start.cfi,
               savePosition: (key, val) =>
                 AppRuntime.runPromise(
-                  BookService.pipe(Effect.andThen((s) => s.savePosition(key, val))),
+                  ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition(key, val))),
                 ),
             }).catch((err) => console.error("Failed to save reading position:", err));
           }, POSITION_SAVE_DEBOUNCE_MS);
@@ -653,6 +666,8 @@ function WorkspaceBookReaderInner({
         },
       );
     })();
+
+    }; // end init()
 
     // Keyboard navigation scoped to this panel only
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -663,25 +678,29 @@ function WorkspaceBookReaderInner({
         document.activeElement !== panelRef.current
       )
         return;
-      if (e.key === "ArrowLeft") rendition.prev();
-      else if (e.key === "ArrowRight") rendition.next();
+      if (e.key === "ArrowLeft") rendition?.prev();
+      else if (e.key === "ArrowRight") rendition?.next();
     };
 
     document.addEventListener("keydown", handleKeyDown);
 
+    init().catch((err) => {
+      if (!cancelled) console.error("Failed to load book data:", err);
+    });
+
     return () => {
+      cancelled = true;
       document.removeEventListener("keydown", handleKeyDown);
       flushPositionSave();
       onUnregisterToc?.(panelApi?.id ?? book.id);
-      rendition.destroy();
-      epubBook.destroy();
+      if (rendition) rendition.destroy();
+      if (epubBook) epubBook.destroy();
       bookRef.current = null;
       renditionRef.current = null;
     };
   }, [
     hasBeenVisible,
     book.id,
-    book.data,
     localReaderLayout,
     loadAndApplyHighlights,
     registerSelectionHandler,

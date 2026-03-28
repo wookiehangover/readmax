@@ -7,8 +7,10 @@ import { ChevronLeft, ChevronRight, Notebook, Search, TableOfContents } from "lu
 import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover";
 import { TocList } from "~/components/book-list";
 import { Effect } from "effect";
-import { BookService, type Book } from "~/lib/book-store";
+import { BookService, type BookMeta } from "~/lib/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
+import { LocationCacheService } from "~/lib/location-cache-store";
+import { ReadingPositionService } from "~/lib/position-store";
 import { useSettings, resolveTheme } from "~/lib/settings";
 import type { ReaderLayout } from "~/lib/settings";
 import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
@@ -28,7 +30,7 @@ import { SearchBar } from "~/components/search-bar";
 const POSITION_SAVE_DEBOUNCE_MS = 1000;
 
 interface BookReaderProps {
-  book: Book;
+  book: BookMeta;
 }
 
 function getFontFallback(fontFamily: string): string {
@@ -132,8 +134,19 @@ export function BookReader({ book }: BookReaderProps) {
     const el = containerRef.current;
     if (!el) return;
 
+    let cancelled = false;
+    let epubBook: EpubBook | null = null;
+    let rendition: Rendition | null = null;
+
+    const init = async () => {
+      // Load binary data on demand
+      const bookData = await AppRuntime.runPromise(
+        BookService.pipe(Effect.andThen((s) => s.getBookData(book.id))),
+      );
+      if (cancelled) return;
+
     const opts = getRenditionOptions(settings.readerLayout);
-    const epubBook = ePub(book.data);
+    epubBook = ePub(bookData);
     bookRef.current = epubBook;
 
     // Inject layout fix CSS via spine hooks — must run before iframe load
@@ -158,7 +171,7 @@ export function BookReader({ book }: BookReaderProps) {
       doc.head.appendChild(style);
     });
 
-    const rendition = epubBook.renderTo(el, {
+    rendition = epubBook.renderTo(el, {
       width: "100%",
       height: "100%",
       spread: opts.spread,
@@ -236,7 +249,7 @@ export function BookReader({ book }: BookReaderProps) {
       });
 
       const savedCfi = await AppRuntime.runPromise(
-        BookService.pipe(Effect.andThen((s) => s.getPosition(book.id))),
+        ReadingPositionService.pipe(Effect.andThen((s) => s.getPosition(book.id))),
       );
       await rendition.display(savedCfi || undefined);
 
@@ -251,7 +264,7 @@ export function BookReader({ book }: BookReaderProps) {
 
       try {
         const cachedLocations = await AppRuntime.runPromise(
-          BookService.pipe(Effect.andThen((s) => s.getLocations(book.id))).pipe(
+          LocationCacheService.pipe(Effect.andThen((s) => s.getLocations(book.id))).pipe(
             Effect.catchAll(() => Effect.succeed(null)),
           ),
         );
@@ -261,7 +274,7 @@ export function BookReader({ book }: BookReaderProps) {
           await epubBook.locations.generate(1500);
           const json = (epubBook.locations as any).save() as string;
           AppRuntime.runPromise(
-            BookService.pipe(Effect.andThen((s) => s.saveLocations(book.id, json))),
+            LocationCacheService.pipe(Effect.andThen((s) => s.saveLocations(book.id, json))),
           ).catch(console.error);
         }
         setTotalPages((epubBook.locations as any).total as number);
@@ -295,7 +308,7 @@ export function BookReader({ book }: BookReaderProps) {
           if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
           saveTimerRef.current = setTimeout(() => {
             AppRuntime.runPromise(
-              BookService.pipe(Effect.andThen((s) => s.savePosition(book.id, location.start.cfi))),
+              ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition(book.id, location.start.cfi))),
             ).catch((err) => console.error("Failed to save reading position:", err));
           }, POSITION_SAVE_DEBOUNCE_MS);
 
@@ -303,27 +316,32 @@ export function BookReader({ book }: BookReaderProps) {
       );
     })();
 
+    }; // end init()
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (layoutRef.current === "scroll") return;
-      if (e.key === "ArrowLeft") rendition.prev();
-      else if (e.key === "ArrowRight") rendition.next();
+      if (e.key === "ArrowLeft") rendition?.prev();
+      else if (e.key === "ArrowRight") rendition?.next();
     };
-
     document.addEventListener("keydown", handleKeyDown);
 
+    init().catch((err) => {
+      if (!cancelled) console.error("Failed to load book data:", err);
+    });
+
     return () => {
+      cancelled = true;
       document.removeEventListener("keydown", handleKeyDown);
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       setToc([]);
       setNavigateToHref(() => {});
-      rendition.destroy();
-      epubBook.destroy();
+      if (rendition) rendition.destroy();
+      if (epubBook) epubBook.destroy();
       bookRef.current = null;
       renditionRef.current = null;
     };
   }, [
     book.id,
-    book.data,
     settings.readerLayout,
     loadAndApplyHighlights,
     registerSelectionHandler,

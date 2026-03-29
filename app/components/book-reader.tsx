@@ -593,7 +593,7 @@ export function BookReader({ book }: BookReaderProps) {
             className={cn("h-full overflow-hidden", { "px-8 pt-10 pb-4": settings.readerLayout })}
           />
         </div>
-        <div className="relative flex items-center justify-center border-t px-2 h-12 md:h-10">
+        <div className="relative flex items-center justify-center border-t px-2 h-12 md:h-10 pb-[env(safe-area-inset-bottom)]">
           <div className="absolute left-2 flex items-center gap-1.5">
             {totalPages !== null && currentPage !== null ? (
               <span className="text-muted-foreground text-[10px] tabular-nums md:text-xs">

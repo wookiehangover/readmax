@@ -591,7 +591,7 @@ export function BookReader({ book }: BookReaderProps) {
           <div
             ref={containerRef}
             className={cn("h-full overflow-hidden", {
-              "px-3 pt-6 pb-2 md:px-8 md:pt-10 md:pb-4": settings.readerLayout,
+              "px-1 pt-2 pb-1 md:px-8 md:pt-10 md:pb-4": settings.readerLayout,
             })}
           />
         </div>

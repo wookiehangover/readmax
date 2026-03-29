@@ -999,7 +999,9 @@ function WorkspaceBookReaderInner({
           )}
           <div
             ref={containerRef}
-            className={cn("h-full overflow-hidden", { "px-8 pt-10 pb-4": localReaderLayout })}
+            className={cn("h-full overflow-hidden", {
+              "px-3 pt-6 pb-2 md:px-8 md:pt-10 md:pb-4": localReaderLayout,
+            })}
           />
           {isMobile && !isScrollMode && (
             <div className="pointer-events-none absolute inset-0 z-[5]">

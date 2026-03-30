@@ -24,10 +24,11 @@ import { useEffectQuery } from "~/lib/use-effect-query";
 import { cn } from "~/lib/utils";
 import { registerThemeColors, injectThemeColors } from "~/lib/epub-theme-utils";
 import type { DockviewPanelApi } from "dockview";
-import type { TocEntry } from "~/lib/reader-context";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { useEpubLifecycle } from "~/hooks/use-epub-lifecycle";
 import { useToolbarAutoHide } from "~/hooks/use-toolbar-auto-hide";
+import { useWorkspace } from "~/lib/workspace-context";
+import { truncateTitle } from "~/lib/workspace-utils";
 
 /** Typography overrides restored from dockview panel params */
 export interface PanelTypographyParams {
@@ -42,36 +43,14 @@ interface WorkspaceBookReaderProps {
   panelApi?: DockviewPanelApi;
   /** Initial typography overrides from restored panel params */
   panelTypography?: PanelTypographyParams;
-  onRegisterNavigation?: (panelId: string, navigateToCfi: (cfi: string) => void) => void;
-  onUnregisterNavigation?: (panelId: string) => void;
-  onRegisterToc?: (panelId: string, toc: TocEntry[]) => void;
-  onUnregisterToc?: (panelId: string) => void;
-  onOpenNotebook?: () => void;
-  onOpenChat?: () => void;
-  onHighlightCreated?: (highlight: { highlightId: string; cfiRange: string; text: string }) => void;
-  /** Shared ref for tracking current chapter position per book (for chat context) */
-  chatContextMap?: React.MutableRefObject<
-    Map<string, { currentChapterIndex: number; currentSpineHref: string; visibleText: string }>
-  >;
-  onRegisterTempHighlight?: (panelId: string, fn: (cfi: string) => void) => void;
-  onUnregisterTempHighlight?: (panelId: string) => void;
 }
 
 export function WorkspaceBookReader({
   bookId,
   panelApi,
   panelTypography,
-  onRegisterNavigation,
-  onUnregisterNavigation,
-  onRegisterToc,
-  onUnregisterToc,
-  onOpenNotebook,
-  onOpenChat,
-  onHighlightCreated,
-  chatContextMap,
-  onRegisterTempHighlight,
-  onUnregisterTempHighlight,
 }: WorkspaceBookReaderProps) {
+  const { navigationMap } = useWorkspace();
   // Ref holding the real navigateToCfi from the inner component once it mounts.
   // Before that, the placeholder callback queues CFIs into pendingCfiRef.
   const realNavRef = useRef<((cfi: string) => void) | null>(null);
@@ -124,11 +103,11 @@ export function WorkspaceBookReader({
       bookId,
       panelApiId: panelApi?.id,
     });
-    onRegisterNavigation?.(id, placeholderNav);
+    navigationMap.current.set(id, placeholderNav);
     return () => {
-      onUnregisterNavigation?.(id);
+      navigationMap.current.delete(id);
     };
-  }, [bookId, panelApi, placeholderNav, onRegisterNavigation, onUnregisterNavigation]);
+  }, [bookId, panelApi, placeholderNav, navigationMap]);
 
   // Called by WorkspaceBookReaderInner once its rendition is ready
   const onRenditionReady = useCallback((nav: (cfi: string) => void) => {
@@ -179,14 +158,6 @@ export function WorkspaceBookReader({
       panelTypography={panelTypography}
       hasBeenVisible={hasBeenVisible}
       onRenditionReady={onRenditionReady}
-      onRegisterToc={onRegisterToc}
-      onUnregisterToc={onUnregisterToc}
-      onOpenNotebook={onOpenNotebook}
-      onOpenChat={onOpenChat}
-      onHighlightCreated={onHighlightCreated}
-      chatContextMap={chatContextMap}
-      onRegisterTempHighlight={onRegisterTempHighlight}
-      onUnregisterTempHighlight={onUnregisterTempHighlight}
     />
   );
 }
@@ -201,14 +172,6 @@ function WorkspaceBookReaderInner({
   panelTypography,
   hasBeenVisible,
   onRenditionReady,
-  onRegisterToc,
-  onUnregisterToc,
-  onOpenNotebook,
-  onOpenChat,
-  onHighlightCreated,
-  chatContextMap,
-  onRegisterTempHighlight,
-  onUnregisterTempHighlight,
 }: {
   book: BookMeta;
   panelApi?: DockviewPanelApi;
@@ -217,17 +180,16 @@ function WorkspaceBookReaderInner({
   hasBeenVisible: boolean;
   /** Called once the rendition is ready so the outer component can connect the real navigate callback */
   onRenditionReady?: (navigateToCfi: (cfi: string) => void) => void;
-  onRegisterToc?: (panelId: string, toc: TocEntry[]) => void;
-  onUnregisterToc?: (panelId: string) => void;
-  onOpenNotebook?: () => void;
-  onOpenChat?: () => void;
-  onHighlightCreated?: (highlight: { highlightId: string; cfiRange: string; text: string }) => void;
-  chatContextMap?: React.MutableRefObject<
-    Map<string, { currentChapterIndex: number; currentSpineHref: string; visibleText: string }>
-  >;
-  onRegisterTempHighlight?: (panelId: string, fn: (cfi: string) => void) => void;
-  onUnregisterTempHighlight?: (panelId: string) => void;
 }) {
+  const {
+    tocMap,
+    tocChangeListener,
+    dockviewApi,
+    notebookCallbackMap,
+    chatContextMap,
+    tempHighlightMap,
+  } = useWorkspace();
+  const isMobile = useIsMobile();
   const panelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const bookRef = useRef<import("epubjs/types/book").default | null>(null);
@@ -253,7 +215,6 @@ function WorkspaceBookReaderInner({
   const [tocOpen, setTocOpen] = useState(false);
 
   // Mobile toolbar auto-hide
-  const isMobile = useIsMobile();
   const { toolbarVisible, showToolbar, toggleToolbar } = useToolbarAutoHide(isMobile);
 
   // Search state (shared hook)
@@ -300,8 +261,16 @@ function WorkspaceBookReaderInner({
       panelId: panelApi?.id,
       chatContextMap,
       onRenditionReady,
-      onTocExtracted: (tocData) => onRegisterToc?.(panelApi?.id ?? book.id, tocData),
-      onCleanupToc: () => onUnregisterToc?.(panelApi?.id ?? book.id),
+      onTocExtracted: (tocData) => {
+        const id = panelApi?.id ?? book.id;
+        tocMap.current.set(id, tocData);
+        tocChangeListener.current?.();
+      },
+      onCleanupToc: () => {
+        const id = panelApi?.id ?? book.id;
+        tocMap.current.delete(id);
+        tocChangeListener.current?.();
+      },
       onSearchOpen: handleSearchOpenFromIframe,
       onRelocated: showToolbar,
       panelRef,
@@ -336,11 +305,11 @@ function WorkspaceBookReaderInner({
   // Register temp highlight callback
   useEffect(() => {
     const id = panelApi?.id ?? book.id;
-    onRegisterTempHighlight?.(id, applyTempHighlight);
+    tempHighlightMap.current.set(id, applyTempHighlight);
     return () => {
-      onUnregisterTempHighlight?.(id);
+      tempHighlightMap.current.delete(id);
     };
-  }, [book.id, panelApi, applyTempHighlight, onRegisterTempHighlight, onUnregisterTempHighlight]);
+  }, [book.id, panelApi, applyTempHighlight, tempHighlightMap]);
 
   // With renderer: "always", dockview keeps the DOM alive when the tab is hidden
   // (instead of removing it). The epub iframe stays intact, so we only need to
@@ -451,13 +420,100 @@ function WorkspaceBookReaderInner({
   const handleSaveHighlight = useCallback(async () => {
     const highlight = await saveHighlightFromPopover();
     if (highlight) {
-      onHighlightCreated?.({
-        highlightId: highlight.id,
-        cfiRange: highlight.cfiRange,
-        text: highlight.text,
-      });
+      const appendFn = notebookCallbackMap.current.get(book.id);
+      if (appendFn) {
+        appendFn({
+          highlightId: highlight.id,
+          cfiRange: highlight.cfiRange,
+          text: highlight.text,
+        });
+      }
     }
-  }, [saveHighlightFromPopover, onHighlightCreated]);
+  }, [saveHighlightFromPopover, notebookCallbackMap, book.id]);
+
+  const handleOpenNotebook = useCallback(() => {
+    const dockApi = dockviewApi.current;
+    if (!dockApi || !panelApi) return;
+
+    const panelId = `notebook-${book.id}`;
+    const existing = dockApi.panels.find((p) => p.id === panelId);
+    if (existing) {
+      existing.focus();
+      return;
+    }
+
+    const title = book.title ?? "Untitled";
+
+    if (isMobile) {
+      dockApi.addPanel({
+        id: panelId,
+        component: "notebook",
+        title: truncateTitle(`Notes: ${title}`),
+        params: { bookId: book.id, bookTitle: title },
+        renderer: "always",
+      });
+      return;
+    }
+
+    const bookGroup = panelApi.group;
+    const bookRect = bookGroup.element.getBoundingClientRect();
+    const rightGroup = dockApi.groups.find(
+      (g) => g !== bookGroup && g.element.getBoundingClientRect().left >= bookRect.right - 1,
+    );
+
+    dockApi.addPanel({
+      id: panelId,
+      component: "notebook",
+      title: truncateTitle(`Notes: ${title}`),
+      params: { bookId: book.id, bookTitle: title },
+      renderer: "always",
+      position: rightGroup
+        ? { referenceGroup: rightGroup }
+        : { referencePanel: panelApi.id, direction: "right" as const },
+    });
+  }, [dockviewApi, book.id, book.title, panelApi, isMobile]);
+
+  const handleOpenChat = useCallback(() => {
+    const dockApi = dockviewApi.current;
+    if (!dockApi || !panelApi) return;
+
+    const panelId = `chat-${book.id}`;
+    const existing = dockApi.panels.find((p) => p.id === panelId);
+    if (existing) {
+      existing.focus();
+      return;
+    }
+
+    const title = book.title ?? "Untitled";
+
+    if (isMobile) {
+      dockApi.addPanel({
+        id: panelId,
+        component: "chat",
+        title: truncateTitle(`Chat: ${title}`),
+        params: { bookId: book.id, bookTitle: title },
+        renderer: "always",
+      });
+      return;
+    }
+
+    const bookGroup = panelApi.group;
+    const bookRect = bookGroup.element.getBoundingClientRect();
+    const rightGroup = dockApi.groups.find(
+      (g) => g !== bookGroup && g.element.getBoundingClientRect().left >= bookRect.right - 1,
+    );
+
+    dockApi.addPanel({
+      id: panelId,
+      component: "chat",
+      title: truncateTitle(`Chat: ${title}`),
+      params: { bookId: book.id, bookTitle: title },
+      renderer: "always",
+      position: rightGroup
+        ? { referenceGroup: rightGroup }
+        : { referencePanel: panelApi.id, direction: "right" as const },
+    });
+  }, [dockviewApi, book.id, book.title, panelApi, isMobile]);
 
   const isScrollMode = localReaderLayout === "scroll";
 
@@ -558,18 +614,14 @@ function WorkspaceBookReaderInner({
               <Search className="size-4" />
               <span className="sr-only">Search in book</span>
             </Button>
-            {onOpenNotebook && (
-              <Button variant="ghost" size="icon" onClick={onOpenNotebook} title="Open Notebook">
-                <Notebook className="size-4" />
-                <span className="sr-only">Open Notebook</span>
-              </Button>
-            )}
-            {onOpenChat && (
-              <Button variant="ghost" size="icon" onClick={onOpenChat} title="Chat about book">
-                <MessageSquare className="size-4" />
-                <span className="sr-only">Chat about book</span>
-              </Button>
-            )}
+            <Button variant="ghost" size="icon" onClick={handleOpenNotebook} title="Open Notebook">
+              <Notebook className="size-4" />
+              <span className="sr-only">Open Notebook</span>
+            </Button>
+            <Button variant="ghost" size="icon" onClick={handleOpenChat} title="Chat about book">
+              <MessageSquare className="size-4" />
+              <span className="sr-only">Chat about book</span>
+            </Button>
             {toc.length > 0 && (
               <Popover open={tocOpen} onOpenChange={setTocOpen}>
                 <PopoverTrigger

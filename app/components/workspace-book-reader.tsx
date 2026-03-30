@@ -364,7 +364,12 @@ function WorkspaceBookReaderInner({
       // Resize in case container dimensions changed, then restore position
       requestAnimationFrame(() => {
         if (!renditionRef.current) return;
-        (renditionRef.current as any).resize();
+        try {
+          (renditionRef.current as any).resize();
+        } catch {
+          // rendition manager may not be initialized yet
+          return;
+        }
         if (cfiBeforeResize) {
           renditionRef.current.display(cfiBeforeResize).catch(() => {});
         }
@@ -397,7 +402,12 @@ function WorkspaceBookReaderInner({
       resizeRafId = requestAnimationFrame(() => {
         resizeRafId = null;
         if (!renditionRef.current) return;
-        (renditionRef.current as any).resize();
+        try {
+          (renditionRef.current as any).resize();
+        } catch {
+          // rendition manager may not be initialized yet
+          return;
+        }
         if (cfiBeforeResize) {
           renditionRef.current.display(cfiBeforeResize).catch(() => {});
         }

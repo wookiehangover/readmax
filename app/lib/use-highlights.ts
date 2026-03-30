@@ -44,7 +44,7 @@ export function useHighlights({ bookId, renditionRef, onHighlightClick }: UseHig
         {},
         makeClickCallback(hl.cfiRange),
         "epubjs-hl",
-        { fill: hl.color || "rgba(255, 213, 79, 0.4)" },
+        { fill: hl.color || "rgba(255, 213, 79, 0.6)" },
       );
     },
     [makeClickCallback],
@@ -100,7 +100,7 @@ export function useHighlights({ bookId, renditionRef, onHighlightClick }: UseHig
     if (!selectionPopover || !rendition) return null;
 
     const { cfiRange, text } = selectionPopover;
-    const color = "rgba(255, 213, 79, 0.4)";
+    const color = "rgba(255, 213, 79, 0.6)";
 
     const highlight: Highlight = {
       id: crypto.randomUUID(),

@@ -34,13 +34,24 @@ export function BookReaderPanel({
 export function NotebookPanel({
   params,
 }: IDockviewPanelProps<{ bookId: string; bookTitle: string }>) {
-  const { findNavForBook, notebookCallbackMap, removeHighlightAnnotationForBook } = useWorkspace();
+  const { findNavForBook, notebookCallbackMap, removeHighlightAnnotationForBook, dockviewApi } =
+    useWorkspace();
 
   const handleNavigateToCfi = useCallback(
     (cfi: string) => {
+      // Focus the book reader panel first so it becomes visible
+      const api = dockviewApi.current;
+      if (api) {
+        const bookPanel = api.panels.find(
+          (p) =>
+            p.id.startsWith("book-") &&
+            (p.params as Record<string, unknown>)?.bookId === params.bookId,
+        );
+        if (bookPanel) bookPanel.focus();
+      }
       findNavForBook(params.bookId)?.(cfi);
     },
-    [findNavForBook, params.bookId],
+    [findNavForBook, params.bookId, dockviewApi],
   );
 
   const handleRegisterAppendHighlight = useCallback(

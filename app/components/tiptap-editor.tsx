@@ -2,13 +2,9 @@ import { useEditor, EditorContent, NodeViewWrapper } from "@tiptap/react";
 import type { ReactNodeViewProps, JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "tiptap-markdown";
-import { useEffect, useRef, useImperativeHandle, forwardRef } from "react";
+import { useCallback, useEffect, useRef, useImperativeHandle, forwardRef } from "react";
 import { Navigation, Trash2 } from "lucide-react";
-import {
-  HighlightReference,
-  type HighlightReferenceAttrs,
-  type HighlightReferenceStorage,
-} from "~/lib/tiptap-highlight-node";
+import { HighlightReference, type HighlightReferenceAttrs } from "~/lib/tiptap-highlight-node";
 
 export interface TiptapEditorHandle {
   appendHighlightReference: (attrs: HighlightReferenceAttrs) => void;
@@ -21,20 +17,27 @@ interface TiptapEditorProps {
   onDeleteHighlight?: (highlightId: string, cfiRange: string) => void;
 }
 
-function HighlightReferenceView({ node, extension, deleteNode }: ReactNodeViewProps) {
+function HighlightReferenceView({ node, editor, deleteNode }: ReactNodeViewProps) {
   const { text, cfiRange, highlightId } = node.attrs as HighlightReferenceAttrs;
-  const storage = extension.storage as HighlightReferenceStorage;
 
-  const handleNavigate = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    storage.onNavigateToHighlight?.(cfiRange);
-  };
+  const handleNavigate = useCallback(() => {
+    editor.view.dom.dispatchEvent(
+      new CustomEvent("highlight-navigate", {
+        detail: { cfi: cfiRange },
+        bubbles: true,
+      }),
+    );
+  }, [cfiRange, editor]);
 
-  const handleDelete = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    storage.onDeleteHighlight?.(highlightId, cfiRange);
+  const handleDelete = useCallback(() => {
+    editor.view.dom.dispatchEvent(
+      new CustomEvent("highlight-delete", {
+        detail: { highlightId, cfiRange },
+        bubbles: true,
+      }),
+    );
     deleteNode();
-  };
+  }, [highlightId, cfiRange, editor, deleteNode]);
 
   return (
     <NodeViewWrapper>
@@ -47,7 +50,10 @@ function HighlightReferenceView({ node, extension, deleteNode }: ReactNodeViewPr
         <span className="absolute top-1/2 right-2 flex -translate-y-1/2 gap-0.5 opacity-0 transition-opacity group-hover/hl:opacity-100">
           <button
             type="button"
-            onClick={handleNavigate}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleNavigate();
+            }}
             className="rounded p-1 text-amber-700 hover:bg-amber-200 dark:text-amber-300 dark:hover:bg-amber-800"
             title="Navigate to highlight"
           >
@@ -55,7 +61,10 @@ function HighlightReferenceView({ node, extension, deleteNode }: ReactNodeViewPr
           </button>
           <button
             type="button"
-            onClick={handleDelete}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDelete();
+            }}
             className="rounded p-1 text-amber-700 hover:bg-red-100 hover:text-red-600 dark:text-amber-300 dark:hover:bg-red-900 dark:hover:text-red-400"
             title="Delete highlight"
           >
@@ -95,16 +104,27 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
     immediatelyRender: true,
   });
 
-  // Keep callbacks in extension storage so HighlightReferenceView can access them
+  // Listen for custom DOM events dispatched by HighlightReferenceView
   useEffect(() => {
     if (!editor) return;
-    const storage = editor.extensionManager.extensions.find(
-      (ext) => ext.name === "highlightReference",
-    )?.storage as HighlightReferenceStorage | undefined;
-    if (storage) {
-      storage.onNavigateToHighlight = onNavigateToHighlight ?? null;
-      storage.onDeleteHighlight = onDeleteHighlight ?? null;
-    }
+    const dom = editor.view.dom;
+
+    const handleNavigate = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      onNavigateToHighlight?.(detail.cfi);
+    };
+
+    const handleDelete = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      onDeleteHighlight?.(detail.highlightId, detail.cfiRange);
+    };
+
+    dom.addEventListener("highlight-navigate", handleNavigate);
+    dom.addEventListener("highlight-delete", handleDelete);
+    return () => {
+      dom.removeEventListener("highlight-navigate", handleNavigate);
+      dom.removeEventListener("highlight-delete", handleDelete);
+    };
   }, [editor, onNavigateToHighlight, onDeleteHighlight]);
 
   // Expose imperative handle for appending highlight references

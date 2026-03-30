@@ -549,26 +549,35 @@ function WorkspaceBookReaderInner({
               "px-4 pt-6 pb-2 md:px-8 md:pt-10 md:pb-4": localReaderLayout,
             })}
           />
-          {isMobile && !isScrollMode && (
+          {!isScrollMode && (
             <div className="pointer-events-none absolute inset-0 z-[5]">
+              {/* Previous page zone: narrow margin on desktop, 25% on mobile */}
               <button
                 type="button"
                 aria-label="Previous page"
-                className="pointer-events-auto absolute top-0 left-0 h-full w-1/4 appearance-none border-none bg-transparent p-0 active:bg-black/5 dark:active:bg-white/5"
+                className="pointer-events-auto group absolute top-0 left-0 flex h-full w-1/4 cursor-default appearance-none items-center justify-center border-none bg-transparent p-0 active:bg-black/5 md:w-12 md:cursor-pointer dark:active:bg-white/5"
                 onPointerUp={handlePrev}
-              />
-              <button
-                type="button"
-                aria-label="Toggle toolbar"
-                className="pointer-events-auto absolute top-0 left-1/4 h-full w-1/2 appearance-none border-none bg-transparent p-0"
-                onPointerUp={toggleToolbar}
-              />
+              >
+                <ChevronLeft className="text-muted-foreground/0 size-5 transition-colors group-hover:text-muted-foreground/40 hidden md:block" />
+              </button>
+              {/* Center zone: toolbar toggle on mobile only */}
+              {isMobile && (
+                <button
+                  type="button"
+                  aria-label="Toggle toolbar"
+                  className="pointer-events-auto absolute top-0 left-1/4 h-full w-1/2 appearance-none border-none bg-transparent p-0"
+                  onPointerUp={toggleToolbar}
+                />
+              )}
+              {/* Next page zone: narrow margin on desktop, 25% on mobile */}
               <button
                 type="button"
                 aria-label="Next page"
-                className="pointer-events-auto absolute top-0 right-0 h-full w-1/4 appearance-none border-none bg-transparent p-0 active:bg-black/5 dark:active:bg-white/5"
+                className="pointer-events-auto group absolute top-0 right-0 flex h-full w-1/4 cursor-default appearance-none items-center justify-center border-none bg-transparent p-0 active:bg-black/5 md:w-12 md:cursor-pointer dark:active:bg-white/5"
                 onPointerUp={handleNext}
-              />
+              >
+                <ChevronRight className="text-muted-foreground/0 size-5 transition-colors group-hover:text-muted-foreground/40 hidden md:block" />
+              </button>
             </div>
           )}
         </div>

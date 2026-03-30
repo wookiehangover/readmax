@@ -169,6 +169,28 @@ export function BookReader({ book }: BookReaderProps) {
               "px-4 pt-6 pb-2 md:px-8 md:pt-10 md:pb-4": settings.readerLayout,
             })}
           />
+          {!isScrollMode && (
+            <div className="pointer-events-none absolute inset-0 z-[5]">
+              {/* Previous page zone: narrow margin on desktop, 25% on mobile */}
+              <button
+                type="button"
+                aria-label="Previous page"
+                className="pointer-events-auto group absolute top-0 left-0 flex h-full w-1/4 cursor-default appearance-none items-center justify-center border-none bg-transparent p-0 active:bg-black/5 md:w-12 md:cursor-pointer dark:active:bg-white/5"
+                onPointerUp={handlePrev}
+              >
+                <ChevronLeft className="text-muted-foreground/0 size-5 transition-colors group-hover:text-muted-foreground/40 hidden md:block" />
+              </button>
+              {/* Next page zone: narrow margin on desktop, 25% on mobile */}
+              <button
+                type="button"
+                aria-label="Next page"
+                className="pointer-events-auto group absolute top-0 right-0 flex h-full w-1/4 cursor-default appearance-none items-center justify-center border-none bg-transparent p-0 active:bg-black/5 md:w-12 md:cursor-pointer dark:active:bg-white/5"
+                onPointerUp={handleNext}
+              >
+                <ChevronRight className="text-muted-foreground/0 size-5 transition-colors group-hover:text-muted-foreground/40 hidden md:block" />
+              </button>
+            </div>
+          )}
         </div>
         <div className="flex items-center justify-between border-t px-2 min-h-14 md:min-h-10 pb-[env(safe-area-inset-bottom)]">
           <div className="flex items-center gap-1.5">

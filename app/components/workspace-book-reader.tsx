@@ -82,10 +82,6 @@ export function WorkspaceBookReader({
   // When the rendition isn't ready yet, queue the CFI and force the epub
   // to start initializing by setting hasBeenVisible = true.
   const placeholderNav = useCallback((cfi: string) => {
-    console.debug("[WorkspaceBookReader] placeholderNav called", {
-      cfi,
-      hasRealNav: !!realNavRef.current,
-    });
     if (realNavRef.current) {
       realNavRef.current(cfi);
     } else {
@@ -98,11 +94,6 @@ export function WorkspaceBookReader({
   // Register the placeholder immediately — no waiting for book data.
   useEffect(() => {
     const id = panelApi?.id ?? bookId;
-    console.debug("[WorkspaceBookReader] registering placeholder nav", {
-      id,
-      bookId,
-      panelApiId: panelApi?.id,
-    });
     navigationMap.current.set(id, placeholderNav);
     return () => {
       navigationMap.current.delete(id);
@@ -111,7 +102,6 @@ export function WorkspaceBookReader({
 
   // Called by WorkspaceBookReaderInner once its rendition is ready
   const onRenditionReady = useCallback((nav: (cfi: string) => void) => {
-    console.debug("[WorkspaceBookReader] onRenditionReady called, pending:", pendingCfiRef.current);
     realNavRef.current = nav;
     // Drain any CFI that arrived while loading
     const pending = pendingCfiRef.current;
@@ -188,6 +178,7 @@ function WorkspaceBookReaderInner({
     notebookCallbackMap,
     chatContextMap,
     tempHighlightMap,
+    highlightDeleteMap,
   } = useWorkspace();
   const isMobile = useIsMobile();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -236,15 +227,22 @@ function WorkspaceBookReaderInner({
     panelRef,
   });
 
+  // Ref-based callback so useHighlights always calls the latest handleOpenNotebook
+  const handleOpenNotebookRef = useRef<() => void>(() => {});
+
   const {
     selectionPopover,
-    editPopover,
     saveHighlight: saveHighlightFromPopover,
-    deleteHighlightFromPopover,
     dismissPopovers,
     loadAndApplyHighlights,
     registerSelectionHandler,
-  } = useHighlights({ bookId: book.id, renditionRef, containerRef });
+    highlightsRef,
+  } = useHighlights({
+    bookId: book.id,
+    renditionRef,
+    onHighlightClick: () => handleOpenNotebookRef.current(),
+    theme: settings.theme,
+  });
 
   const { toc, bookProgress, currentPage, totalPages, flushPositionSave, latestCfiRef } =
     useEpubLifecycle({
@@ -297,8 +295,8 @@ function WorkspaceBookReaderInner({
           // annotation may already be gone
         }
       }, 3000);
-    } catch (err) {
-      console.debug("Temp highlight failed:", err);
+    } catch {
+      // annotation may already be gone
     }
   }, []);
 
@@ -310,6 +308,25 @@ function WorkspaceBookReaderInner({
       tempHighlightMap.current.delete(id);
     };
   }, [book.id, panelApi, applyTempHighlight, tempHighlightMap]);
+
+  // Register highlight delete callback so notebooks can remove annotations from rendition
+  const removeHighlightAnnotation = useCallback(
+    (cfiRange: string) => {
+      const rendition = renditionRef.current;
+      if (!rendition) return;
+      rendition.annotations.remove(cfiRange, "highlight");
+      highlightsRef.current.delete(cfiRange);
+    },
+    [highlightsRef],
+  );
+
+  useEffect(() => {
+    const id = panelApi?.id ?? book.id;
+    highlightDeleteMap.current.set(id, removeHighlightAnnotation);
+    return () => {
+      highlightDeleteMap.current.delete(id);
+    };
+  }, [book.id, panelApi, removeHighlightAnnotation, highlightDeleteMap]);
 
   // With renderer: "always", dockview keeps the DOM alive when the tab is hidden
   // (instead of removing it). The epub iframe stays intact, so we only need to
@@ -338,7 +355,12 @@ function WorkspaceBookReaderInner({
       // Resize in case container dimensions changed, then restore position
       requestAnimationFrame(() => {
         if (!renditionRef.current) return;
-        (renditionRef.current as any).resize();
+        try {
+          (renditionRef.current as any).resize();
+        } catch {
+          // rendition manager may not be initialized yet
+          return;
+        }
         if (cfiBeforeResize) {
           renditionRef.current.display(cfiBeforeResize).catch(() => {});
         }
@@ -371,7 +393,12 @@ function WorkspaceBookReaderInner({
       resizeRafId = requestAnimationFrame(() => {
         resizeRafId = null;
         if (!renditionRef.current) return;
-        (renditionRef.current as any).resize();
+        try {
+          (renditionRef.current as any).resize();
+        } catch {
+          // rendition manager may not be initialized yet
+          return;
+        }
         if (cfiBeforeResize) {
           renditionRef.current.display(cfiBeforeResize).catch(() => {});
         }
@@ -473,6 +500,9 @@ function WorkspaceBookReaderInner({
     });
   }, [dockviewApi, book.id, book.title, panelApi, isMobile]);
 
+  // Keep ref in sync so useHighlights click handler always calls latest version
+  handleOpenNotebookRef.current = handleOpenNotebook;
+
   const handleOpenChat = useCallback(() => {
     const dockApi = dockviewApi.current;
     if (!dockApi || !panelApi) return;
@@ -549,24 +579,29 @@ function WorkspaceBookReaderInner({
               "px-4 pt-6 pb-2 md:px-8 md:pt-10 md:pb-4": localReaderLayout,
             })}
           />
-          {isMobile && !isScrollMode && (
+          {!isScrollMode && (
             <div className="pointer-events-none absolute inset-0 z-[5]">
+              {/* Previous page zone: narrow margin on desktop, 25% on mobile */}
               <button
                 type="button"
                 aria-label="Previous page"
-                className="pointer-events-auto absolute top-0 left-0 h-full w-1/4 appearance-none border-none bg-transparent p-0 active:bg-black/5 dark:active:bg-white/5"
+                className="pointer-events-auto absolute top-0 left-0 h-full w-1/4 cursor-default appearance-none border-none bg-transparent p-0 active:bg-black/5 md:w-12 md:cursor-pointer dark:active:bg-white/5"
                 onPointerUp={handlePrev}
               />
-              <button
-                type="button"
-                aria-label="Toggle toolbar"
-                className="pointer-events-auto absolute top-0 left-1/4 h-full w-1/2 appearance-none border-none bg-transparent p-0"
-                onPointerUp={toggleToolbar}
-              />
+              {/* Center zone: toolbar toggle on mobile only */}
+              {isMobile && (
+                <button
+                  type="button"
+                  aria-label="Toggle toolbar"
+                  className="pointer-events-auto absolute top-0 left-1/4 h-full w-1/2 appearance-none border-none bg-transparent p-0"
+                  onPointerUp={toggleToolbar}
+                />
+              )}
+              {/* Next page zone: narrow margin on desktop, 25% on mobile */}
               <button
                 type="button"
                 aria-label="Next page"
-                className="pointer-events-auto absolute top-0 right-0 h-full w-1/4 appearance-none border-none bg-transparent p-0 active:bg-black/5 dark:active:bg-white/5"
+                className="pointer-events-auto absolute top-0 right-0 h-full w-1/4 cursor-default appearance-none border-none bg-transparent p-0 active:bg-black/5 md:w-12 md:cursor-pointer dark:active:bg-white/5"
                 onPointerUp={handleNext}
               />
             </div>
@@ -664,17 +699,6 @@ function WorkspaceBookReaderInner({
               position={selectionPopover.position}
               selectedText={selectionPopover.text}
               onSave={handleSaveHighlight}
-              onDismiss={dismissPopovers}
-            />,
-            document.body,
-          )}
-        {editPopover &&
-          createPortal(
-            <HighlightPopover
-              mode="edit"
-              position={editPopover.position}
-              selectedText={editPopover.highlight.text}
-              onDelete={deleteHighlightFromPopover}
               onDismiss={dismissPopovers}
             />,
             document.body,

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from "react";
+import { Effect } from "effect";
 import type Rendition from "epubjs/types/rendition";
 import { Button } from "~/components/ui/button";
 import { ChevronLeft, ChevronRight, Notebook, Search, TableOfContents } from "lucide-react";
@@ -17,6 +18,8 @@ import { cn } from "~/lib/utils";
 import { SearchBar } from "~/components/search-bar";
 import { useEpubLifecycle } from "~/hooks/use-epub-lifecycle";
 import { useReaderSearch } from "~/hooks/use-reader-search";
+import { AnnotationService } from "~/lib/annotations-store";
+import { AppRuntime } from "~/lib/effect-runtime";
 
 interface BookReaderProps {
   book: BookMeta;
@@ -52,13 +55,30 @@ export function BookReader({ book }: BookReaderProps) {
 
   const {
     selectionPopover,
-    editPopover,
     saveHighlight: saveHighlightFromPopover,
-    deleteHighlightFromPopover,
     dismissPopovers,
     loadAndApplyHighlights,
     registerSelectionHandler,
-  } = useHighlights({ bookId: book.id, renditionRef, containerRef });
+    highlightsRef,
+  } = useHighlights({
+    bookId: book.id,
+    renditionRef,
+    onHighlightClick: () => setAnnotationsPanelOpen(true),
+    theme: settings.theme,
+  });
+
+  const handleDeleteHighlight = useCallback(
+    (highlightId: string, cfiRange: string) => {
+      const deleteProgram = Effect.gen(function* () {
+        const svc = yield* AnnotationService;
+        yield* svc.deleteHighlight(highlightId);
+      });
+      AppRuntime.runPromise(deleteProgram).catch(console.error);
+      renditionRef.current?.annotations.remove(cfiRange, "highlight");
+      highlightsRef.current.delete(cfiRange);
+    },
+    [highlightsRef],
+  );
 
   const { toc, bookProgress, currentPage, totalPages, navigateToCfi } = useEpubLifecycle({
     bookId: book.id,
@@ -169,6 +189,24 @@ export function BookReader({ book }: BookReaderProps) {
               "px-4 pt-6 pb-2 md:px-8 md:pt-10 md:pb-4": settings.readerLayout,
             })}
           />
+          {!isScrollMode && (
+            <div className="pointer-events-none absolute inset-0 z-[5]">
+              {/* Previous page zone: narrow margin on desktop, 25% on mobile */}
+              <button
+                type="button"
+                aria-label="Previous page"
+                className="pointer-events-auto absolute top-0 left-0 h-full w-1/4 cursor-default appearance-none border-none bg-transparent p-0 active:bg-black/5 md:w-12 md:cursor-pointer dark:active:bg-white/5"
+                onPointerUp={handlePrev}
+              />
+              {/* Next page zone: narrow margin on desktop, 25% on mobile */}
+              <button
+                type="button"
+                aria-label="Next page"
+                className="pointer-events-auto absolute top-0 right-0 h-full w-1/4 cursor-default appearance-none border-none bg-transparent p-0 active:bg-black/5 md:w-12 md:cursor-pointer dark:active:bg-white/5"
+                onPointerUp={handleNext}
+              />
+            </div>
+          )}
         </div>
         <div className="flex items-center justify-between border-t px-2 min-h-14 md:min-h-10 pb-[env(safe-area-inset-bottom)]">
           <div className="flex items-center gap-1.5">
@@ -272,15 +310,6 @@ export function BookReader({ book }: BookReaderProps) {
             onDismiss={dismissPopovers}
           />
         )}
-        {editPopover && (
-          <HighlightPopover
-            mode="edit"
-            position={editPopover.position}
-            selectedText={editPopover.highlight.text}
-            onDelete={deleteHighlightFromPopover}
-            onDismiss={dismissPopovers}
-          />
-        )}
       </div>
       <AnnotationsPanel
         bookId={book.id}
@@ -288,6 +317,7 @@ export function BookReader({ book }: BookReaderProps) {
         isOpen={annotationsPanelOpen}
         onClose={() => setAnnotationsPanelOpen(false)}
         onNavigateToCfi={navigateToCfi}
+        onDeleteHighlight={handleDeleteHighlight}
         editorRef={editorRef}
       />
     </div>

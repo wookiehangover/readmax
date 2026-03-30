@@ -17,7 +17,8 @@ declare module "@tiptap/react" {
 }
 
 export interface HighlightReferenceStorage {
-  onNavigateToHighlight: ((cfi: string) => void) | null;
+  onNavigateToHighlight: ((cfi: string) => void | Promise<void>) | null;
+  onDeleteHighlight: ((highlightId: string, cfiRange: string) => void) | null;
 }
 
 export const HighlightReference = Node.create<
@@ -31,6 +32,7 @@ export const HighlightReference = Node.create<
   addStorage() {
     return {
       onNavigateToHighlight: null,
+      onDeleteHighlight: null,
     };
   },
 
@@ -69,6 +71,11 @@ export const HighlightReference = Node.create<
     if (!component) {
       throw new Error("HighlightReference: component option is required");
     }
-    return ReactNodeViewRenderer(component);
+    return ReactNodeViewRenderer(component, {
+      stopEvent: ({ event }) => {
+        // Let click/mouse events pass through to the React component
+        return event.type === "click" || event.type === "mousedown" || event.type === "mouseup";
+      },
+    });
   },
 });

@@ -3,6 +3,14 @@ import { Effect } from "effect";
 import type Rendition from "epubjs/types/rendition";
 import { AnnotationService, type Highlight } from "~/lib/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
+import { type Theme, resolveTheme } from "~/lib/settings";
+
+const HIGHLIGHT_COLOR_LIGHT = "rgba(255, 213, 79, 0.6)";
+const HIGHLIGHT_COLOR_DARK = "rgba(255, 220, 100, 0.8)";
+
+function getHighlightColor(theme: Theme): string {
+  return resolveTheme(theme) === "dark" ? HIGHLIGHT_COLOR_DARK : HIGHLIGHT_COLOR_LIGHT;
+}
 
 export interface SelectionPopover {
   position: { x: number; y: number };
@@ -10,62 +18,26 @@ export interface SelectionPopover {
   text: string;
 }
 
-export interface EditPopover {
-  position: { x: number; y: number };
-  highlight: Highlight;
-}
-
 interface UseHighlightsOptions {
   bookId: string;
   renditionRef: React.RefObject<Rendition | null>;
-  containerRef: React.RefObject<HTMLDivElement | null>;
+  /** Called when a user clicks an existing highlight in the epub */
+  onHighlightClick?: (highlight: Highlight) => void;
+  /** Current theme setting — used to pick highlight color for dark/light mode */
+  theme: Theme;
 }
 
-/**
- * Computes popover position from a highlight click event,
- * handling both parent-window and iframe coordinate spaces.
- */
-function computeClickPosition(
-  e: MouseEvent,
-  containerRef: React.RefObject<HTMLDivElement | null>,
-): { x: number; y: number } | null {
-  const target = e.target as Element;
-  const targetRect = target.getBoundingClientRect();
-  const isParentContext = e.view === window;
-
-  if (targetRect.width > 0 && targetRect.height > 0) {
-    if (isParentContext) {
-      return {
-        x: targetRect.left + targetRect.width / 2,
-        y: targetRect.bottom,
-      };
-    }
-    const iframe = containerRef.current?.querySelector("iframe");
-    if (!iframe) return null;
-    const iframeRect = iframe.getBoundingClientRect();
-    return {
-      x: iframeRect.left + targetRect.left + targetRect.width / 2,
-      y: iframeRect.top + targetRect.bottom,
-    };
-  }
-
-  // Fallback to mouse coordinates
-  const iframe = containerRef.current?.querySelector("iframe");
-  if (!iframe) return null;
-  const iframeRect = iframe.getBoundingClientRect();
-  if (isParentContext) {
-    return { x: e.clientX, y: e.clientY };
-  }
-  return {
-    x: iframeRect.left + e.clientX,
-    y: iframeRect.top + e.clientY,
-  };
-}
-
-export function useHighlights({ bookId, renditionRef, containerRef }: UseHighlightsOptions) {
+export function useHighlights({
+  bookId,
+  renditionRef,
+  onHighlightClick,
+  theme,
+}: UseHighlightsOptions) {
   const highlightsRef = useRef<Map<string, Highlight>>(new Map());
   const [selectionPopover, setSelectionPopover] = useState<SelectionPopover | null>(null);
-  const [editPopover, setEditPopover] = useState<EditPopover | null>(null);
+
+  const onHighlightClickRef = useRef(onHighlightClick);
+  onHighlightClickRef.current = onHighlightClick;
 
   const makeClickCallback = useCallback(
     (cfiRange: string) => (e: MouseEvent) => {
@@ -73,26 +45,25 @@ export function useHighlights({ bookId, renditionRef, containerRef }: UseHighlig
       e.stopPropagation();
       const stored = highlightsRef.current.get(cfiRange);
       if (!stored) return;
-      const pos = computeClickPosition(e, containerRef);
-      if (!pos) return;
-      setEditPopover({ position: pos, highlight: stored });
       setSelectionPopover(null);
+      onHighlightClickRef.current?.(stored);
     },
-    [containerRef],
+    [],
   );
 
   /** Apply a single highlight to the rendition with a click callback. */
   const applyHighlightToRendition = useCallback(
     (rendition: Rendition, hl: Highlight) => {
+      const fillColor = getHighlightColor(theme);
       rendition.annotations.highlight(
         hl.cfiRange,
         {},
         makeClickCallback(hl.cfiRange),
         "epubjs-hl",
-        { fill: hl.color || "rgba(255, 213, 79, 0.4)" },
+        { fill: fillColor },
       );
     },
-    [makeClickCallback],
+    [makeClickCallback, theme],
   );
 
   /** Load all highlights for the book from IndexedDB and apply them to the rendition. */
@@ -145,7 +116,7 @@ export function useHighlights({ bookId, renditionRef, containerRef }: UseHighlig
     if (!selectionPopover || !rendition) return null;
 
     const { cfiRange, text } = selectionPopover;
-    const color = "rgba(255, 213, 79, 0.4)";
+    const color = getHighlightColor(theme);
 
     const highlight: Highlight = {
       id: crypto.randomUUID(),
@@ -176,34 +147,16 @@ export function useHighlights({ bookId, renditionRef, containerRef }: UseHighlig
     return highlight;
   }, [selectionPopover, bookId, renditionRef, applyHighlightToRendition]);
 
-  /** Delete a highlight from IndexedDB and remove the annotation from the rendition. */
-  const deleteHighlightFromPopover = useCallback(async () => {
-    const rendition = renditionRef.current;
-    if (!editPopover || !rendition) return;
-    const { highlight } = editPopover;
-
-    const deleteProgram = Effect.gen(function* () {
-      const svc = yield* AnnotationService;
-      yield* svc.deleteHighlight(highlight.id);
-    });
-    await AppRuntime.runPromise(deleteProgram).catch(console.error);
-    rendition.annotations.remove(highlight.cfiRange, "highlight");
-    highlightsRef.current.delete(highlight.cfiRange);
-    setEditPopover(null);
-  }, [editPopover, renditionRef]);
-
   const dismissPopovers = useCallback(() => {
     setSelectionPopover(null);
-    setEditPopover(null);
   }, []);
 
   return {
     selectionPopover,
-    editPopover,
     saveHighlight,
-    deleteHighlightFromPopover,
     dismissPopovers,
     loadAndApplyHighlights,
     registerSelectionHandler,
+    highlightsRef,
   };
 }

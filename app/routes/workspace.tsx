@@ -97,7 +97,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   // Sync books to context ref so NewTabPanel can read them
   ws.booksRef.current = books;
   // Track which books have TOC data via a version counter (triggers re-render)
-  const [tocVersion, setTocVersion] = useState(0);
+  const [_tocVersion, setTocVersion] = useState(0);
   // Track which books currently have open panels in dockview
   const [openBookIds, setOpenBookIds] = useState<Set<string>>(new Set());
   // Track total panel count for dynamic document title
@@ -475,7 +475,6 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   const sidebarProps = {
     collapsed,
     sortBy,
-    tocVersion,
     openBooks,
     otherBooks,
     onUpdateSettings: updateSettings,

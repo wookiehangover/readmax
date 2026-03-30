@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo } from "react";
 import { Link } from "react-router";
 import {
   BookOpen,
@@ -10,12 +10,11 @@ import {
   PanelLeftClose,
   Search,
 } from "lucide-react";
-import { BookCover, TocList, filterBooks, FILTER_THRESHOLD } from "~/components/book-list";
+import { BookCover, filterBooks, FILTER_THRESHOLD } from "~/components/book-list";
 import { Input } from "~/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { ScrollArea } from "~/components/ui/scroll-area";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "~/components/ui/tooltip";
 import type { BookMeta } from "~/lib/book-store";
-import type { TocEntry } from "~/lib/reader-context";
 import type { WorkspaceSortBy } from "~/lib/settings";
 import { cn } from "~/lib/utils";
 import { useWorkspace } from "~/lib/workspace-context";
@@ -49,83 +48,9 @@ function WorkspaceSidebarBookContent({ book, collapsed }: { book: BookMeta; coll
   );
 }
 
-function WorkspaceTocPopoverItem({
-  book,
-  collapsed,
-  toc,
-  onOpenBook,
-  isOpen,
-}: {
-  book: BookMeta;
-  collapsed: boolean;
-  toc: TocEntry[];
-  onOpenBook: (e: React.MouseEvent) => void;
-  isOpen: boolean;
-}) {
-  const { findNavForBook } = useWorkspace();
-  const [open, setOpen] = useState(false);
-  const suppressHoverUntil = useRef(0);
-
-  const handleOpenChange = useCallback((nextOpen: boolean, details: { reason: string }) => {
-    if (!nextOpen && (details.reason === "outside-press" || details.reason === "escape-key")) {
-      suppressHoverUntil.current = Date.now() + 400;
-      setOpen(false);
-      return;
-    }
-    if (nextOpen && details.reason === "trigger-hover") {
-      if (Date.now() < suppressHoverUntil.current) {
-        return;
-      }
-    }
-    setOpen(nextOpen);
-  }, []);
-
-  const handleNavigate = useCallback(
-    (href: string) => {
-      findNavForBook(book.id)?.(href);
-      setOpen(false);
-    },
-    [findNavForBook, book.id],
-  );
-
-  return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger
-        openOnHover
-        delay={200}
-        closeDelay={300}
-        render={
-          <button
-            type="button"
-            onClick={onOpenBook}
-            className={`flex w-full items-center rounded-md text-left hover:bg-accent ${
-              collapsed ? "justify-center p-1.5" : "gap-3 px-3 py-2"
-            } ${isOpen ? "bg-accent/50" : ""}`}
-            title={book.title}
-          />
-        }
-      >
-        <WorkspaceSidebarBookContent book={book} collapsed={collapsed} />
-      </PopoverTrigger>
-      <PopoverContent
-        side="right"
-        align="start"
-        sideOffset={8}
-        className="max-h-80 w-56 overflow-y-auto p-1.5"
-      >
-        <p className="px-2 py-1 text-xs font-medium text-muted-foreground">Table of Contents</p>
-        <ul>
-          <TocList entries={toc} onNavigate={handleNavigate} />
-        </ul>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
 export interface WorkspaceSidebarProps {
   collapsed: boolean;
   sortBy: WorkspaceSortBy;
-  tocVersion: number;
   openBooks: BookMeta[];
   otherBooks: BookMeta[];
   onUpdateSettings: (patch: {
@@ -141,7 +66,6 @@ export interface WorkspaceSidebarProps {
 export function WorkspaceSidebar({
   collapsed,
   sortBy,
-  tocVersion,
   openBooks,
   otherBooks,
   onUpdateSettings,
@@ -263,39 +187,35 @@ export function WorkspaceSidebar({
             </div>
           )
         ) : (
-          <ul className="flex flex-col gap-0.5 p-1 grayscale hover:grayscale-0 transition-all">
-            {/* tocVersion is read here to trigger re-render when TOC data changes */}
-            {void tocVersion}
-            {filteredOpenBooks.map((book) => {
-              const bookToc = ws.findTocForBook(book.id);
-              const showTocPopover = bookToc && bookToc.length > 0;
-
-              return (
+          <TooltipProvider delay={400}>
+            <ul className="flex flex-col gap-0.5 p-1 grayscale hover:grayscale-0 transition-all">
+              {filteredOpenBooks.map((book) => (
                 <li key={book.id} className="group/book relative">
-                  {showTocPopover ? (
-                    <WorkspaceTocPopoverItem
-                      book={book}
-                      collapsed={collapsed}
-                      toc={bookToc}
-                      onOpenBook={(e) => onOpenBook(book, e.metaKey || e.ctrlKey)}
-                      isOpen={true}
-                    />
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={(e) => onOpenBook(book, e.metaKey || e.ctrlKey)}
-                      className={cn(
-                        "flex w-full items-center rounded-md text-left hover:bg-accent bg-accent/50",
-                        {
-                          "justify-center p-1.5": collapsed,
-                          "gap-3 px-3 py-2": !collapsed,
-                        },
-                      )}
-                      title={book.title}
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <button
+                          type="button"
+                          onClick={(e) => onOpenBook(book, e.metaKey || e.ctrlKey)}
+                          className={cn(
+                            "flex w-full items-center rounded-md text-left hover:bg-accent bg-accent/50",
+                            {
+                              "justify-center p-1.5": collapsed,
+                              "gap-3 px-3 py-2": !collapsed,
+                            },
+                          )}
+                        />
+                      }
                     >
                       <WorkspaceSidebarBookContent book={book} collapsed={collapsed} />
-                    </button>
-                  )}
+                    </TooltipTrigger>
+                    <TooltipContent side="right" sideOffset={8}>
+                      <div>
+                        <p>{book.title}</p>
+                        {book.author && <p className="text-background/70">{book.author}</p>}
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
                   {!collapsed && (
                     <div className="absolute top-1/2 right-1 flex -translate-y-1/2 gap-0.5 opacity-0 group-hover/book:opacity-100">
                       <button
@@ -317,39 +237,35 @@ export function WorkspaceSidebar({
                     </div>
                   )}
                 </li>
-              );
-            })}
-            {!collapsed && filteredOpenBooks.length > 0 && filteredOtherBooks.length > 0 && (
-              <li className="my-1 border-b border-border/50" />
-            )}
-            {!collapsed &&
-              filteredOtherBooks.map((book) => {
-                const bookToc = ws.findTocForBook(book.id);
-                const showTocPopover = bookToc && bookToc.length > 0;
-
-                return (
+              ))}
+              {!collapsed && filteredOpenBooks.length > 0 && filteredOtherBooks.length > 0 && (
+                <li className="my-1 border-b border-border/50" />
+              )}
+              {!collapsed &&
+                filteredOtherBooks.map((book) => (
                   <li key={book.id} className="group/book relative">
-                    {showTocPopover ? (
-                      <WorkspaceTocPopoverItem
-                        book={book}
-                        collapsed={collapsed}
-                        toc={bookToc}
-                        onOpenBook={(e) => onOpenBook(book, e.metaKey || e.ctrlKey)}
-                        isOpen={false}
-                      />
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={(e) => onOpenBook(book, e.metaKey || e.ctrlKey)}
-                        className={cn(
-                          "flex w-full items-center rounded-md text-left hover:bg-accent",
-                          { "gap-3 px-3 py-2": !collapsed },
-                        )}
-                        title={book.title}
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <button
+                            type="button"
+                            onClick={(e) => onOpenBook(book, e.metaKey || e.ctrlKey)}
+                            className={cn(
+                              "flex w-full items-center rounded-md text-left hover:bg-accent",
+                              { "gap-3 px-3 py-2": !collapsed },
+                            )}
+                          />
+                        }
                       >
                         <WorkspaceSidebarBookContent book={book} collapsed={collapsed} />
-                      </button>
-                    )}
+                      </TooltipTrigger>
+                      <TooltipContent side="right" sideOffset={8}>
+                        <div>
+                          <p>{book.title}</p>
+                          {book.author && <p className="text-background/70">{book.author}</p>}
+                        </div>
+                      </TooltipContent>
+                    </Tooltip>
                     <div className="absolute top-1/2 right-1 flex -translate-y-1/2 gap-0.5 opacity-0 group-hover/book:opacity-100">
                       <button
                         type="button"
@@ -369,9 +285,9 @@ export function WorkspaceSidebar({
                       </button>
                     </div>
                   </li>
-                );
-              })}
-          </ul>
+                ))}
+            </ul>
+          </TooltipProvider>
         )}
       </ScrollArea>
       <div

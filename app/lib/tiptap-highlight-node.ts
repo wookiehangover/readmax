@@ -17,7 +17,7 @@ declare module "@tiptap/react" {
 }
 
 export interface HighlightReferenceStorage {
-  onNavigateToHighlight: ((cfi: string) => void) | null;
+  onNavigateToHighlight: ((cfi: string) => void | Promise<void>) | null;
   onDeleteHighlight: ((highlightId: string, cfiRange: string) => void) | null;
 }
 

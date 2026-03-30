@@ -3,6 +3,14 @@ import { Effect } from "effect";
 import type Rendition from "epubjs/types/rendition";
 import { AnnotationService, type Highlight } from "~/lib/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
+import { type Theme, resolveTheme } from "~/lib/settings";
+
+const HIGHLIGHT_COLOR_LIGHT = "rgba(255, 213, 79, 0.6)";
+const HIGHLIGHT_COLOR_DARK = "rgba(255, 220, 100, 0.8)";
+
+function getHighlightColor(theme: Theme): string {
+  return resolveTheme(theme) === "dark" ? HIGHLIGHT_COLOR_DARK : HIGHLIGHT_COLOR_LIGHT;
+}
 
 export interface SelectionPopover {
   position: { x: number; y: number };
@@ -15,9 +23,16 @@ interface UseHighlightsOptions {
   renditionRef: React.RefObject<Rendition | null>;
   /** Called when a user clicks an existing highlight in the epub */
   onHighlightClick?: (highlight: Highlight) => void;
+  /** Current theme setting — used to pick highlight color for dark/light mode */
+  theme: Theme;
 }
 
-export function useHighlights({ bookId, renditionRef, onHighlightClick }: UseHighlightsOptions) {
+export function useHighlights({
+  bookId,
+  renditionRef,
+  onHighlightClick,
+  theme,
+}: UseHighlightsOptions) {
   const highlightsRef = useRef<Map<string, Highlight>>(new Map());
   const [selectionPopover, setSelectionPopover] = useState<SelectionPopover | null>(null);
 
@@ -39,15 +54,16 @@ export function useHighlights({ bookId, renditionRef, onHighlightClick }: UseHig
   /** Apply a single highlight to the rendition with a click callback. */
   const applyHighlightToRendition = useCallback(
     (rendition: Rendition, hl: Highlight) => {
+      const fillColor = getHighlightColor(theme);
       rendition.annotations.highlight(
         hl.cfiRange,
         {},
         makeClickCallback(hl.cfiRange),
         "epubjs-hl",
-        { fill: hl.color || "rgba(255, 213, 79, 0.6)" },
+        { fill: fillColor },
       );
     },
-    [makeClickCallback],
+    [makeClickCallback, theme],
   );
 
   /** Load all highlights for the book from IndexedDB and apply them to the rendition. */
@@ -100,7 +116,7 @@ export function useHighlights({ bookId, renditionRef, onHighlightClick }: UseHig
     if (!selectionPopover || !rendition) return null;
 
     const { cfiRange, text } = selectionPopover;
-    const color = "rgba(255, 213, 79, 0.6)";
+    const color = getHighlightColor(theme);
 
     const highlight: Highlight = {
       id: crypto.randomUUID(),

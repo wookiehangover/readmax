@@ -17,7 +17,7 @@ export interface TiptapEditorHandle {
 interface TiptapEditorProps {
   content?: JSONContent;
   onUpdate?: (content: JSONContent) => void;
-  onNavigateToHighlight?: (cfi: string) => void;
+  onNavigateToHighlight?: (cfi: string) => void | Promise<void>;
   onDeleteHighlight?: (highlightId: string, cfiRange: string) => void;
 }
 

@@ -22,7 +22,7 @@ import type { HighlightReferenceAttrs } from "~/lib/tiptap-highlight-node";
 interface WorkspaceNotebookProps {
   bookId: string;
   bookTitle?: string;
-  onNavigateToCfi?: (cfi: string) => void;
+  onNavigateToCfi?: (cfi: string) => void | Promise<void>;
   onDeleteHighlight?: (highlightId: string, cfiRange: string) => void;
   onRegisterAppendHighlight?: (
     bookId: string,

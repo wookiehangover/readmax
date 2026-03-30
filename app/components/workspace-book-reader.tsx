@@ -251,6 +251,7 @@ function WorkspaceBookReaderInner({
     bookId: book.id,
     renditionRef,
     onHighlightClick: () => handleOpenNotebookRef.current(),
+    theme: settings.theme,
   });
 
   const { toc, bookProgress, currentPage, totalPages, flushPositionSave, latestCfiRef } =

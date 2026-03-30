@@ -64,6 +64,7 @@ export function BookReader({ book }: BookReaderProps) {
     bookId: book.id,
     renditionRef,
     onHighlightClick: () => setAnnotationsPanelOpen(true),
+    theme: settings.theme,
   });
 
   const handleDeleteHighlight = useCallback(

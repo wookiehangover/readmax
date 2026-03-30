@@ -5,7 +5,7 @@ import { z } from "zod";
 import type { Route } from "./+types/api.chat";
 import { SE_BASE, parseSearchHtml } from "./api.standard-ebooks.search";
 import type { BookChapter } from "~/lib/epub-text-extract";
-import { buildBookIndex, searchBook } from "~/lib/orama-book-search";
+import { getOrBuildBookIndex, searchBook } from "~/lib/orama-book-search";
 
 interface ChatRequestBody {
   messages: UIMessage[];
@@ -110,7 +110,7 @@ export async function action({ request }: Route.ActionArgs) {
     return new Response("Missing required bookContext fields", { status: 400 });
   }
 
-  const bookIndex = buildBookIndex(bookContext.chapters);
+  const bookIndex = getOrBuildBookIndex(bookContext.chapters);
 
   const result = streamText({
     model: gateway("anthropic/claude-sonnet-4.6"),

@@ -74,6 +74,43 @@ function chunkText(text: string): string[] {
 }
 
 /**
+ * Compute a fingerprint for a set of chapters to use as a cache key.
+ * Uses chapter count, titles, and total text length as a fast proxy.
+ */
+function computeCacheKey(chapters: BookChapter[]): string {
+  const parts = chapters.map((ch) => `${ch.index}:${ch.title}:${ch.text.length}`);
+  return `${chapters.length}|${parts.join(";")}`;
+}
+
+/** LRU-1 cache: stores only the most recent index to bound memory. */
+let cachedKey: string | null = null;
+let cachedIndex: AnyOrama | null = null;
+
+/**
+ * Return a cached Orama index if the chapters haven't changed,
+ * otherwise build and cache a new one.
+ */
+export function getOrBuildBookIndex(chapters: BookChapter[]): AnyOrama {
+  const key = computeCacheKey(chapters);
+  if (cachedKey === key && cachedIndex !== null) {
+    return cachedIndex;
+  }
+  const db = buildBookIndex(chapters);
+  cachedKey = key;
+  cachedIndex = db;
+  return db;
+}
+
+/**
+ * Clear the cached index. Exposed for testing.
+ * @internal
+ */
+export function clearBookIndexCache(): void {
+  cachedKey = null;
+  cachedIndex = null;
+}
+
+/**
  * Build an Orama full-text search index from extracted book chapters.
  * Each chapter is split into paragraph-sized chunks (~500 chars) so
  * search results are granular rather than whole chapters.

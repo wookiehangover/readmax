@@ -1,5 +1,10 @@
-import { describe, it, expect } from "vitest";
-import { buildBookIndex, searchBook } from "~/lib/orama-book-search";
+import { describe, it, expect, beforeEach } from "vitest";
+import {
+  buildBookIndex,
+  searchBook,
+  getOrBuildBookIndex,
+  clearBookIndexCache,
+} from "~/lib/orama-book-search";
 import type { BookChapter } from "~/lib/epub-text-extract";
 
 function makeChapter(overrides: Partial<BookChapter> & { index: number }): BookChapter {
@@ -191,5 +196,72 @@ describe("chunking behavior (tested indirectly through search)", () => {
     expect(results.length).toBe(1);
     // The whole chapter text should be in the excerpt since it's a single chunk
     expect(results[0].excerpt).toBe("A brief chapter with just one sentence.");
+  });
+});
+
+describe("getOrBuildBookIndex — caching", () => {
+  beforeEach(() => {
+    clearBookIndexCache();
+  });
+
+  it("returns a working index on first call", () => {
+    const chapters: BookChapter[] = [
+      makeChapter({ index: 0, title: "Intro", text: "Welcome to the adventure." }),
+    ];
+    const db = getOrBuildBookIndex(chapters);
+    const results = searchBook(db, "Welcome");
+    expect(results.length).toBe(1);
+    expect(results[0].chapterTitle).toBe("Intro");
+  });
+
+  it("returns the same index instance for identical chapters (cache hit)", () => {
+    const chapters: BookChapter[] = [
+      makeChapter({ index: 0, title: "Intro", text: "Welcome to the adventure." }),
+    ];
+    const db1 = getOrBuildBookIndex(chapters);
+    const db2 = getOrBuildBookIndex(chapters);
+    expect(db1).toBe(db2);
+  });
+
+  it("rebuilds the index when chapters change (cache miss)", () => {
+    const chaptersA: BookChapter[] = [
+      makeChapter({ index: 0, title: "Intro", text: "Welcome to the adventure." }),
+    ];
+    const chaptersB: BookChapter[] = [
+      makeChapter({ index: 0, title: "Preface", text: "This is a different book entirely." }),
+    ];
+    const dbA = getOrBuildBookIndex(chaptersA);
+    const dbB = getOrBuildBookIndex(chaptersB);
+    expect(dbA).not.toBe(dbB);
+
+    // The new index should search the new content
+    const results = searchBook(dbB, "different");
+    expect(results.length).toBe(1);
+    expect(results[0].chapterTitle).toBe("Preface");
+  });
+
+  it("evicts old cache when a new book is indexed (LRU-1)", () => {
+    const chaptersA: BookChapter[] = [
+      makeChapter({ index: 0, title: "Book A", text: "Alpha content here." }),
+    ];
+    const chaptersB: BookChapter[] = [
+      makeChapter({ index: 0, title: "Book B", text: "Beta content here." }),
+    ];
+    const dbA = getOrBuildBookIndex(chaptersA);
+    getOrBuildBookIndex(chaptersB);
+
+    // Going back to chaptersA should produce a new instance (old one was evicted)
+    const dbA2 = getOrBuildBookIndex(chaptersA);
+    expect(dbA2).not.toBe(dbA);
+  });
+
+  it("clearBookIndexCache forces a rebuild", () => {
+    const chapters: BookChapter[] = [
+      makeChapter({ index: 0, title: "Intro", text: "Welcome to the adventure." }),
+    ];
+    const db1 = getOrBuildBookIndex(chapters);
+    clearBookIndexCache();
+    const db2 = getOrBuildBookIndex(chapters);
+    expect(db1).not.toBe(db2);
   });
 });

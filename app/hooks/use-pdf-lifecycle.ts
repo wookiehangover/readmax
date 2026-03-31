@@ -53,6 +53,9 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
   const renderingRef = useRef(false);
   const layoutRef = useRef(readerLayout);
   layoutRef.current = readerLayout;
+  const renderViewRef = useRef<(doc: any, page: number, layout: ReaderLayout) => Promise<void>>(
+    async () => {},
+  );
 
   const flushPositionSave = useCallback(() => {
     if (saveTimerRef.current) {
@@ -174,6 +177,9 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
     [containerRef, fontSize, renderPage],
   );
 
+  // Keep ref in sync so main lifecycle effect doesn't depend on renderView identity
+  renderViewRef.current = renderView;
+
   const goToPage = useCallback(
     (page: number) => {
       const doc = pdfDocRef.current;
@@ -189,10 +195,10 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
         const pageEl = el.querySelector(`[data-page-number="${page}"]`);
         if (pageEl) pageEl.scrollIntoView({ behavior: "smooth" });
       } else {
-        renderView(doc, page, layoutRef.current);
+        renderViewRef.current(doc, page, layoutRef.current);
       }
     },
-    [savePositionDebounced, renderView, containerRef],
+    [savePositionDebounced, containerRef],
   );
 
   const goNext = useCallback(() => {
@@ -272,7 +278,7 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
 
       setCurrentPage(startPage);
       latestPageRef.current = startPage;
-      await renderView(doc, startPage, readerLayout);
+      await renderViewRef.current(doc, startPage, readerLayout);
     };
 
     init().catch((err) => {
@@ -306,7 +312,7 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
         pdfDocRef.current = null;
       }
     };
-  }, [enabled, bookId, readerLayout, flushPositionSave, goToPage, renderView, panelId]);
+  }, [enabled, bookId, readerLayout, flushPositionSave, goToPage, panelId]);
 
   // Re-render on fontSize change
   useEffect(() => {

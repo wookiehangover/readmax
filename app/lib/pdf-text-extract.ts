@@ -102,3 +102,31 @@ export async function extractPdfPageText(data: ArrayBuffer, pageNum: number): Pr
     await doc.destroy();
   }
 }
+
+/**
+ * Extract text from a single page of an already-loaded pdfjs document.
+ * Avoids re-creating the document on every page navigation.
+ *
+ * @param doc - An already-loaded pdfjs PDFDocumentProxy
+ * @param pageNum - 1-based page number
+ * @returns The text content of the page, or empty string on failure
+ */
+export async function extractPdfPageTextFromDoc(doc: any, pageNum: number): Promise<string> {
+  try {
+    if (pageNum < 1 || pageNum > doc.numPages) return "";
+
+    const page = await doc.getPage(pageNum);
+    const textContent = await page.getTextContent();
+
+    const text = textContent.items
+      .filter((item: any): item is TextItem => "str" in item)
+      .map((item: any) => item.str)
+      .join(" ")
+      .trim();
+
+    page.cleanup();
+    return text;
+  } catch {
+    return "";
+  }
+}

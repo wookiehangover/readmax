@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import { BookService, type BookMeta } from "~/lib/book-store";
 import { useWorkspace } from "~/lib/workspace-context";
 import { AppRuntime } from "~/lib/effect-runtime";
-import { extractPdfPageText } from "~/lib/pdf-text-extract";
+import { extractPdfPageText, extractPdfPageTextFromDoc } from "~/lib/pdf-text-extract";
 import { useIsMobile } from "~/hooks/use-mobile";
 import type { DockviewPanelApi } from "dockview";
 
@@ -11,6 +11,7 @@ interface UsePdfWorkspacePanelsOptions {
   book: BookMeta;
   panelApi?: DockviewPanelApi;
   currentPage: number;
+  pdfDocRef?: React.RefObject<any>;
   saveHighlightFromPopover: () => Promise<{ id: string; cfiRange: string; text: string } | null>;
   applyTempHighlight: (text: string) => void;
   removeHighlight: (cfiRange: string) => void;
@@ -21,6 +22,7 @@ export function usePdfWorkspacePanels({
   book,
   panelApi,
   currentPage,
+  pdfDocRef,
   saveHighlightFromPopover,
   applyTempHighlight,
   removeHighlight,
@@ -182,35 +184,56 @@ export function usePdfWorkspacePanels({
   }, [dockviewApi, book.id, book.title, panelApi, isMobile]);
 
   // Populate chatContextMap with current page text for AI chat
+  // Prefer the already-loaded pdfDocRef to avoid re-creating the document per page
   const bookDataRef = useRef<ArrayBuffer | null>(null);
   useEffect(() => {
+    // Only load book data as fallback when pdfDocRef is not available
+    if (pdfDocRef) return;
     AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.getBookData(book.id))))
       .then((data) => {
         bookDataRef.current = data;
       })
       .catch(console.error);
-  }, [book.id]);
+  }, [book.id, pdfDocRef]);
 
   useEffect(() => {
-    const data = bookDataRef.current;
-    if (!data || currentPage < 1) return;
+    if (currentPage < 1) return;
 
     let cancelled = false;
-    extractPdfPageText(data, currentPage)
-      .then((text) => {
-        if (cancelled) return;
-        chatContextMap.current.set(book.id, {
-          currentChapterIndex: currentPage - 1,
-          currentSpineHref: `page:${currentPage}`,
-          visibleText: text,
-        });
-      })
-      .catch(console.error);
+    const doc = pdfDocRef?.current;
+
+    if (doc) {
+      // Fast path: reuse the already-loaded PDF document
+      extractPdfPageTextFromDoc(doc, currentPage)
+        .then((text) => {
+          if (cancelled) return;
+          chatContextMap.current.set(book.id, {
+            currentChapterIndex: currentPage - 1,
+            currentSpineHref: `page:${currentPage}`,
+            visibleText: text,
+          });
+        })
+        .catch(console.error);
+    } else {
+      // Fallback: create a new document from raw data
+      const data = bookDataRef.current;
+      if (!data) return;
+      extractPdfPageText(data, currentPage)
+        .then((text) => {
+          if (cancelled) return;
+          chatContextMap.current.set(book.id, {
+            currentChapterIndex: currentPage - 1,
+            currentSpineHref: `page:${currentPage}`,
+            visibleText: text,
+          });
+        })
+        .catch(console.error);
+    }
 
     return () => {
       cancelled = true;
     };
-  }, [book.id, currentPage, chatContextMap]);
+  }, [book.id, currentPage, chatContextMap, pdfDocRef]);
 
   // Clean up chatContextMap on unmount
   useEffect(() => {

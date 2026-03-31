@@ -24,7 +24,7 @@ import type { DockviewPanelApi } from "dockview";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { usePdfLifecycle } from "~/hooks/use-pdf-lifecycle";
 import { usePdfSearch } from "~/hooks/use-pdf-search";
-import { usePdfHighlights } from "~/lib/use-pdf-highlights";
+import { usePdfHighlights } from "~/hooks/use-pdf-highlights";
 import { useToolbarAutoHide } from "~/hooks/use-toolbar-auto-hide";
 import { useWorkspace } from "~/lib/workspace-context";
 import { usePdfWorkspacePanels } from "~/hooks/use-pdf-workspace-panels";
@@ -235,6 +235,7 @@ function WorkspacePdfReaderInner({
       book,
       panelApi,
       currentPage,
+      pdfDocRef,
       saveHighlightFromPopover,
       applyTempHighlight,
       removeHighlight,

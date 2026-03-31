@@ -12,7 +12,7 @@ import { SearchBar } from "~/components/search-bar";
 import { cn } from "~/lib/utils";
 import { usePdfLifecycle } from "~/hooks/use-pdf-lifecycle";
 import { usePdfSearch } from "~/hooks/use-pdf-search";
-import { usePdfHighlights } from "~/lib/use-pdf-highlights";
+import { usePdfHighlights } from "~/hooks/use-pdf-highlights";
 import { resolveTheme } from "~/lib/settings";
 import type { TiptapEditorHandle } from "~/components/tiptap-editor";
 import type { HighlightReferenceAttrs } from "~/lib/tiptap-highlight-node";

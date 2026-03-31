@@ -116,6 +116,41 @@ export function useChatToolHandlers({
                   );
                   const navigate = await waitForNavForBook(bookId);
                   if (navigate) navigate(cfiRange);
+
+                  // Append highlight to notebook (same as epub path)
+                  const appendFn = notebookCallbackMap.current.get(bookId);
+                  if (appendFn) {
+                    appendFn({
+                      highlightId: highlight.id,
+                      cfiRange: highlight.cfiRange,
+                      text: highlight.text,
+                    });
+                  } else {
+                    AppRuntime.runPromise(
+                      Effect.gen(function* () {
+                        const svc = yield* AnnotationService;
+                        const notebook = yield* svc.getNotebook(bookId);
+                        const existingContent = notebook?.content?.content ?? [];
+                        const highlightNode = {
+                          type: "highlightReference" as const,
+                          attrs: {
+                            highlightId: highlight.id,
+                            cfiRange: highlight.cfiRange,
+                            text: highlight.text,
+                          },
+                        };
+                        const updatedContent = {
+                          type: "doc" as const,
+                          content: [...existingContent, highlightNode],
+                        };
+                        yield* svc.saveNotebook({
+                          bookId,
+                          content: updatedContent,
+                          updatedAt: Date.now(),
+                        });
+                      }),
+                    ).catch(console.error);
+                  }
                 } else {
                   console.warn(
                     "create_highlight (PDF): no search results for:",

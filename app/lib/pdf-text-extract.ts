@@ -1,3 +1,4 @@
+import type { TextItem } from "pdfjs-dist/types/src/display/api";
 import type { BookChapter } from "~/lib/epub-text-extract";
 
 /**
@@ -39,7 +40,7 @@ export async function extractPdfChapters(data: ArrayBuffer): Promise<BookChapter
         const textContent = await page.getTextContent();
 
         const text = textContent.items
-          .filter((item): item is { str: string } => "str" in item)
+          .filter((item): item is TextItem => "str" in item)
           .map((item) => item.str)
           .join(" ")
           .trim();
@@ -88,7 +89,7 @@ export async function extractPdfPageText(data: ArrayBuffer, pageNum: number): Pr
     const textContent = await page.getTextContent();
 
     const text = textContent.items
-      .filter((item): item is { str: string } => "str" in item)
+      .filter((item): item is TextItem => "str" in item)
       .map((item) => item.str)
       .join(" ")
       .trim();

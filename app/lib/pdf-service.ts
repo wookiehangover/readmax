@@ -91,7 +91,7 @@ export const PdfServiceLive = Layer.succeed(PdfService, {
             canvas.height = scaledViewport.height;
             const ctx = canvas.getContext("2d");
             if (ctx) {
-              await page.render({ canvasContext: ctx, viewport: scaledViewport }).promise;
+              await page.render({ canvas, canvasContext: ctx, viewport: scaledViewport }).promise;
               coverImage = await new Promise<Blob | null>((resolve) =>
                 canvas.toBlob((blob) => resolve(blob), "image/png"),
               );

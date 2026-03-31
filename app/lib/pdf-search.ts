@@ -1,4 +1,5 @@
 import type { PDFDocumentProxy } from "pdfjs-dist";
+import type { TextItem } from "pdfjs-dist/types/src/display/api";
 
 export interface PdfSearchResult {
   /** Page number (1-based) */
@@ -43,7 +44,7 @@ export async function searchPdf(
 
       // Concatenate all text items on the page
       const pageText = textContent.items
-        .filter((item): item is { str: string } => "str" in item)
+        .filter((item): item is TextItem => "str" in item)
         .map((item) => item.str)
         .join(" ");
 

@@ -12,6 +12,7 @@ const defaultSettings: Settings = {
   lineHeight: 1.6,
   sidebarCollapsed: false,
   workspaceSortBy: "recent",
+  pdfLayout: "fit-height",
 };
 
 beforeEach(() => {
@@ -32,6 +33,7 @@ describe("getSettings", () => {
       lineHeight: 1.8,
       sidebarCollapsed: true,
       workspaceSortBy: "title",
+      pdfLayout: "fit-height",
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
     expect(getSettings()).toEqual(stored);
@@ -114,6 +116,7 @@ describe("saveSettings", () => {
       lineHeight: 1.4,
       sidebarCollapsed: true,
       workspaceSortBy: "author",
+      pdfLayout: "fit-height",
     };
     saveSettings(settings);
     expect(getSettings()).toEqual(settings);

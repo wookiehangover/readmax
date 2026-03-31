@@ -54,4 +54,123 @@ test.describe("PDF support", () => {
     const author = page.locator("aside").getByText("Test PDF Author");
     await expect(author).toBeVisible({ timeout: 10_000 });
   });
+
+  test("uploaded PDF opens in reader with canvas visible", async ({ page }) => {
+    await uploadTestPdf(page);
+
+    // Click the PDF in the sidebar to open it
+    const sidebarBook = page.locator("aside").getByText("Test PDF for E2E", { exact: true });
+    await sidebarBook.click();
+
+    // Wait for the PDF container to appear with a rendered canvas
+    const pdfContainer = page.locator("[data-testid='pdf-container']");
+    await expect(pdfContainer).toBeVisible({ timeout: 15_000 });
+
+    const canvas = pdfContainer.locator("canvas").first();
+    await expect(canvas).toBeVisible({ timeout: 15_000 });
+  });
+
+  test("PDF reader has prev/next navigation buttons", async ({ page }) => {
+    await uploadTestPdf(page);
+
+    const sidebarBook = page.locator("aside").getByText("Test PDF for E2E", { exact: true });
+    await sidebarBook.click();
+
+    // Wait for PDF to load
+    const pdfContainer = page.locator("[data-testid='pdf-container']");
+    await expect(pdfContainer).toBeVisible({ timeout: 15_000 });
+    await expect(pdfContainer.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
+
+    // Navigation buttons should be present
+    const prevBtn = page.locator("[data-testid='pdf-prev']");
+    const nextBtn = page.locator("[data-testid='pdf-next']");
+    await expect(prevBtn).toBeVisible({ timeout: 5_000 });
+    await expect(nextBtn).toBeVisible({ timeout: 5_000 });
+  });
+
+  test("PDF reader settings menu opens", async ({ page }) => {
+    await uploadTestPdf(page);
+
+    const sidebarBook = page.locator("aside").getByText("Test PDF for E2E", { exact: true });
+    await sidebarBook.click();
+
+    // Wait for PDF to render
+    const pdfContainer = page.locator("[data-testid='pdf-container']");
+    await expect(pdfContainer).toBeVisible({ timeout: 15_000 });
+    await expect(pdfContainer.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
+
+    // Click the settings button (the MoreHorizontal icon button with "Reader settings" sr-only text)
+    const settingsBtn = page.getByRole("button", { name: "Reader settings" });
+    await expect(settingsBtn).toBeVisible({ timeout: 5_000 });
+    await settingsBtn.click();
+
+    // Settings menu should show layout options
+    await expect(page.getByText("Single Page")).toBeVisible({ timeout: 5_000 });
+  });
+
+  test("search bar opens when search button is clicked", async ({ page }) => {
+    await uploadTestPdf(page);
+
+    const sidebarBook = page.locator("aside").getByText("Test PDF for E2E", { exact: true });
+    await sidebarBook.click();
+
+    const pdfContainer = page.locator("[data-testid='pdf-container']");
+    await expect(pdfContainer).toBeVisible({ timeout: 15_000 });
+    await expect(pdfContainer.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
+
+    // Click the search button
+    const searchBtn = page.locator("[data-testid='pdf-search-btn']");
+    await expect(searchBtn).toBeVisible({ timeout: 5_000 });
+    await searchBtn.click();
+
+    // Search bar should appear with input
+    const searchInput = page.getByPlaceholder("Search in book…");
+    await expect(searchInput).toBeVisible({ timeout: 5_000 });
+  });
+
+  test("searching for text returns results", async ({ page }) => {
+    await uploadTestPdf(page);
+
+    const sidebarBook = page.locator("aside").getByText("Test PDF for E2E", { exact: true });
+    await sidebarBook.click();
+
+    const pdfContainer = page.locator("[data-testid='pdf-container']");
+    await expect(pdfContainer).toBeVisible({ timeout: 15_000 });
+    await expect(pdfContainer.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
+
+    // Open search
+    const searchBtn = page.locator("[data-testid='pdf-search-btn']");
+    await searchBtn.click();
+
+    // Search for "elephant" which is only on page 2
+    const searchInput = page.getByPlaceholder("Search in book…");
+    await searchInput.fill("elephant");
+
+    // Wait for results to appear — should show "1 of 1"
+    await expect(page.getByText("1 of 1")).toBeVisible({ timeout: 10_000 });
+  });
+
+  test("navigating search results changes page", async ({ page }) => {
+    await uploadTestPdf(page);
+
+    const sidebarBook = page.locator("aside").getByText("Test PDF for E2E", { exact: true });
+    await sidebarBook.click();
+
+    const pdfContainer = page.locator("[data-testid='pdf-container']");
+    await expect(pdfContainer).toBeVisible({ timeout: 15_000 });
+    await expect(pdfContainer.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
+
+    // Open search and search for "quick brown fox" which is on page 1
+    const searchBtn = page.locator("[data-testid='pdf-search-btn']");
+    await searchBtn.click();
+
+    const searchInput = page.getByPlaceholder("Search in book…");
+    await searchInput.fill("quick brown fox");
+
+    // Wait for results
+    await expect(page.getByText("1 of 1")).toBeVisible({ timeout: 10_000 });
+
+    // Verify we're on page 1
+    await expect(page.getByText("Page 1 of 2")).toBeVisible({ timeout: 5_000 });
+  });
 });

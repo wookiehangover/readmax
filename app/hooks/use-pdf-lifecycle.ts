@@ -223,7 +223,10 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
           // "fit-height" — scale page to container height (default), centered horizontally
           const pdfPage = await doc.getPage(page);
           const nativeVp = pdfPage.getViewport({ scale: 1 });
-          const fitScale = (el.clientHeight / nativeVp.height) * zoomMultiplier;
+          const cs = getComputedStyle(el);
+          const availableHeight =
+            el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+          const fitScale = (availableHeight / nativeVp.height) * zoomMultiplier;
           pdfPage.cleanup();
 
           const pageWrapper = document.createElement("div");

@@ -226,4 +226,54 @@ test.describe("PDF support", () => {
     const overlay = pdfContainer.locator(".pdf-highlight-overlay").first();
     await expect(overlay).toBeAttached({ timeout: 5_000 });
   });
+
+  test("chat panel opens for a PDF book in workspace", async ({ page }) => {
+    await uploadTestPdf(page);
+
+    // Open the PDF by clicking its title in the sidebar
+    const sidebarBook = page.locator("aside").getByText("Test PDF for E2E", { exact: true });
+    await sidebarBook.click();
+
+    // Wait for the PDF to render
+    const pdfContainer = page.locator('[data-testid="pdf-container"]');
+    await expect(pdfContainer).toBeVisible({ timeout: 15_000 });
+    await expect(pdfContainer.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
+
+    // Click the "Open Chat" button in the PDF toolbar
+    const chatBtn = page.getByRole("button", { name: "Open Chat" });
+    await expect(chatBtn).toBeVisible({ timeout: 5_000 });
+    await chatBtn.click();
+
+    // The chat panel should appear with the book title in the header
+    const chatHeader = page.getByText("Test PDF for E2E").last();
+    await expect(chatHeader).toBeVisible({ timeout: 10_000 });
+
+    // The chat input area should be present
+    const chatInput = page.locator('textarea[placeholder*="Ask"]');
+    await expect(chatInput).toBeVisible({ timeout: 10_000 });
+  });
+
+  test("chat input is functional for PDF books", async ({ page }) => {
+    await uploadTestPdf(page);
+
+    // Open the PDF
+    const sidebarBook = page.locator("aside").getByText("Test PDF for E2E", { exact: true });
+    await sidebarBook.click();
+
+    const pdfContainer = page.locator('[data-testid="pdf-container"]');
+    await expect(pdfContainer).toBeVisible({ timeout: 15_000 });
+    await expect(pdfContainer.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
+
+    // Open chat panel
+    const chatBtn = page.getByRole("button", { name: "Open Chat" });
+    await chatBtn.click();
+
+    // Wait for chat to load (textarea should appear)
+    const chatInput = page.locator('textarea[placeholder*="Ask"]');
+    await expect(chatInput).toBeVisible({ timeout: 10_000 });
+
+    // Type in the chat input to verify it's functional
+    await chatInput.fill("What is this document about?");
+    await expect(chatInput).toHaveValue("What is this document about?");
+  });
 });

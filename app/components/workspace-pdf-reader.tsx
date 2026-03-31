@@ -1,7 +1,14 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "~/components/ui/button";
-import { ChevronLeft, ChevronRight, Notebook, Search, TableOfContents } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  MessageCircle,
+  Notebook,
+  Search,
+  TableOfContents,
+} from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover";
 import { TocList } from "~/components/book-list";
 import { Effect } from "effect";
@@ -20,6 +27,8 @@ import { usePdfSearch } from "~/hooks/use-pdf-search";
 import { usePdfHighlights } from "~/lib/use-pdf-highlights";
 import { useToolbarAutoHide } from "~/hooks/use-toolbar-auto-hide";
 import { useWorkspace } from "~/lib/workspace-context";
+import { AppRuntime } from "~/lib/effect-runtime";
+import { extractPdfPageText } from "~/lib/pdf-text-extract";
 import type { PanelTypographyParams } from "~/components/workspace-book-reader";
 
 interface WorkspacePdfReaderProps {
@@ -99,10 +108,12 @@ function WorkspacePdfReaderInner({
   hasBeenVisible: boolean;
 }) {
   const {
+    navigationMap,
     tocMap,
     tocChangeListener,
     dockviewApi,
     notebookCallbackMap,
+    chatContextMap,
     tempHighlightMap,
     highlightDeleteMap,
   } = useWorkspace();
@@ -229,6 +240,28 @@ function WorkspacePdfReaderInner({
     [panelApi],
   );
 
+  // Register navigation callback for PDF (accepts "page:N" format or page number string)
+  useEffect(() => {
+    const id = panelApi?.id ?? book.id;
+    const navigatePdf = (target: string) => {
+      // Support "page:N" format from chat tool handlers
+      const pageMatch = target.match(/^page:(\d+)$/);
+      if (pageMatch) {
+        goToPage(parseInt(pageMatch[1], 10));
+        return;
+      }
+      // Support raw page number string
+      const pageNum = parseInt(target, 10);
+      if (!isNaN(pageNum)) {
+        goToPage(pageNum);
+      }
+    };
+    navigationMap.current.set(id, navigatePdf);
+    return () => {
+      navigationMap.current.delete(id);
+    };
+  }, [book.id, panelApi, goToPage, navigationMap]);
+
   // Register temp highlight callback
   useEffect(() => {
     const id = panelApi?.id ?? book.id;
@@ -305,6 +338,86 @@ function WorkspacePdfReaderInner({
 
   // Keep ref in sync so usePdfHighlights click handler always calls latest version
   handleOpenNotebookRef.current = handleOpenNotebook;
+
+  // Populate chatContextMap with current page text for AI chat
+  const bookDataRef = useRef<ArrayBuffer | null>(null);
+  useEffect(() => {
+    AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.getBookData(book.id))))
+      .then((data) => {
+        bookDataRef.current = data;
+      })
+      .catch(console.error);
+  }, [book.id]);
+
+  useEffect(() => {
+    const data = bookDataRef.current;
+    if (!data || currentPage < 1) return;
+
+    let cancelled = false;
+    extractPdfPageText(data, currentPage)
+      .then((text) => {
+        if (cancelled) return;
+        chatContextMap.current.set(book.id, {
+          currentChapterIndex: currentPage - 1,
+          currentSpineHref: `page:${currentPage}`,
+          visibleText: text,
+        });
+      })
+      .catch(console.error);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [book.id, currentPage, chatContextMap]);
+
+  // Clean up chatContextMap on unmount
+  useEffect(() => {
+    return () => {
+      chatContextMap.current.delete(book.id);
+    };
+  }, [book.id, chatContextMap]);
+
+  const handleOpenChat = useCallback(() => {
+    const dockApi = dockviewApi.current;
+    if (!dockApi || !panelApi) return;
+
+    const chatPanelId = `chat-${book.id}`;
+    const existing = dockApi.panels.find((p) => p.id === chatPanelId);
+    if (existing) {
+      existing.focus();
+      return;
+    }
+
+    const title = book.title ?? "Untitled";
+
+    if (isMobile) {
+      dockApi.addPanel({
+        id: chatPanelId,
+        component: "chat",
+        title: `Chat: ${title}`.slice(0, 30),
+        params: { bookId: book.id, bookTitle: title },
+        renderer: "always",
+      });
+      return;
+    }
+
+    const bookGroup = panelApi.group;
+    const bookRect = bookGroup.element.getBoundingClientRect();
+    const rightGroup = dockApi.groups.find(
+      (g) => g !== bookGroup && g.element.getBoundingClientRect().left >= bookRect.right - 1,
+    );
+
+    dockApi.addPanel({
+      id: chatPanelId,
+      component: "chat",
+      title: `Chat: ${title}`.slice(0, 30),
+      params: { bookId: book.id, bookTitle: title },
+      renderer: "always",
+      position: rightGroup
+        ? { referenceGroup: rightGroup }
+        : { referencePanel: panelApi.id, direction: "right" as const },
+    });
+  }, [dockviewApi, book.id, book.title, panelApi, isMobile]);
 
   const isScrollMode = localReaderLayout === "scroll";
   const isDark = resolveTheme(settings.theme) === "dark";
@@ -409,6 +522,10 @@ function WorkspacePdfReaderInner({
           <Button variant="ghost" size="icon" onClick={handleOpenNotebook} title="Open Notebook">
             <Notebook className="size-4" />
             <span className="sr-only">Open Notebook</span>
+          </Button>
+          <Button variant="ghost" size="icon" onClick={handleOpenChat} title="Open Chat">
+            <MessageCircle className="size-4" />
+            <span className="sr-only">Open Chat</span>
           </Button>
           {toc.length > 0 && (
             <Popover open={tocOpen} onOpenChange={setTocOpen}>

@@ -191,9 +191,9 @@ export default function SettingsPage() {
                         },
                       )}
                     >
-                      <div className="w-16 overflow-hidden rounded-md border">
+                      <div className="flex overflow-hidden rounded-md border">
                         {theme.swatchColors.map((color, i) => (
-                          <div key={i} className="h-2" style={{ backgroundColor: color }} />
+                          <div key={i} className="size-4" style={{ backgroundColor: color }} />
                         ))}
                       </div>
                       <span className="text-xs text-muted-foreground">{theme.name}</span>

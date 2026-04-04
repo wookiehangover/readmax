@@ -95,13 +95,13 @@ export function ChatSessionMenu({
         render={
           <Button variant="ghost" size="icon" className="size-7">
             <Menu className="size-4" />
-            <span className="sr-only">Chat sessions</span>
+            <span className="sr-only">Sessions</span>
           </Button>
         }
       />
       <DropdownMenuContent align="start" sideOffset={4} className="w-64">
         <DropdownMenuGroup>
-          <DropdownMenuLabel>Chat Sessions</DropdownMenuLabel>
+          <DropdownMenuLabel>Sessions</DropdownMenuLabel>
           <DropdownMenuSeparator />
           {sessions.map((session) => (
             <DropdownMenuItem
@@ -124,16 +124,14 @@ export function ChatSessionMenu({
                     ` · ${session.messages.length} message${session.messages.length !== 1 ? "s" : ""}`}
                 </span>
               </div>
-              {sessions.length > 1 && (
-                <button
-                  type="button"
-                  className="ml-1 rounded p-0.5 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-focus/session:opacity-100 group-hover/session:opacity-100"
-                  onClick={(e) => handleDelete(e, session.id)}
-                  title="Delete session"
-                >
-                  <Trash2 className="size-3" />
-                </button>
-              )}
+              <button
+                type="button"
+                className="ml-1 rounded p-0.5 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-focus/session:opacity-100 group-hover/session:opacity-100"
+                onClick={(e) => handleDelete(e, session.id)}
+                title="Delete session"
+              >
+                <Trash2 className="size-3" />
+              </button>
             </DropdownMenuItem>
           ))}
           {sessions.length === 0 && (

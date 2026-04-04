@@ -40,7 +40,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   const [bookFormat, setBookFormat] = useState<string | undefined>(undefined);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [sessionTitle, setSessionTitle] = useState<string>("Chat");
+  const [sessionTitle, setSessionTitle] = useState<string>("");
   // Increment to force ChatPanelInner remount on session switch
   const [sessionKey, setSessionKey] = useState(0);
   const bookDataRef = useRef<ArrayBuffer | null>(null);
@@ -289,8 +289,7 @@ function ChatPanelInner({
           if (!session) return;
 
           // Only generate if session has a default/generic title
-          const genericTitles = ["Chat", "New Chat"];
-          if (!genericTitles.includes(session.title)) return;
+          if (session.title) return;
 
           const res = await fetch("/api/chat-title", {
             method: "POST",
@@ -358,13 +357,15 @@ function ChatPanelInner({
           onSwitchSession={onSwitchSession}
           onNewSession={onNewSession}
         />
-        <h3 className="min-w-0 flex-1 truncate text-sm font-medium">{sessionTitle}</h3>
+        {sessionTitle && (
+          <h3 className="min-w-0 flex-1 truncate text-sm font-medium">{sessionTitle}</h3>
+        )}
         <Button
           variant="ghost"
           size="icon"
           onClick={onNewSession}
           title="New chat"
-          className="size-7"
+          className="size-7 ml-auto"
         >
           <Plus className="size-3.5" />
           <span className="sr-only">New chat</span>

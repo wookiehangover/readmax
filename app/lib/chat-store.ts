@@ -119,7 +119,7 @@ async function migrateOldMessages(bookId: string): Promise<ChatSession[]> {
   const session: ChatSession = {
     id: generateSessionId(),
     bookId,
-    title: "Chat",
+    title: "",
     messages: oldMessages,
     createdAt: earliest,
     updatedAt: now,
@@ -172,7 +172,7 @@ export const ChatServiceLive = Layer.succeed(ChatService, {
           const session: ChatSession = {
             id: generateSessionId(),
             bookId,
-            title: "Chat",
+            title: "",
             messages,
             createdAt: now,
             updatedAt: now,
@@ -217,7 +217,7 @@ export const ChatServiceLive = Layer.succeed(ChatService, {
         const session: ChatSession = {
           id: generateSessionId(),
           bookId,
-          title: title ?? "New Chat",
+          title: title ?? "",
           messages: [],
           createdAt: now,
           updatedAt: now,

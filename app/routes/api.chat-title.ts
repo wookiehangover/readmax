@@ -32,7 +32,7 @@ export async function action({ request }: { request: Request }) {
     .join("\n\n");
 
   const { text } = await generateText({
-    model: gateway("openai/gpt-4o-mini"),
+    model: gateway("google/gemini-2.5-flash"),
     messages: [
       {
         role: "system",

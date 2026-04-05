@@ -4,7 +4,7 @@ import { Effect } from "effect";
 import { useStickToBottom } from "use-stick-to-bottom";
 import { Button } from "~/components/ui/button";
 import { Plus } from "lucide-react";
-import { ChatService, type ChatSession } from "~/lib/chat-store";
+import { ChatService } from "~/lib/chat-store";
 import { BookService } from "~/lib/book-store";
 import { AnnotationService } from "~/lib/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
@@ -312,7 +312,7 @@ function ChatPanelInner({
 
           await AppRuntime.runPromise(
             ChatService.pipe(
-              Effect.andThen((svc) => svc.saveSession({ ...session, title } as ChatSession)),
+              Effect.andThen((svc) => svc.updateSessionTitle(session.id, session.bookId, title)),
             ),
           );
           onSessionTitleChange(title);

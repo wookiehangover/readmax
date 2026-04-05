@@ -97,6 +97,13 @@ export class ChatService extends Context.Tag("ChatService")<
       bookId: string,
       sessionId: string,
     ) => Effect.Effect<void, ChatError>;
+
+    // Surgical field updates (avoids race conditions with concurrent saveSession calls)
+    readonly updateSessionTitle: (
+      sessionId: string,
+      bookId: string,
+      title: string,
+    ) => Effect.Effect<void, ChatError>;
   }
 >() {}
 
@@ -301,5 +308,18 @@ export const ChatServiceLive = Layer.succeed(ChatService, {
     Effect.tryPromise({
       try: () => set(bookId, sessionId, getActiveSessionStore()),
       catch: (cause) => new ChatError({ operation: "setActiveSessionId", cause }),
+    }),
+
+  updateSessionTitle: (sessionId, bookId, title) =>
+    Effect.tryPromise({
+      try: async () => {
+        const sessions = (await get<ChatSession[]>(bookId, getSessionStore())) ?? [];
+        const idx = sessions.findIndex((s) => s.id === sessionId);
+        if (idx >= 0) {
+          sessions[idx] = { ...sessions[idx], title, updatedAt: Date.now() };
+          await set(bookId, sessions, getSessionStore());
+        }
+      },
+      catch: (cause) => new ChatError({ operation: "updateSessionTitle", cause }),
     }),
 });

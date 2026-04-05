@@ -58,7 +58,7 @@ export function EditableTitle({ value, onSave, className }: EditableTitleProps) 
         }}
         onClick={(e) => e.stopPropagation()}
         className={cn(
-          "bg-transparent outline-none border-b border-muted-foreground/40 focus:border-foreground",
+          "bg-transparent outline-none border-none",
           className,
         )}
       />
@@ -66,16 +66,18 @@ export function EditableTitle({ value, onSave, className }: EditableTitleProps) 
   }
 
   return (
-    <span
-      className={cn("cursor-pointer truncate", className)}
-      onClick={(e) => {
-        e.stopPropagation();
-        setDraft(value);
-        setEditing(true);
-      }}
-      title="Click to rename"
-    >
-      {value || "Untitled"}
+    <span className={cn("truncate", className)}>
+      <span
+        className="cursor-pointer"
+        onClick={(e) => {
+          e.stopPropagation();
+          setDraft(value);
+          setEditing(true);
+        }}
+        title="Click to rename"
+      >
+        {value || "Untitled"}
+      </span>
     </span>
   );
 }

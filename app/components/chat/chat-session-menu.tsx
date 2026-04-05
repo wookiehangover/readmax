@@ -114,6 +114,7 @@ interface ChatSessionListProps {
   activeSessionId: string | null;
   onSwitchSession: (sessionId: string) => void;
   onNewSession: () => void;
+  onClose: () => void;
 }
 
 export function ChatSessionList({
@@ -121,6 +122,7 @@ export function ChatSessionList({
   activeSessionId,
   onSwitchSession,
   onNewSession,
+  onClose,
 }: ChatSessionListProps) {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
 
@@ -179,7 +181,9 @@ export function ChatSessionList({
                     "group/session flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-muted/30",
                   )}
                   onClick={() => {
-                    if (session.id !== activeSessionId) {
+                    if (session.id === activeSessionId) {
+                      onClose();
+                    } else {
                       onSwitchSession(session.id);
                     }
                   }}

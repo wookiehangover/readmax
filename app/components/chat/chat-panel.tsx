@@ -424,6 +424,7 @@ function ChatPanelInner({
           activeSessionId={activeSessionId}
           onSwitchSession={handleSwitchSessionFromList}
           onNewSession={handleNewSessionFromList}
+          onClose={() => setShowSessionList(false)}
         />
       ) : (
         <>

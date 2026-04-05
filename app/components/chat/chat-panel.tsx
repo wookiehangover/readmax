@@ -23,7 +23,7 @@ import { ChatMessage } from "./chat-message";
 import { ChatEmptyState, SuggestedPrompts } from "./chat-empty-state";
 import { useChatToolHandlers } from "./use-chat-tool-handlers";
 import { ChatInput } from "./chat-input";
-import { ChatSessionMenu } from "./chat-session-menu";
+import { SessionMenuButton, ChatSessionList } from "./chat-session-menu";
 
 interface ChatPanelProps {
   bookId: string;
@@ -196,6 +196,7 @@ function ChatPanelInner({
   onSessionTitleChange: (title: string) => void;
 }) {
   const { chatContextMap } = useWorkspace();
+  const [showSessionList, setShowSessionList] = useState(false);
 
   // Load notebook markdown for the AI's read_notes tool
   const [notebookMarkdown, setNotebookMarkdown] = useState<string>("");
@@ -354,82 +355,112 @@ function ChatPanelInner({
     [sendMessage, isLoading, inputRef, textareaRef],
   );
 
+  const handleSwitchSessionFromList = useCallback(
+    (sessionId: string) => {
+      setShowSessionList(false);
+      if (sessionId !== activeSessionId) {
+        onSwitchSession(sessionId);
+      }
+    },
+    [activeSessionId, onSwitchSession],
+  );
+
+  const handleNewSessionFromList = useCallback(() => {
+    setShowSessionList(false);
+    onNewSession();
+  }, [onNewSession]);
+
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
       <div className="flex items-center gap-1 border-b px-2 py-1.5">
-        <ChatSessionMenu
-          bookId={bookId}
-          activeSessionId={activeSessionId}
-          onSwitchSession={onSwitchSession}
-          onNewSession={onNewSession}
+        <SessionMenuButton
+          showSessionList={showSessionList}
+          onToggle={() => setShowSessionList((v) => !v)}
         />
         {sessionTitle && (
-          <h3 className="min-w-0 flex-1 truncate text-sm font-medium">{sessionTitle}</h3>
+          <h3 className="min-w-0 flex-1 truncate text-sm font-medium">
+            {showSessionList ? "Sessions" : sessionTitle}
+          </h3>
         )}
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onNewSession}
-          title="New chat"
-          className="size-7 ml-auto"
-        >
-          <Plus className="size-3.5" />
-          <span className="sr-only">New chat</span>
-        </Button>
+        {!showSessionList && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onNewSession}
+            title="New chat"
+            className="size-7 ml-auto"
+          >
+            <Plus className="size-3.5" />
+            <span className="sr-only">New chat</span>
+          </Button>
+        )}
       </div>
 
-      {/* Messages */}
-      <div
-        ref={scrollRef}
-        className={cn("flex-1 overflow-y-auto px-4 py-3 relative flex flex-col", {
-          "scroll-fog": messages.length > 0,
-        })}
-      >
-        <div ref={contentRef} className="flex flex-col flex-1">
-          {messages.length === 0 && (
-            <ChatEmptyState bookTitle={bookTitle} sendMessage={sendMessage} />
-          )}
-          <div className="space-y-3">
-            {messages.map((message, i) => {
-              const isLastAssistant = message.role === "assistant" && i === messages.length - 1;
-              const isCurrentlyStreaming = status === "streaming" && i === messages.length - 1;
-
-              return (
-                <div key={message.id}>
-                  <ChatMessage
-                    message={message}
-                    bookId={bookId}
-                    bookFormat={bookFormat}
-                    bookDataRef={bookDataRef}
-                    isStreaming={isCurrentlyStreaming}
-                  />
-                  {isLastAssistant && !isLoading && (
-                    <SuggestedPrompts
-                      prompts={parseSuggestedPrompts(
-                        message.parts
-                          ?.filter((p): p is { type: "text"; text: string } => p.type === "text")
-                          .map((p) => p.text)
-                          .join("") ?? "",
-                      )}
-                      sendMessage={sendMessage}
-                    />
-                  )}
-                </div>
-              );
+      {showSessionList ? (
+        <ChatSessionList
+          bookId={bookId}
+          activeSessionId={activeSessionId}
+          onSwitchSession={handleSwitchSessionFromList}
+          onNewSession={handleNewSessionFromList}
+        />
+      ) : (
+        <>
+          {/* Messages */}
+          <div
+            ref={scrollRef}
+            className={cn("flex-1 overflow-y-auto px-4 py-3 relative flex flex-col", {
+              "scroll-fog": messages.length > 0,
             })}
-          </div>
-        </div>
-      </div>
+          >
+            <div ref={contentRef} className="flex flex-col flex-1">
+              {messages.length === 0 && (
+                <ChatEmptyState bookTitle={bookTitle} sendMessage={sendMessage} />
+              )}
+              <div className="space-y-3">
+                {messages.map((message, i) => {
+                  const isLastAssistant = message.role === "assistant" && i === messages.length - 1;
+                  const isCurrentlyStreaming = status === "streaming" && i === messages.length - 1;
 
-      {/* Input */}
-      <ChatInput
-        textareaRef={textareaRef}
-        inputRef={inputRef}
-        isLoading={isLoading}
-        onSubmit={handleSubmit}
-        onStop={stop}
-      />
+                  return (
+                    <div key={message.id}>
+                      <ChatMessage
+                        message={message}
+                        bookId={bookId}
+                        bookFormat={bookFormat}
+                        bookDataRef={bookDataRef}
+                        isStreaming={isCurrentlyStreaming}
+                      />
+                      {isLastAssistant && !isLoading && (
+                        <SuggestedPrompts
+                          prompts={parseSuggestedPrompts(
+                            message.parts
+                              ?.filter(
+                                (p): p is { type: "text"; text: string } => p.type === "text",
+                              )
+                              .map((p) => p.text)
+                              .join("") ?? "",
+                          )}
+                          sendMessage={sendMessage}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Input */}
+          <ChatInput
+            textareaRef={textareaRef}
+            inputRef={inputRef}
+            isLoading={isLoading}
+            onSubmit={handleSubmit}
+            onStop={stop}
+          />
+        </>
+      )}
     </div>
   );
 }

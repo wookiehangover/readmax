@@ -36,15 +36,30 @@ function makePdfCfiRange(pageNumber: number, textOffset: number, textLength: num
  * of the selection start within the full text content of the page.
  */
 function computeTextOffset(textLayerDiv: HTMLElement, range: Range): number {
+  // Walk up from range.startContainer to find the containing direct-child span
+  let startNode: Node | null = range.startContainer;
+  let containingSpan: HTMLElement | null = null;
+  while (startNode && startNode !== textLayerDiv) {
+    if (startNode instanceof HTMLElement && startNode.parentElement === textLayerDiv) {
+      containingSpan = startNode;
+      break;
+    }
+    startNode = startNode.parentNode;
+  }
+
+  if (!containingSpan) return 0;
+
+  // Sum text lengths of all preceding direct-child spans in DOM order
   let offset = 0;
-  const spans = textLayerDiv.querySelectorAll("span");
-  for (const span of spans) {
-    if (span === range.startContainer || span.contains(range.startContainer)) {
+  const children = textLayerDiv.children;
+  for (let i = 0; i < children.length; i++) {
+    const child = children[i];
+    if (child === containingSpan) {
       // Add the offset within this span
       offset += range.startOffset;
       break;
     }
-    offset += span.textContent?.length ?? 0;
+    offset += child.textContent?.length ?? 0;
   }
   return offset;
 }
@@ -107,27 +122,33 @@ function renderHighlightOverlay(
 
   if (!startFound || rects.length === 0) return null;
 
-  // Create overlay container
+  // Create overlay container positioned inside the text layer so coordinates
+  // are naturally relative to the same parent. The text layer is position:absolute
+  // with a CSS scale transform, so children share its coordinate system.
   const overlay = document.createElement("div");
   overlay.className = "pdf-highlight-overlay";
   overlay.dataset.highlightId = highlight.id;
   overlay.style.cssText =
-    "position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:1;";
+    "position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;";
 
+  // Get the text layer's viewport rect to convert getClientRects() results
+  // into text-layer-local coordinates. We must account for the CSS scale
+  // transform that pdf.js applies to the text layer.
   const textLayerRect = textLayerDiv.getBoundingClientRect();
-  // Account for the CSS scale transform on the text layer
   const transformStr = textLayerDiv.style.transform;
   const scaleMatch = transformStr.match(/scale\(([^)]+)\)/);
   const scale = scaleMatch ? parseFloat(scaleMatch[1]) : 1;
 
   for (const rect of rects) {
     const mark = document.createElement("div");
-    // Convert screen coords to text-layer-local coords (before scale)
+    // getClientRects() gives viewport coords; subtract text layer's viewport
+    // origin, then divide by scale to get coordinates in the text layer's
+    // pre-transform coordinate system.
     const localLeft = (rect.left - textLayerRect.left) / scale;
     const localTop = (rect.top - textLayerRect.top) / scale;
     const localWidth = rect.width / scale;
     const localHeight = rect.height / scale;
-    mark.style.cssText = `position:absolute;background:${highlight.color};opacity:0.4;pointer-events:auto;cursor:pointer;border-radius:2px;`;
+    mark.style.cssText = `position:absolute;background:${highlight.color};pointer-events:auto;cursor:pointer;border-radius:2px;`;
     mark.style.left = `${localLeft}px`;
     mark.style.top = `${localTop}px`;
     mark.style.width = `${localWidth}px`;
@@ -136,8 +157,9 @@ function renderHighlightOverlay(
     overlay.appendChild(mark);
   }
 
-  // Insert overlay before the text layer (so text is still selectable on top)
-  textLayerDiv.parentElement?.insertBefore(overlay, textLayerDiv);
+  // Insert overlay inside the text layer div. Place it as the first child
+  // so it renders behind the text spans (which are selectable on top).
+  textLayerDiv.insertBefore(overlay, textLayerDiv.firstChild);
   return overlay;
 }
 
@@ -251,8 +273,9 @@ export function usePdfHighlights({
       const selection = window.getSelection();
       if (!selection || selection.isCollapsed) return;
 
-      const text = selection.toString().trim();
-      if (!text) return;
+      const rawText = selection.toString();
+      const trimmedText = rawText.trim();
+      if (!trimmedText) return;
 
       const range = selection.getRangeAt(0);
 
@@ -272,15 +295,24 @@ export function usePdfHighlights({
       const wrapper = textLayerDiv.closest<HTMLElement>(".pdf-page-wrapper");
       const pageNumber = wrapper?.dataset.pageNumber ? parseInt(wrapper.dataset.pageNumber, 10) : 1;
 
+      // Compute offset and adjust for any leading whitespace trimmed from the selection
       const textOffset = computeTextOffset(textLayerDiv, range);
-      const textLength = text.length;
+      const leadingWhitespace = rawText.length - rawText.trimStart().length;
+      const adjustedOffset = textOffset + leadingWhitespace;
+      const textLength = trimmedText.length;
 
       // Position the popover near the selection
       const rangeRect = range.getBoundingClientRect();
       const x = rangeRect.left + rangeRect.width / 2;
       const y = rangeRect.bottom;
 
-      setSelectionPopover({ position: { x, y }, text, pageNumber, textOffset, textLength });
+      setSelectionPopover({
+        position: { x, y },
+        text: trimmedText,
+        pageNumber,
+        textOffset: adjustedOffset,
+        textLength,
+      });
     };
 
     el.addEventListener("mouseup", handleMouseUp);

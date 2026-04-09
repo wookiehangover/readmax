@@ -10,6 +10,7 @@ import {
 import type { Route } from "./+types/root";
 import "./app.css";
 import { ThemeEffect } from "~/components/theme-effect";
+import { AuthProvider } from "~/lib/auth-context";
 import { COLOR_THEMES } from "~/lib/color-themes";
 
 // Build a minimal JSON blob of non-default theme CSS variables for the FOUC script.
@@ -100,7 +101,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  return <Outlet />;
+  return (
+    <AuthProvider>
+      <Outlet />
+    </AuthProvider>
+  );
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {

@@ -9,11 +9,9 @@ import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
 import { AnnotationsPanel } from "~/components/annotations-panel";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { SearchBar } from "~/components/search-bar";
-import { cn } from "~/lib/utils";
 import { usePdfLifecycle } from "~/hooks/use-pdf-lifecycle";
 import { usePdfSearch } from "~/hooks/use-pdf-search";
 import { usePdfHighlights } from "~/hooks/use-pdf-highlights";
-import { resolveTheme } from "~/lib/settings";
 import type { TiptapEditorHandle } from "~/components/tiptap-editor";
 import type { HighlightReferenceAttrs } from "~/lib/tiptap-highlight-node";
 
@@ -43,7 +41,7 @@ export function PdfReader({ book }: PdfReaderProps) {
     onHighlightClick: () => setAnnotationsPanelOpen(true),
   });
 
-  const { toc, bookProgress, currentPage, totalPages, goToPage, goNext, goPrev, pdfDocRef } =
+  const { toc, bookProgress, currentPage, totalPages, goToPage, goNext, goPrev, eventBusRef } =
     usePdfLifecycle({
       bookId: book.id,
       containerRef,
@@ -65,7 +63,7 @@ export function PdfReader({ book }: PdfReaderProps) {
   const {
     searchOpen,
     searchQuery,
-    searchResults,
+    searchResultCount,
     searchIndex,
     searchNext,
     searchPrev,
@@ -73,9 +71,8 @@ export function PdfReader({ book }: PdfReaderProps) {
     handleSearchClose,
     handleSearchQueryChange,
   } = usePdfSearch({
-    pdfDocRef,
+    eventBusRef,
     bookId: book.id,
-    goToPage,
   });
 
   const handleUpdateSettings = useCallback(
@@ -130,7 +127,6 @@ export function PdfReader({ book }: PdfReaderProps) {
   );
 
   const isScrollMode = settings.pdfLayout === "continuous";
-  const isDark = resolveTheme(settings.theme) === "dark";
 
   return (
     <div className="flex h-full">
@@ -141,7 +137,7 @@ export function PdfReader({ book }: PdfReaderProps) {
               <SearchBar
                 query={searchQuery}
                 onQueryChange={handleSearchQueryChange}
-                resultCount={searchResults.length}
+                resultCount={searchResultCount}
                 currentIndex={searchIndex}
                 onNext={searchNext}
                 onPrev={searchPrev}
@@ -151,9 +147,7 @@ export function PdfReader({ book }: PdfReaderProps) {
           )}
           <div
             ref={containerRef}
-            className={cn("h-full overflow-auto px-4 pt-4 pb-2 md:px-8 md:pt-6 md:pb-4", {
-              "invert hue-rotate-180": isDark,
-            })}
+            className="absolute inset-0 overflow-auto"
             data-testid="pdf-container"
           />
           {!isScrollMode && (

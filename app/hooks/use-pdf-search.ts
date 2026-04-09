@@ -1,22 +1,37 @@
-import { useEffect, useRef, useCallback, useState } from "react";
-import { searchPdf, type PdfSearchResult } from "~/lib/pdf-search";
-import type { PDFDocumentProxy } from "pdfjs-dist";
-
-const DEBOUNCE_MS = 300;
+import { useEffect, useCallback, useState, useSyncExternalStore } from "react";
 
 interface UsePdfSearchOptions {
-  pdfDocRef: React.RefObject<PDFDocumentProxy | null>;
+  /** Reference to the EventBus from PDFViewer */
+  eventBusRef: React.RefObject<any>;
   bookId: string;
-  /** Navigate to the given page number (1-based) */
-  goToPage: (page: number) => void;
   /** When provided, Cmd/Ctrl+F is only intercepted if this element (or a descendant) has focus. */
   panelRef?: React.RefObject<HTMLElement | null>;
+}
+
+/**
+ * Polls a ref until its `.current` is non-null and returns a stable snapshot.
+ * This lets us use eventBusRef.current as a useEffect dependency — the effect
+ * re-runs when the ref value changes from null to the actual EventBus instance.
+ */
+function useRefValue<T>(ref: React.RefObject<T>): T | null {
+  const subscribe = useCallback(
+    (cb: () => void) => {
+      // Poll every 100ms until the ref is assigned
+      const id = setInterval(() => {
+        cb();
+      }, 100);
+      return () => clearInterval(id);
+    },
+    [], // stable — no deps needed
+  );
+  const getSnapshot = useCallback(() => ref.current, [ref]);
+  return useSyncExternalStore(subscribe, getSnapshot, () => null);
 }
 
 interface UsePdfSearchReturn {
   searchOpen: boolean;
   searchQuery: string;
-  searchResults: PdfSearchResult[];
+  searchResultCount: number;
   searchIndex: number;
   searchNext: () => void;
   searchPrev: () => void;
@@ -26,118 +41,129 @@ interface UsePdfSearchReturn {
 }
 
 /**
- * Hook that encapsulates PDF full-text search state management,
- * text layer highlighting, and Cmd/Ctrl+F keyboard shortcut interception.
+ * Hook that encapsulates PDF full-text search via PDFFindController.
+ * Dispatches find events on the EventBus and listens for match count updates.
  */
 export function usePdfSearch({
-  pdfDocRef,
+  eventBusRef,
   bookId,
-  goToPage,
   panelRef,
 }: UsePdfSearchOptions): UsePdfSearchReturn {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<PdfSearchResult[]>([]);
+  const [searchResultCount, setSearchResultCount] = useState(0);
   const [searchIndex, setSearchIndex] = useState(0);
 
-  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const searchIdRef = useRef(0);
-  const abortRef = useRef<AbortController | null>(null);
+  // Track when eventBusRef.current becomes available (it's assigned async in use-pdf-lifecycle)
+  const eventBus = useRefValue(eventBusRef);
 
-  const clear = useCallback(() => {
-    setSearchResults([]);
-    setSearchIndex(0);
-    if (debounceTimer.current) {
-      clearTimeout(debounceTimer.current);
-      debounceTimer.current = null;
-    }
-    abortRef.current?.abort();
-    clearHighlights();
-  }, []);
+  // Listen for find result updates from PDFFindController
+  useEffect(() => {
+    if (!eventBus) return;
 
-  const executeSearch = useCallback(
-    async (query: string, searchId: number) => {
-      const doc = pdfDocRef.current;
-      if (!doc) return;
-
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-
-      try {
-        const results = await searchPdf(doc, query, { signal: controller.signal });
-        if (searchIdRef.current === searchId) {
-          setSearchResults(results);
-          setSearchIndex(0);
-        }
-      } catch {
-        if (searchIdRef.current === searchId) {
-          setSearchResults([]);
-          setSearchIndex(0);
-        }
+    const onMatchesCount = (evt: any) => {
+      const { matchesCount } = evt;
+      if (matchesCount) {
+        setSearchResultCount(matchesCount.total || 0);
+        setSearchIndex(matchesCount.current ? matchesCount.current - 1 : 0);
       }
+    };
+
+    eventBus.on("updatefindmatchescount", onMatchesCount);
+    eventBus.on("updatefindcontrolstate", onMatchesCount);
+
+    return () => {
+      eventBus.off("updatefindmatchescount", onMatchesCount);
+      eventBus.off("updatefindcontrolstate", onMatchesCount);
+    };
+  }, [eventBus]);
+
+  const dispatchFind = useCallback(
+    (query: string, type: string = "") => {
+      const eventBus = eventBusRef.current;
+      if (!eventBus) return;
+      eventBus.dispatch("find", {
+        type,
+        query,
+        caseSensitive: false,
+        highlightAll: true,
+        findPrevious: type === "findagain" ? false : undefined,
+      });
     },
-    [pdfDocRef],
+    [eventBusRef],
   );
 
   const handleSearchQueryChange = useCallback(
     (query: string) => {
       setSearchQuery(query);
-      if (debounceTimer.current) clearTimeout(debounceTimer.current);
       const trimmed = query.trim();
       if (!trimmed) {
-        clear();
+        // Clear search
+        const eventBus = eventBusRef.current;
+        if (eventBus) {
+          eventBus.dispatch("find", {
+            type: "",
+            query: "",
+            caseSensitive: false,
+            highlightAll: false,
+          });
+        }
+        setSearchResultCount(0);
+        setSearchIndex(0);
         return;
       }
-      const searchId = ++searchIdRef.current;
-      debounceTimer.current = setTimeout(() => {
-        executeSearch(trimmed, searchId);
-      }, DEBOUNCE_MS);
+      dispatchFind(trimmed);
     },
-    [executeSearch, clear],
+    [dispatchFind, eventBusRef],
   );
-
-  // Navigate to the page of the current result
-  useEffect(() => {
-    if (searchResults.length > 0 && searchResults[searchIndex]) {
-      goToPage(searchResults[searchIndex].page);
-    }
-  }, [searchIndex, searchResults, goToPage]);
-
-  // Apply highlights in text layer when results or index change
-  useEffect(() => {
-    applyHighlights(searchQuery, searchResults, searchIndex);
-    // We need a slight delay because goToPage may re-render the text layer
-    const timer = setTimeout(() => {
-      applyHighlights(searchQuery, searchResults, searchIndex);
-    }, 200);
-    return () => clearTimeout(timer);
-  }, [searchResults, searchIndex, searchQuery]);
 
   // Clear search when book changes
   useEffect(() => {
     setSearchOpen(false);
     setSearchQuery("");
-    clear();
-  }, [bookId, clear]);
+    setSearchResultCount(0);
+    setSearchIndex(0);
+  }, [bookId]);
 
   const searchNext = useCallback(() => {
-    setSearchIndex((prev) => (searchResults.length === 0 ? 0 : (prev + 1) % searchResults.length));
-  }, [searchResults.length]);
+    if (!searchQuery.trim()) return;
+    const eventBus = eventBusRef.current;
+    if (!eventBus) return;
+    eventBus.dispatch("find", {
+      type: "again",
+      query: searchQuery.trim(),
+      caseSensitive: false,
+      highlightAll: true,
+      findPrevious: false,
+    });
+  }, [searchQuery, eventBusRef]);
 
   const searchPrev = useCallback(() => {
-    setSearchIndex((prev) =>
-      searchResults.length === 0 ? 0 : (prev - 1 + searchResults.length) % searchResults.length,
-    );
-  }, [searchResults.length]);
+    if (!searchQuery.trim()) return;
+    const eventBus = eventBusRef.current;
+    if (!eventBus) return;
+    eventBus.dispatch("find", {
+      type: "again",
+      query: searchQuery.trim(),
+      caseSensitive: false,
+      highlightAll: true,
+      findPrevious: true,
+    });
+  }, [searchQuery, eventBusRef]);
 
   const handleSearchOpen = useCallback(() => setSearchOpen(true), []);
 
   const handleSearchClose = useCallback(() => {
     setSearchOpen(false);
     setSearchQuery("");
-    clear();
-  }, [clear]);
+    setSearchResultCount(0);
+    setSearchIndex(0);
+    // Clear find highlights and notify PDFFindController the find bar is closed
+    const eb = eventBusRef.current;
+    if (eb) {
+      eb.dispatch("findbarclose", {});
+    }
+  }, [eventBusRef]);
 
   // Intercept Cmd/Ctrl+F
   useEffect(() => {
@@ -156,19 +182,10 @@ export function usePdfSearch({
     return () => document.removeEventListener("keydown", handleFindShortcut);
   }, [panelRef]);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (debounceTimer.current) clearTimeout(debounceTimer.current);
-      abortRef.current?.abort();
-      clearHighlights();
-    };
-  }, []);
-
   return {
     searchOpen,
     searchQuery,
-    searchResults,
+    searchResultCount,
     searchIndex,
     searchNext,
     searchPrev,
@@ -176,108 +193,4 @@ export function usePdfSearch({
     handleSearchClose,
     handleSearchQueryChange,
   };
-}
-
-/** CSS class for search highlight marks injected into the text layer */
-const SEARCH_HL_CLASS = "pdf-search-highlight";
-const SEARCH_HL_CURRENT_CLASS = "pdf-search-highlight-current";
-
-/**
- * Remove all search highlight marks from all text layers in the document.
- */
-function clearHighlights() {
-  const marks = document.querySelectorAll(`.${SEARCH_HL_CLASS}, .${SEARCH_HL_CURRENT_CLASS}`);
-  for (const mark of marks) {
-    const parent = mark.parentNode;
-    if (parent) {
-      parent.replaceChild(document.createTextNode(mark.textContent || ""), mark);
-      parent.normalize();
-    }
-  }
-}
-
-/**
- * Highlight matching text in pdf text layer spans.
- * Finds all `.pdf-text-layer span` elements and wraps matching text in <mark> tags.
- */
-function applyHighlights(query: string, results: PdfSearchResult[], currentIndex: number) {
-  clearHighlights();
-  if (!query.trim() || results.length === 0) return;
-
-  const currentResult = results[currentIndex];
-  const lowerQuery = query.trim().toLowerCase();
-  const queryLen = query.trim().length;
-
-  // Build a set of (page, matchIndexWithinPage) for the current result
-  // so we can distinguish it visually.
-  let currentPageMatchIdx = -1;
-  if (currentResult) {
-    const samePageBefore = results
-      .slice(0, currentIndex)
-      .filter((r) => r.page === currentResult.page);
-    currentPageMatchIdx = samePageBefore.length;
-  }
-
-  const pageWrappers = document.querySelectorAll<HTMLElement>(".pdf-page-wrapper");
-
-  for (const wrapper of pageWrappers) {
-    const pageNum = parseInt(wrapper.dataset.pageNumber || "0", 10);
-    const textLayer = wrapper.querySelector<HTMLElement>(".pdf-text-layer");
-    if (!textLayer) continue;
-
-    // Track match index within the page for current-highlight detection
-    let pageMatchCount = 0;
-
-    const spans = textLayer.querySelectorAll("span");
-    for (const span of spans) {
-      const text = span.textContent || "";
-      const lowerText = text.toLowerCase();
-
-      let searchFrom = 0;
-      let lastEnd = 0;
-      const parts: { text: string; isMatch: boolean; isCurrent: boolean }[] = [];
-
-      while (true) {
-        const idx = lowerText.indexOf(lowerQuery, searchFrom);
-        if (idx === -1) break;
-
-        if (idx > lastEnd) {
-          parts.push({ text: text.slice(lastEnd, idx), isMatch: false, isCurrent: false });
-        }
-
-        const isCurrentMatch =
-          currentResult !== undefined &&
-          pageNum === currentResult.page &&
-          pageMatchCount === currentPageMatchIdx;
-
-        parts.push({
-          text: text.slice(idx, idx + queryLen),
-          isMatch: true,
-          isCurrent: isCurrentMatch,
-        });
-
-        lastEnd = idx + queryLen;
-        searchFrom = idx + 1;
-        pageMatchCount++;
-      }
-
-      if (parts.length > 0) {
-        if (lastEnd < text.length) {
-          parts.push({ text: text.slice(lastEnd), isMatch: false, isCurrent: false });
-        }
-
-        span.textContent = "";
-        for (const part of parts) {
-          if (!part.isMatch) {
-            span.appendChild(document.createTextNode(part.text));
-          } else {
-            const mark = document.createElement("mark");
-            mark.className = part.isCurrent ? SEARCH_HL_CURRENT_CLASS : SEARCH_HL_CLASS;
-            mark.textContent = part.text;
-            span.appendChild(mark);
-          }
-        }
-      }
-    }
-  }
 }

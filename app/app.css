@@ -3,6 +3,7 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
 @import "dockview/dist/styles/dockview.css";
+@import "pdfjs-dist/web/pdf_viewer.css";
 @import "streamdown/styles.css";
 
 @source "../node_modules/streamdown/dist/*.js";

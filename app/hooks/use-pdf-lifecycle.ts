@@ -5,6 +5,7 @@ import { AppRuntime } from "~/lib/effect-runtime";
 import { ReadingPositionService } from "~/lib/position-store";
 import { resolveStartCfi, savePositionDualKey } from "~/lib/position-utils";
 import type { PdfLayout, Theme } from "~/lib/settings";
+import { resolveTheme } from "~/lib/settings";
 import type { TocEntry } from "~/lib/reader-context";
 
 const POSITION_SAVE_DEBOUNCE_MS = 1000;
@@ -35,6 +36,17 @@ export interface UsePdfLifecycleReturn {
   goPrev: () => void;
   flushPositionSave: () => void;
   pdfDocRef: React.RefObject<any>;
+  /** Reference to the PDFViewer instance for search/highlight integration */
+  viewerRef: React.RefObject<any>;
+  /** Reference to the EventBus instance for search/highlight integration */
+  eventBusRef: React.RefObject<any>;
+}
+
+/** Map our PdfLayout setting to PDFViewer ScrollMode */
+function layoutToScrollMode(layout: PdfLayout): number {
+  // ScrollMode values: VERTICAL=0, PAGE=3
+  if (layout === "continuous") return 0; // ScrollMode.VERTICAL
+  return 3; // ScrollMode.PAGE — single-page for all other modes
 }
 
 export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleReturn {
@@ -48,14 +60,10 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
   const [totalPages, setTotalPages] = useState(0);
 
   const pdfDocRef = useRef<any>(null);
+  const viewerRef = useRef<any>(null);
+  const eventBusRef = useRef<any>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestPageRef = useRef<number>(1);
-  const renderingRef = useRef(false);
-  const layoutRef = useRef(pdfLayout);
-  layoutRef.current = pdfLayout;
-  const renderViewRef = useRef<(doc: any, page: number, layout: PdfLayout) => Promise<void>>(
-    async () => {},
-  );
 
   const flushPositionSave = useCallback(() => {
     if (saveTimerRef.current) {
@@ -95,195 +103,23 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
     [bookId],
   );
 
-  const renderPage = useCallback(
-    async (doc: any, pageNum: number, wrapper: HTMLDivElement, scale: number, fitWidth = true) => {
-      const pdfjs = await import("pdfjs-dist");
-      const page = await doc.getPage(pageNum);
-      const viewport = page.getViewport({ scale });
-
-      const canvas = document.createElement("canvas");
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      canvas.style.display = "block";
-      if (fitWidth) {
-        canvas.style.width = "100%";
-        canvas.style.height = "auto";
-      }
-      wrapper.appendChild(canvas);
-
-      const ctx = canvas.getContext("2d")!;
-      await page.render({ canvasContext: ctx, viewport }).promise;
-
-      // Text layer for search/selection (Phase 3/4)
-      const textContent = await page.getTextContent();
-      const textDiv = document.createElement("div");
-      textDiv.className = "pdf-text-layer";
-      textDiv.style.cssText = "position:absolute;top:0;left:0;pointer-events:all;line-height:1;";
-      textDiv.style.width = `${viewport.width}px`;
-      textDiv.style.height = `${viewport.height}px`;
-      textDiv.style.transformOrigin = "0 0";
-      const containerWidth = fitWidth ? wrapper.clientWidth || viewport.width : viewport.width;
-      const scaleFactor = containerWidth / viewport.width;
-      textDiv.style.transform = `scale(${scaleFactor})`;
-      wrapper.appendChild(textDiv);
-
-      const textLayer = new pdfjs.TextLayer({
-        textContentSource: textContent,
-        container: textDiv,
-        viewport,
-      });
-      await textLayer.render();
-      // Make text layer invisible but selectable
-      textDiv.style.opacity = "0";
-
-      page.cleanup();
-    },
-    [],
-  );
-
-  const renderView = useCallback(
-    async (doc: any, page: number, layout: PdfLayout) => {
-      const el = containerRef.current;
-      if (!el || renderingRef.current) return;
-      renderingRef.current = true;
-
-      try {
-        el.innerHTML = "";
-        const zoomMultiplier = fontSize / 100;
-
-        if (layout === "continuous") {
-          // Render all pages vertically, each fit to container width
-          for (let i = 1; i <= doc.numPages; i++) {
-            const pdfPage = await doc.getPage(i);
-            const nativeVp = pdfPage.getViewport({ scale: 1 });
-            const fitScale = (el.clientWidth / nativeVp.width) * zoomMultiplier;
-            pdfPage.cleanup();
-
-            const pageWrapper = document.createElement("div");
-            pageWrapper.className = "pdf-page-wrapper";
-            pageWrapper.style.position = "relative";
-            pageWrapper.style.marginBottom = "16px";
-            pageWrapper.dataset.pageNumber = String(i);
-            el.appendChild(pageWrapper);
-            await renderPage(doc, i, pageWrapper, fitScale);
-          }
-        } else if (layout === "two-page") {
-          // Render current page and next page side-by-side
-          const row = document.createElement("div");
-          row.style.display = "flex";
-          row.style.gap = "8px";
-          row.style.justifyContent = "center";
-          row.style.alignItems = "flex-start";
-          el.appendChild(row);
-
-          const pagesToRender = [page];
-          if (page + 1 <= doc.numPages) pagesToRender.push(page + 1);
-          const halfWidth = (el.clientWidth - 8) / 2;
-
-          for (const p of pagesToRender) {
-            const pdfPage = await doc.getPage(p);
-            const nativeVp = pdfPage.getViewport({ scale: 1 });
-            const fitScale = (halfWidth / nativeVp.width) * zoomMultiplier;
-            pdfPage.cleanup();
-
-            const pageWrapper = document.createElement("div");
-            pageWrapper.className = "pdf-page-wrapper";
-            pageWrapper.style.position = "relative";
-            pageWrapper.style.flex = "0 1 auto";
-            pageWrapper.style.maxWidth = `${halfWidth}px`;
-            pageWrapper.dataset.pageNumber = String(p);
-            row.appendChild(pageWrapper);
-            await renderPage(doc, p, pageWrapper, fitScale);
-          }
-        } else if (layout === "original") {
-          // Native resolution (scale=1), allow horizontal scroll
-          const pageWrapper = document.createElement("div");
-          pageWrapper.className = "pdf-page-wrapper";
-          pageWrapper.style.position = "relative";
-          pageWrapper.style.margin = "0 auto";
-          pageWrapper.dataset.pageNumber = String(page);
-          el.appendChild(pageWrapper);
-          await renderPage(doc, page, pageWrapper, 1 * zoomMultiplier, false);
-        } else if (layout === "fit-width") {
-          // "fit-width" — scale page to container width
-          const pdfPage = await doc.getPage(page);
-          const nativeVp = pdfPage.getViewport({ scale: 1 });
-          const fitScale = (el.clientWidth / nativeVp.width) * zoomMultiplier;
-          pdfPage.cleanup();
-
-          const pageWrapper = document.createElement("div");
-          pageWrapper.className = "pdf-page-wrapper";
-          pageWrapper.style.position = "relative";
-          pageWrapper.style.maxWidth = "100%";
-          pageWrapper.style.margin = "0 auto";
-          pageWrapper.dataset.pageNumber = String(page);
-          el.appendChild(pageWrapper);
-          await renderPage(doc, page, pageWrapper, fitScale);
-        } else {
-          // "fit-height" — scale page to container height (default), centered horizontally
-          const pdfPage = await doc.getPage(page);
-          const nativeVp = pdfPage.getViewport({ scale: 1 });
-          const cs = getComputedStyle(el);
-          const availableHeight =
-            el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
-          const fitScale = (availableHeight / nativeVp.height) * zoomMultiplier;
-          pdfPage.cleanup();
-
-          const pageWrapper = document.createElement("div");
-          pageWrapper.className = "pdf-page-wrapper";
-          pageWrapper.style.position = "relative";
-          pageWrapper.style.maxWidth = "100%";
-          pageWrapper.style.margin = "0 auto";
-          pageWrapper.style.display = "flex";
-          pageWrapper.style.justifyContent = "center";
-          pageWrapper.dataset.pageNumber = String(page);
-          el.appendChild(pageWrapper);
-          await renderPage(doc, page, pageWrapper, fitScale, false);
-        }
-      } finally {
-        renderingRef.current = false;
-        // Notify after render so highlight overlays can be re-applied
-        configRef.current.onAfterRender?.();
-      }
-    },
-    [containerRef, fontSize, renderPage],
-  );
-
-  // Keep ref in sync so main lifecycle effect doesn't depend on renderView identity
-  renderViewRef.current = renderView;
-
-  const goToPage = useCallback(
-    (page: number) => {
-      const doc = pdfDocRef.current;
-      if (!doc || page < 1 || page > doc.numPages) return;
-      setCurrentPage(page);
-      latestPageRef.current = page;
-      configRef.current.onRelocated?.();
-      savePositionDebounced(page);
-
-      if (layoutRef.current === "continuous") {
-        const el = containerRef.current;
-        if (!el) return;
-        const pageEl = el.querySelector(`[data-page-number="${page}"]`);
-        if (pageEl) pageEl.scrollIntoView({ behavior: "smooth" });
-      } else {
-        renderViewRef.current(doc, page, layoutRef.current);
-      }
-    },
-    [savePositionDebounced, containerRef],
-  );
+  const goToPage = useCallback((page: number) => {
+    const viewer = viewerRef.current;
+    if (!viewer || page < 1 || page > (viewer.pagesCount || 0)) return;
+    viewer.currentPageNumber = page;
+  }, []);
 
   const goNext = useCallback(() => {
-    const step = layoutRef.current === "two-page" ? 2 : 1;
-    goToPage(latestPageRef.current + step);
-  }, [goToPage]);
+    const viewer = viewerRef.current;
+    if (viewer) viewer.nextPage();
+  }, []);
 
   const goPrev = useCallback(() => {
-    const step = layoutRef.current === "two-page" ? 2 : 1;
-    goToPage(Math.max(1, latestPageRef.current - step));
-  }, [goToPage]);
+    const viewer = viewerRef.current;
+    if (viewer) viewer.previousPage();
+  }, []);
 
-  // Main lifecycle effect
+  // Main lifecycle effect — create PDFViewer and load document
   useEffect(() => {
     if (!enabled) return;
     const el = containerRef.current;
@@ -292,15 +128,73 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
     let cancelled = false;
 
     const init = async () => {
+      // Load book data
       const bookData = await AppRuntime.runPromise(
         BookService.pipe(Effect.andThen((s) => s.getBookData(bookId))),
       );
       if (cancelled) return;
 
+      // Setup pdfjs worker
       const pdfjs = await import("pdfjs-dist");
       const workerUrl = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url);
       pdfjs.GlobalWorkerOptions.workerSrc = workerUrl.href;
 
+      // Import viewer components
+      const pdfjsViewer = await import("pdfjs-dist/web/pdf_viewer.mjs");
+
+      if (cancelled) return;
+
+      // Create EventBus
+      const eventBus = new pdfjsViewer.EventBus();
+      eventBusRef.current = eventBus;
+
+      // Create PDFLinkService
+      const linkService = new pdfjsViewer.PDFLinkService({ eventBus });
+
+      // Create PDFFindController
+      const findController = new pdfjsViewer.PDFFindController({ linkService, eventBus });
+
+      // Ensure container has the required inner div
+      el.innerHTML = "";
+      const viewerDiv = document.createElement("div");
+      viewerDiv.className = "pdfViewer";
+      el.appendChild(viewerDiv);
+
+      // Determine dark mode page colors
+      const isDark = resolveTheme(configRef.current.theme) === "dark";
+      const pageColors = isDark ? { background: "#1a1a2e", foreground: "#e0e0e0" } : undefined;
+
+      // Create PDFViewer
+      const viewer = new pdfjsViewer.PDFViewer({
+        container: el,
+        viewer: viewerDiv,
+        eventBus,
+        linkService,
+        findController,
+        removePageBorders: true,
+        pageColors: pageColors || undefined,
+      });
+      viewerRef.current = viewer;
+      linkService.setViewer(viewer);
+
+      // Set scroll mode based on layout
+      viewer.scrollMode = layoutToScrollMode(configRef.current.pdfLayout);
+
+      // Listen for page changes
+      eventBus.on("pagechanging", (evt: any) => {
+        const pageNum = evt.pageNumber;
+        latestPageRef.current = pageNum;
+        setCurrentPage(pageNum);
+        savePositionDebounced(pageNum);
+        configRef.current.onRelocated?.();
+      });
+
+      // Listen for pages rendered (for highlight overlay re-application)
+      eventBus.on("pagerendered", () => {
+        configRef.current.onAfterRender?.();
+      });
+
+      // Load PDF document
       const dataCopy = new Uint8Array(bookData).slice();
       const loadingTask = pdfjs.getDocument({ data: dataCopy });
       const doc = await loadingTask.promise;
@@ -310,6 +204,44 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
       }
       pdfDocRef.current = doc;
       setTotalPages(doc.numPages);
+
+      // Set document on viewer
+      viewer.setDocument(doc);
+      linkService.setDocument(doc, null);
+      findController.setDocument(doc);
+
+      // Apply initial scale
+      const zoomScale = fontSize / 100;
+      // Wait for first page to render before setting scale
+      eventBus.on("pagesinit", () => {
+        viewer.currentScale = zoomScale;
+
+        // Restore reading position
+        resolveStartCfi({
+          latestCfi: latestPageRef.current > 1 ? `page:${latestPageRef.current}` : null,
+          panelId,
+          bookId,
+          getPosition: (key) =>
+            AppRuntime.runPromise(
+              ReadingPositionService.pipe(Effect.andThen((s) => s.getPosition(key))),
+            ),
+        })
+          .then((savedPos) => {
+            let startPage = 1;
+            if (savedPos && savedPos.startsWith("page:")) {
+              const parsed = parseInt(savedPos.slice(5), 10);
+              if (!isNaN(parsed) && parsed >= 1 && parsed <= doc.numPages) {
+                startPage = parsed;
+              }
+            }
+            if (startPage > 1) {
+              viewer.currentPageNumber = startPage;
+            }
+            latestPageRef.current = startPage;
+            setCurrentPage(startPage);
+          })
+          .catch((err) => console.error("Failed to restore PDF position:", err));
+      });
 
       // Extract TOC from PDF outline
       try {
@@ -330,125 +262,58 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
       } catch {
         // Outline extraction is non-fatal
       }
-
-      // Restore reading position
-      const savedPos = await resolveStartCfi({
-        latestCfi: latestPageRef.current > 1 ? `page:${latestPageRef.current}` : null,
-        panelId,
-        bookId,
-        getPosition: (key) =>
-          AppRuntime.runPromise(
-            ReadingPositionService.pipe(Effect.andThen((s) => s.getPosition(key))),
-          ),
-      });
-
-      let startPage = 1;
-      if (savedPos && savedPos.startsWith("page:")) {
-        const parsed = parseInt(savedPos.slice(5), 10);
-        if (!isNaN(parsed) && parsed >= 1 && parsed <= doc.numPages) {
-          startPage = parsed;
-        }
-      }
-
-      setCurrentPage(startPage);
-      latestPageRef.current = startPage;
-      const currentLayout = layoutRef.current;
-      await renderViewRef.current(doc, startPage, currentLayout);
-
-      // In continuous mode, all pages are rendered — scroll to the restored page
-      if (currentLayout === "continuous" && startPage > 1) {
-        const container = containerRef.current;
-        if (container) {
-          const pageEl = container.querySelector(`[data-page-number="${startPage}"]`);
-          if (pageEl) pageEl.scrollIntoView({ behavior: "instant" });
-        }
-      }
     };
 
     init().catch((err) => {
       if (!cancelled) console.error("Failed to load PDF:", err);
     });
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (layoutRef.current === "continuous") return;
-      if (configRef.current.panelRef) {
-        const panel = configRef.current.panelRef.current;
-        if (!panel?.contains(document.activeElement) && document.activeElement !== panel) return;
-      }
-      const step = layoutRef.current === "two-page" ? 2 : 1;
-      if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
-        e.preventDefault();
-        goToPage(Math.max(1, latestPageRef.current - step));
-      } else if (e.key === "ArrowRight" || e.key === "ArrowDown") {
-        e.preventDefault();
-        goToPage(latestPageRef.current + step);
-      }
-    };
-    document.addEventListener("keydown", handleKeyDown);
-
     return () => {
       cancelled = true;
-      document.removeEventListener("keydown", handleKeyDown);
       flushPositionSave();
       setToc([]);
       configRef.current.onCleanupToc?.();
+
+      // Cleanup viewer
+      if (viewerRef.current) {
+        viewerRef.current.cleanup();
+        viewerRef.current = null;
+      }
+      eventBusRef.current = null;
+
       if (pdfDocRef.current) {
         pdfDocRef.current.destroy().catch(() => {});
         pdfDocRef.current = null;
       }
     };
-    // Note: pdfLayout is intentionally excluded — layout changes are handled by
-    // the separate re-render effect below. Including it here would cause a full
-    // teardown/re-init (reloading the PDF from IndexedDB) on every layout change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, bookId, flushPositionSave, goToPage, panelId]);
+  }, [enabled, bookId, flushPositionSave, panelId]);
 
-  // Re-render on fontSize or layout change
+  // Update scale when fontSize changes
   useEffect(() => {
-    const doc = pdfDocRef.current;
-    if (!doc) return;
-    const page = latestPageRef.current;
-    renderView(doc, page, pdfLayout).then(() => {
-      // After switching to continuous mode, scroll to the current page
-      if (pdfLayout === "continuous" && page > 1) {
-        const container = containerRef.current;
-        if (container) {
-          const pageEl = container.querySelector(`[data-page-number="${page}"]`);
-          if (pageEl) pageEl.scrollIntoView({ behavior: "instant" });
-        }
-      }
-    });
-  }, [fontSize, renderView, pdfLayout, containerRef]);
+    const viewer = viewerRef.current;
+    if (!viewer || !pdfDocRef.current) return;
+    const zoomScale = fontSize / 100;
+    viewer.currentScale = zoomScale;
+  }, [fontSize]);
 
-  // Continuous mode: track current page from scroll position
+  // Update scroll mode when pdfLayout changes
   useEffect(() => {
-    if (pdfLayout !== "continuous") return;
-    const el = containerRef.current;
-    if (!el) return;
+    const viewer = viewerRef.current;
+    if (!viewer || !pdfDocRef.current) return;
+    viewer.scrollMode = layoutToScrollMode(pdfLayout);
+  }, [pdfLayout]);
 
-    const handleScroll = () => {
-      const wrappers = el.querySelectorAll(".pdf-page-wrapper");
-      const containerRect = el.getBoundingClientRect();
-      const midY = containerRect.top + containerRect.height / 2;
-
-      for (const wrapper of wrappers) {
-        const rect = wrapper.getBoundingClientRect();
-        if (rect.top <= midY && rect.bottom >= midY) {
-          const pageNum = parseInt((wrapper as HTMLElement).dataset.pageNumber || "1", 10);
-          if (pageNum !== latestPageRef.current) {
-            latestPageRef.current = pageNum;
-            setCurrentPage(pageNum);
-            savePositionDebounced(pageNum);
-            configRef.current.onRelocated?.();
-          }
-          break;
-        }
-      }
-    };
-
-    el.addEventListener("scroll", handleScroll, { passive: true });
-    return () => el.removeEventListener("scroll", handleScroll);
-  }, [pdfLayout, containerRef, savePositionDebounced]);
+  // Update page colors when theme changes
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || !pdfDocRef.current) return;
+    const isDark = resolveTheme(config.theme) === "dark";
+    const pageColors = isDark ? { background: "#1a1a2e", foreground: "#e0e0e0" } : null;
+    viewer.pageColors = pageColors;
+    // Force a refresh to apply new colors
+    viewer.refresh(false);
+  }, [config.theme]);
 
   const bookProgress = totalPages > 0 ? (currentPage / totalPages) * 100 : 0;
 
@@ -462,5 +327,7 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
     goPrev,
     flushPositionSave,
     pdfDocRef,
+    viewerRef,
+    eventBusRef,
   };
 }

@@ -13,7 +13,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover
 import { TocList } from "~/components/book-list";
 import { Effect } from "effect";
 import { BookService, type BookMeta } from "~/lib/book-store";
-import { useSettings, resolveTheme } from "~/lib/settings";
+import { useSettings } from "~/lib/settings";
 import type { PdfLayout, Settings } from "~/lib/settings";
 import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
 import { HighlightPopover } from "~/components/highlight-popover";
@@ -151,6 +151,7 @@ function WorkspacePdfReaderInner({
     goPrev,
     flushPositionSave,
     pdfDocRef,
+    eventBusRef,
   } = usePdfLifecycle({
     bookId: book.id,
     containerRef,
@@ -186,7 +187,7 @@ function WorkspacePdfReaderInner({
   const {
     searchOpen,
     searchQuery,
-    searchResults,
+    searchResultCount,
     searchIndex,
     searchNext,
     searchPrev,
@@ -194,9 +195,8 @@ function WorkspacePdfReaderInner({
     handleSearchClose,
     handleSearchQueryChange,
   } = usePdfSearch({
-    pdfDocRef,
+    eventBusRef,
     bookId: book.id,
-    goToPage,
     panelRef,
   });
 
@@ -248,7 +248,6 @@ function WorkspacePdfReaderInner({
   }, [goToPage, setGoToPage]);
 
   const isScrollMode = localPdfLayout === "continuous";
-  const isDark = resolveTheme(settings.theme) === "dark";
 
   const localSettings: Settings = {
     ...settings,
@@ -264,7 +263,7 @@ function WorkspacePdfReaderInner({
             <SearchBar
               query={searchQuery}
               onQueryChange={handleSearchQueryChange}
-              resultCount={searchResults.length}
+              resultCount={searchResultCount}
               currentIndex={searchIndex}
               onNext={searchNext}
               onPrev={searchPrev}
@@ -272,13 +271,7 @@ function WorkspacePdfReaderInner({
             />
           </div>
         )}
-        <div
-          ref={containerRef}
-          className={cn("h-full overflow-auto px-4 pt-4 pb-2 md:px-8 md:pt-6 md:pb-4", {
-            "invert hue-rotate-180": isDark,
-          })}
-          data-testid="pdf-container"
-        />
+        <div ref={containerRef} className="h-full overflow-auto" data-testid="pdf-container" />
         {!isScrollMode && (
           <div className="pointer-events-none absolute inset-0 z-[5]">
             <button

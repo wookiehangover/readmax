@@ -36,7 +36,6 @@ function makePdfCfiRange(pageNumber: number, textOffset: number, textLength: num
  * of the selection start within the full text content of the page.
  */
 function computeTextOffset(textLayerDiv: HTMLElement, range: Range): number {
-  // Walk up from range.startContainer to find the containing direct-child span
   let startNode: Node | null = range.startContainer;
   let containingSpan: HTMLElement | null = null;
   while (startNode && startNode !== textLayerDiv) {
@@ -49,13 +48,11 @@ function computeTextOffset(textLayerDiv: HTMLElement, range: Range): number {
 
   if (!containingSpan) return 0;
 
-  // Sum text lengths of all preceding direct-child spans in DOM order
   let offset = 0;
   const children = textLayerDiv.children;
   for (let i = 0; i < children.length; i++) {
     const child = children[i];
     if (child === containingSpan) {
-      // Add the offset within this span
       offset += range.startOffset;
       break;
     }
@@ -76,7 +73,6 @@ function renderHighlightOverlay(
   const { textOffset, textLength } = highlight;
   if (textOffset === undefined || textLength === undefined) return null;
 
-  // Walk text layer spans to find the character range
   const spans = textLayerDiv.querySelectorAll("span");
   let charCount = 0;
   let startFound = false;
@@ -89,20 +85,17 @@ function renderHighlightOverlay(
     const spanEnd = charCount + spanLen;
     charCount = spanEnd;
 
-    // Check if this span overlaps with our highlight range
     const hlStart = textOffset;
     const hlEnd = textOffset + textLength;
 
     if (spanEnd <= hlStart) continue;
     if (spanStart >= hlEnd) break;
 
-    // This span overlaps — get the overlapping portion
     const overlapStart = Math.max(0, hlStart - spanStart);
     const overlapEnd = Math.min(spanLen, hlEnd - spanStart);
 
     if (overlapStart >= overlapEnd) continue;
 
-    // Create a range for this portion of the span
     const textNode = span.firstChild;
     if (!textNode) continue;
 
@@ -122,18 +115,12 @@ function renderHighlightOverlay(
 
   if (!startFound || rects.length === 0) return null;
 
-  // Create overlay container positioned inside the text layer so coordinates
-  // are naturally relative to the same parent. The text layer is position:absolute
-  // with a CSS scale transform, so children share its coordinate system.
   const overlay = document.createElement("div");
   overlay.className = "pdf-highlight-overlay";
   overlay.dataset.highlightId = highlight.id;
   overlay.style.cssText =
     "position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;";
 
-  // Get the text layer's viewport rect to convert getClientRects() results
-  // into text-layer-local coordinates. We must account for the CSS scale
-  // transform that pdf.js applies to the text layer.
   const textLayerRect = textLayerDiv.getBoundingClientRect();
   const transformStr = textLayerDiv.style.transform;
   const scaleMatch = transformStr.match(/scale\(([^)]+)\)/);
@@ -141,9 +128,6 @@ function renderHighlightOverlay(
 
   for (const rect of rects) {
     const mark = document.createElement("div");
-    // getClientRects() gives viewport coords; subtract text layer's viewport
-    // origin, then divide by scale to get coordinates in the text layer's
-    // pre-transform coordinate system.
     const localLeft = (rect.left - textLayerRect.left) / scale;
     const localTop = (rect.top - textLayerRect.top) / scale;
     const localWidth = rect.width / scale;
@@ -157,8 +141,6 @@ function renderHighlightOverlay(
     overlay.appendChild(mark);
   }
 
-  // Insert overlay inside the text layer div. Place it as the first child
-  // so it renders behind the text spans (which are selectable on top).
   textLayerDiv.insertBefore(overlay, textLayerDiv.firstChild);
   return overlay;
 }
@@ -188,7 +170,7 @@ export function usePdfHighlights({
     [],
   );
 
-  /** Apply a single highlight overlay on all matching page wrappers in the container. */
+  /** Apply a single highlight overlay on all matching page elements in the container. */
   const applyHighlightOverlay = useCallback(
     (highlight: Highlight) => {
       const el = containerRef.current;
@@ -201,18 +183,12 @@ export function usePdfHighlights({
       const { pageNumber } = highlight;
       if (pageNumber === undefined) return;
 
-      // Find the page wrapper(s) for this page
-      const wrappers = el.querySelectorAll<HTMLDivElement>(
-        `.pdf-page-wrapper[data-page-number="${pageNumber}"], .pdf-page-wrapper`,
-      );
+      // PDFViewer renders pages as .page elements with data-page-number attributes
+      // The text layer is a child with class "textLayer"
+      const pages = el.querySelectorAll<HTMLElement>(`.page[data-page-number="${pageNumber}"]`);
 
-      for (const wrapper of wrappers) {
-        const pgNum = wrapper.dataset.pageNumber ? parseInt(wrapper.dataset.pageNumber, 10) : 1;
-        // In single-page mode, there's no data-page-number — match if it's the only wrapper
-        if (wrapper.dataset.pageNumber && pgNum !== pageNumber) continue;
-        if (!wrapper.dataset.pageNumber && wrappers.length > 1) continue;
-
-        const textLayer = wrapper.querySelector<HTMLDivElement>(".pdf-text-layer");
+      for (const page of pages) {
+        const textLayer = page.querySelector<HTMLDivElement>(".textLayer");
         if (!textLayer) continue;
 
         const overlay = renderHighlightOverlay(
@@ -252,19 +228,17 @@ export function usePdfHighlights({
 
   /** Re-render all highlight overlays (call after page re-render). */
   const reapplyAllHighlights = useCallback(() => {
-    // Remove all existing overlays
     for (const overlay of overlaysRef.current.values()) {
       overlay.remove();
     }
     overlaysRef.current.clear();
 
-    // Re-apply
     for (const hl of highlightsRef.current.values()) {
       applyHighlightOverlay(hl);
     }
   }, [applyHighlightOverlay]);
 
-  /** Register mouseup handler on the container to detect text selection in the PDF text layer. */
+  /** Register mouseup handler on the container to detect text selection. */
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -280,10 +254,11 @@ export function usePdfHighlights({
       const range = selection.getRangeAt(0);
 
       // Find the text layer div that contains this selection
+      // PDFViewer uses ".textLayer" class
       let node: Node | null = range.startContainer;
       let textLayerDiv: HTMLElement | null = null;
       while (node) {
-        if (node instanceof HTMLElement && node.classList.contains("pdf-text-layer")) {
+        if (node instanceof HTMLElement && node.classList.contains("textLayer")) {
           textLayerDiv = node;
           break;
         }
@@ -291,11 +266,11 @@ export function usePdfHighlights({
       }
       if (!textLayerDiv) return;
 
-      // Get page number from the wrapper
-      const wrapper = textLayerDiv.closest<HTMLElement>(".pdf-page-wrapper");
-      const pageNumber = wrapper?.dataset.pageNumber ? parseInt(wrapper.dataset.pageNumber, 10) : 1;
+      // Get page number from the page element
+      const pageEl = textLayerDiv.closest<HTMLElement>(".page");
+      const pageNumber = pageEl?.dataset.pageNumber ? parseInt(pageEl.dataset.pageNumber, 10) : 1;
 
-      // Compute offset and adjust for any leading whitespace trimmed from the selection
+      // Compute offset
       const textOffset = computeTextOffset(textLayerDiv, range);
       const leadingWhitespace = rawText.length - rawText.trimStart().length;
       const adjustedOffset = textOffset + leadingWhitespace;
@@ -359,14 +334,12 @@ export function usePdfHighlights({
     const hl = highlightsRef.current.get(cfiRange);
     if (!hl) return;
 
-    // Remove overlay
     const overlay = overlaysRef.current.get(hl.id);
     if (overlay) {
       overlay.remove();
       overlaysRef.current.delete(hl.id);
     }
 
-    // Remove from store
     const deleteProgram = Effect.gen(function* () {
       const svc = yield* AnnotationService;
       yield* svc.deleteHighlight(hl.id);
@@ -379,7 +352,6 @@ export function usePdfHighlights({
   /** Apply a temporary flash highlight on the PDF for a given cfiRange. */
   const applyTempHighlight = useCallback(
     (cfiRange: string) => {
-      // Parse the synthetic cfiRange to get page info
       const match = cfiRange.match(/^pdf:page:(\d+):offset:(\d+):len:(\d+)$/);
       if (!match) return;
 
@@ -401,7 +373,6 @@ export function usePdfHighlights({
 
       applyHighlightOverlay(tempHl);
 
-      // Flash and remove after a delay
       setTimeout(() => {
         const overlay = overlaysRef.current.get(tempHl.id);
         if (overlay) {

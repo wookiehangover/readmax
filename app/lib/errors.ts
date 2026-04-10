@@ -56,3 +56,8 @@ export class DecodeError extends Data.TaggedError("DecodeError")<{
   readonly operation: string;
   readonly cause?: unknown;
 }> {}
+
+export class AuthError extends Data.TaggedError("AuthError")<{
+  readonly operation: string;
+  readonly cause?: unknown;
+}> {}

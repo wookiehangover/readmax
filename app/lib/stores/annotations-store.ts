@@ -1,4 +1,4 @@
-import { createStore, get, set, del, entries } from "idb-keyval";
+import { createStore, get, set, entries } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
 import { Context, Effect, Layer, Schema } from "effect";
 import type { JSONContent } from "@tiptap/react";
@@ -19,6 +19,10 @@ export const HighlightSchema = Schema.Struct({
   textOffset: Schema.optional(Schema.Number),
   /** PDF-only: length of highlighted text in characters */
   textLength: Schema.optional(Schema.Number),
+  /** Timestamp of last mutation. Used for LWW sync. */
+  updatedAt: Schema.optional(Schema.Number),
+  /** Soft-delete timestamp. When set, the highlight is considered deleted. */
+  deletedAt: Schema.optional(Schema.Number),
 });
 
 export type Highlight = typeof HighlightSchema.Type;
@@ -60,7 +64,7 @@ export class AnnotationService extends Context.Tag("AnnotationService")<
       id: string,
       updates: Partial<Omit<Highlight, "id" | "bookId" | "createdAt">>,
     ) => Effect.Effect<void, HighlightError | DecodeError>;
-    readonly deleteHighlight: (id: string) => Effect.Effect<void, HighlightError>;
+    readonly deleteHighlight: (id: string) => Effect.Effect<void, HighlightError | DecodeError>;
     readonly saveNotebook: (notebook: Notebook) => Effect.Effect<void, NotebookError>;
     readonly getNotebook: (
       bookId: string,
@@ -95,7 +99,10 @@ export function makeAnnotationService(stores: AnnotationServiceStores): Annotati
   return {
     saveHighlight: (highlight) =>
       Effect.tryPromise({
-        try: () => set(highlight.id, highlight, highlightStore),
+        try: () => {
+          const stamped = { ...highlight, updatedAt: highlight.updatedAt ?? Date.now() };
+          return set(highlight.id, stamped, highlightStore);
+        },
         catch: (cause) =>
           new HighlightError({ operation: "saveHighlight", highlightId: highlight.id, cause }),
       }),
@@ -112,7 +119,7 @@ export function makeAnnotationService(stores: AnnotationServiceStores): Annotati
               .map(([, raw]) => raw)
               .filter(Boolean)
               .map((raw) => decodeHighlight(raw))
-              .filter((hl) => hl.bookId === bookId),
+              .filter((hl) => hl.bookId === bookId && hl.deletedAt === undefined),
           catch: (cause) => new DecodeError({ operation: "getHighlightsByBook", cause }),
         });
       }),
@@ -134,17 +141,40 @@ export function makeAnnotationService(stores: AnnotationServiceStores): Annotati
           catch: (cause) => new DecodeError({ operation: "updateHighlight", cause }),
         });
         yield* Effect.tryPromise({
-          try: () => set(id, { ...existing, ...updates }, highlightStore),
+          try: () => set(id, { ...existing, ...updates, updatedAt: Date.now() }, highlightStore),
           catch: (cause) =>
             new HighlightError({ operation: "updateHighlight", highlightId: id, cause }),
         });
       }),
 
     deleteHighlight: (id) =>
-      Effect.tryPromise({
-        try: () => del(id, highlightStore),
-        catch: (cause) =>
-          new HighlightError({ operation: "deleteHighlight", highlightId: id, cause }),
+      Effect.gen(function* () {
+        const raw = yield* Effect.tryPromise({
+          try: () => get<unknown>(id, highlightStore),
+          catch: (cause) =>
+            new HighlightError({ operation: "deleteHighlight.read", highlightId: id, cause }),
+        });
+        if (raw) {
+          // Soft-delete: set deletedAt timestamp, keep record for sync
+          const existing = yield* Effect.try({
+            try: () => decodeHighlight(raw),
+            catch: (cause) => new DecodeError({ operation: "deleteHighlight.decode", cause }),
+          });
+          yield* Effect.tryPromise({
+            try: () =>
+              set(
+                id,
+                { ...existing, deletedAt: Date.now(), updatedAt: Date.now() },
+                highlightStore,
+              ),
+            catch: (cause) =>
+              new HighlightError({
+                operation: "deleteHighlight.write",
+                highlightId: id,
+                cause,
+              }),
+          });
+        }
       }),
 
     saveNotebook: (notebook) =>

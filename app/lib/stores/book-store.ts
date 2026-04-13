@@ -1,4 +1,4 @@
-import { createStore, get, set, del, entries } from "idb-keyval";
+import { createStore, get, set, entries } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
 import { Context, Effect, Layer, Schema } from "effect";
 import { StorageError, BookNotFoundError, DecodeError } from "~/lib/errors";
@@ -14,6 +14,16 @@ export const BookMetaSchema = Schema.Struct({
   author: Schema.String,
   coverImage: Schema.NullOr(Schema.instanceOf(Blob)),
   format: Schema.optionalWith(BookFormatSchema, { default: () => "epub" as const }),
+  /** Vercel Blob URL for cover image (set during sync upload). */
+  remoteCoverUrl: Schema.optional(Schema.String),
+  /** Vercel Blob URL for epub/pdf file (set during sync upload). */
+  remoteFileUrl: Schema.optional(Schema.String),
+  /** SHA-256 hash of the file data, used for deduplication during sync. */
+  fileHash: Schema.optional(Schema.String),
+  /** Timestamp of last mutation (creation or update). Used for LWW sync. */
+  updatedAt: Schema.optional(Schema.Number),
+  /** Soft-delete timestamp. When set, the book is considered deleted. */
+  deletedAt: Schema.optional(Schema.Number),
 });
 
 /** Metadata-only book record (no binary epub data). */
@@ -58,7 +68,7 @@ export class BookService extends Context.Tag("BookService")<
     readonly getBookData: (
       id: string,
     ) => Effect.Effect<ArrayBuffer, BookNotFoundError | StorageError | DecodeError>;
-    readonly deleteBook: (id: string) => Effect.Effect<void, StorageError>;
+    readonly deleteBook: (id: string) => Effect.Effect<void, StorageError | DecodeError>;
   }
 >() {}
 
@@ -73,7 +83,8 @@ export function makeBookService(stores: BookServiceStores): BookService["Type"] 
     saveBook: (meta: BookMeta, data: ArrayBuffer) =>
       Effect.tryPromise({
         try: async () => {
-          await set(meta.id, meta, bookStore);
+          const stamped = { ...meta, updatedAt: meta.updatedAt ?? Date.now() };
+          await set(meta.id, stamped, bookStore);
           await set(meta.id, data, bookDataStore);
         },
         catch: (cause) => new StorageError({ operation: "saveBook", cause }),
@@ -81,7 +92,7 @@ export function makeBookService(stores: BookServiceStores): BookService["Type"] 
 
     updateBookMeta: (meta: BookMeta) =>
       Effect.tryPromise({
-        try: () => set(meta.id, meta, bookStore),
+        try: () => set(meta.id, { ...meta, updatedAt: Date.now() }, bookStore),
         catch: (cause) => new StorageError({ operation: "updateBookMeta", cause }),
       }),
 
@@ -96,7 +107,8 @@ export function makeBookService(stores: BookServiceStores): BookService["Type"] 
             allEntries
               .map(([, raw]) => raw)
               .filter(Boolean)
-              .map((raw) => decodeBookMeta(raw)),
+              .map((raw) => decodeBookMeta(raw))
+              .filter((book) => book.deletedAt === undefined),
           catch: (cause) => new DecodeError({ operation: "getBooks", cause }),
         });
       }),
@@ -149,17 +161,23 @@ export function makeBookService(stores: BookServiceStores): BookService["Type"] 
       }),
 
     deleteBook: (id: string) =>
-      Effect.tryPromise({
-        try: async () => {
-          await del(id, bookStore);
-          // Best-effort cleanup of binary data
-          try {
-            await del(id, bookDataStore);
-          } catch {
-            /* ignore */
-          }
-        },
-        catch: (cause) => new StorageError({ operation: "deleteBook", cause }),
+      Effect.gen(function* () {
+        const raw = yield* Effect.tryPromise({
+          try: () => get<unknown>(id, bookStore),
+          catch: (cause) => new StorageError({ operation: "deleteBook.read", cause }),
+        });
+        if (raw) {
+          // Soft-delete: set deletedAt timestamp, keep data for sync
+          const existing = yield* Effect.try({
+            try: () => decodeBookMeta(raw),
+            catch: (cause) => new DecodeError({ operation: "deleteBook.decode", cause }),
+          });
+          yield* Effect.tryPromise({
+            try: () =>
+              set(id, { ...existing, deletedAt: Date.now(), updatedAt: Date.now() }, bookStore),
+            catch: (cause) => new StorageError({ operation: "deleteBook.write", cause }),
+          });
+        }
       }),
   };
 }

@@ -44,6 +44,8 @@ export const SettingsSchema = Schema.Struct({
     Schema.Literal("default", "dracula", "nord", "rose-pine", "tokyo-night", "solarized"),
     { default: () => "default" as const },
   ),
+  /** Timestamp of last settings change. Used for LWW sync. */
+  updatedAt: Schema.optional(Schema.Number),
 });
 
 export type Settings = typeof SettingsSchema.Type;
@@ -84,7 +86,8 @@ const SETTINGS_CHANGED_EVENT = "settings-changed";
 
 export function saveSettings(settings: Settings): void {
   if (typeof window === "undefined") return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  const stamped = { ...settings, updatedAt: Date.now() };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(stamped));
   window.dispatchEvent(new CustomEvent(SETTINGS_CHANGED_EVENT));
 }
 

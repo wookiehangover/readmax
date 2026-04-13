@@ -80,7 +80,7 @@ export async function requireAuth(request: Request): Promise<{ userId: string }>
 /**
  * Extract a single cookie value from a Cookie header string.
  */
-function parseCookieValue(cookieHeader: string, name: string): string | undefined {
+export function parseCookieValue(cookieHeader: string, name: string): string | undefined {
   const match = cookieHeader
     .split(";")
     .map((s) => s.trim())

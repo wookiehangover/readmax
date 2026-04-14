@@ -277,6 +277,109 @@ describe("createNotebookSDK", () => {
     });
   });
 
+  describe("replace after list (Bug 1: index conflation)", () => {
+    it("replaces a paragraph that comes after a bullet list", () => {
+      const { sdk } = setup(doc(p("Before"), bulletList("a", "b", "c"), p("Target"), p("After")));
+      const target = sdk.find("Target")[0];
+      expect(target.type).toBe("paragraph");
+      const result = sdk.replace(target, "Replaced");
+      expect(result).toBe(true);
+      const blocks = sdk.getBlocks();
+      const texts = blocks.map((b) => b.text);
+      expect(texts).toContain("Before");
+      expect(texts).toContain("Replaced");
+      expect(texts).toContain("After");
+      expect(texts).not.toContain("Target");
+    });
+
+    it("replaces a heading that comes after multiple lists", () => {
+      const { sdk } = setup(
+        doc(bulletList("x", "y"), bulletList("a", "b"), heading(2, "Target Heading"), p("End")),
+      );
+      const target = sdk.find("Target Heading")[0];
+      expect(target.type).toBe("heading");
+      const result = sdk.replace(target, "## New Heading");
+      expect(result).toBe(true);
+      const blocks = sdk.getBlocks();
+      const texts = blocks.map((b) => b.text);
+      expect(texts).toContain("New Heading");
+      expect(texts).not.toContain("Target Heading");
+      expect(texts).toContain("End");
+    });
+  });
+
+  describe("listItem operations at any position (Bug 2)", () => {
+    it("replaces the third list item", () => {
+      const { sdk } = setup(doc(bulletList("first", "second", "third", "fourth")));
+      const items = sdk.find({ type: "listItem", text: "third" });
+      expect(items).toHaveLength(1);
+      const result = sdk.replace(items[0], "replaced-third");
+      expect(result).toBe(true);
+      const allItems = sdk.find({ type: "listItem" });
+      const texts = allItems.map((b) => b.text);
+      expect(texts).toEqual(["first", "second", "replaced-third", "fourth"]);
+    });
+
+    it("removes the last list item", () => {
+      const { sdk } = setup(doc(bulletList("keep1", "keep2", "remove-last")));
+      const items = sdk.find({ type: "listItem", text: "remove-last" });
+      const result = sdk.remove(items[0]);
+      expect(result).toBe(true);
+      const remaining = sdk.find({ type: "listItem" });
+      expect(remaining.map((b) => b.text)).toEqual(["keep1", "keep2"]);
+    });
+
+    it("removes the only list item (removes entire list)", () => {
+      const { sdk } = setup(doc(p("Before"), bulletList("only"), p("After")));
+      const items = sdk.find({ type: "listItem", text: "only" });
+      const result = sdk.remove(items[0]);
+      expect(result).toBe(true);
+      const blocks = sdk.getBlocks();
+      expect(blocks.find((b) => b.type === "bulletList")).toBeUndefined();
+      expect(blocks.map((b) => b.text)).toContain("Before");
+      expect(blocks.map((b) => b.text)).toContain("After");
+    });
+  });
+
+  describe("sequential mutations (Bug 3: stale blocks)", () => {
+    it("find → replace → find → replace works correctly", () => {
+      const { sdk } = setup(doc(p("AAA"), p("BBB"), p("CCC")));
+
+      // First mutation
+      const first = sdk.find("AAA")[0];
+      sdk.replace(first, "XXX");
+
+      // Second mutation (must re-find)
+      const second = sdk.find("BBB")[0];
+      sdk.replace(second, "YYY");
+
+      const blocks = sdk.getBlocks();
+      const texts = blocks.map((b) => b.text);
+      expect(texts).toContain("XXX");
+      expect(texts).toContain("YYY");
+      expect(texts).toContain("CCC");
+      expect(texts).not.toContain("AAA");
+      expect(texts).not.toContain("BBB");
+    });
+
+    it("stale block is re-found by text match", () => {
+      const { sdk } = setup(doc(p("First"), p("Target"), p("Last")));
+
+      // Get block reference
+      const target = sdk.find("Target")[0];
+
+      // Mutate the doc (makes target stale)
+      sdk.prepend("# New Title");
+
+      // Using the stale block should still work via re-find
+      const result = sdk.replace(target, "Replaced");
+      expect(result).toBe(true);
+      const blocks = sdk.getBlocks();
+      expect(blocks.map((b) => b.text)).toContain("Replaced");
+      expect(blocks.map((b) => b.text)).not.toContain("Target");
+    });
+  });
+
   describe("boolean return values", () => {
     it("replace returns true on success", () => {
       const { sdk } = setup(doc(p("Hello")));

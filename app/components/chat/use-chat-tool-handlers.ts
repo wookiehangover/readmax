@@ -97,17 +97,23 @@ export function useChatToolHandlers({
         // Get current notebook content, run SDK, and push result
         (async () => {
           try {
-            // Load current notebook content from live editor or IndexedDB
-            const notebook = await AppRuntime.runPromise(
-              Effect.gen(function* () {
-                const svc = yield* AnnotationService;
-                return yield* svc.getNotebook(bookId);
-              }),
-            );
-            const currentContent = notebook?.content ?? {
-              type: "doc" as const,
-              content: [],
-            };
+            // Prefer live editor content over IndexedDB to avoid stale reads
+            const editorCallbacks = notebookEditorCallbackMap.current.get(bookId);
+            let currentContent: import("@tiptap/react").JSONContent;
+            if (editorCallbacks) {
+              currentContent = editorCallbacks.getContent();
+            } else {
+              const notebook = await AppRuntime.runPromise(
+                Effect.gen(function* () {
+                  const svc = yield* AnnotationService;
+                  return yield* svc.getNotebook(bookId);
+                }),
+              );
+              currentContent = notebook?.content ?? {
+                type: "doc" as const,
+                content: [],
+              };
+            }
 
             // Create SDK and execute AI code in sandbox
             const { sdk, getResult, destroy } = createNotebookSDK(currentContent);

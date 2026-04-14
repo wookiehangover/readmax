@@ -203,7 +203,7 @@ function ChatPanelInner({
   onNewSession: () => void;
   onSessionTitleChange: (title: string) => void;
 }) {
-  const { chatContextMap } = useWorkspace();
+  const { chatContextMap, notebookContentChangeMap } = useWorkspace();
   const [showSessionList, setShowSessionList] = useState(false);
 
   // Load notebook markdown for the AI's read_notes tool
@@ -221,6 +221,17 @@ function ChatPanelInner({
       })
       .catch(console.error);
   }, [bookId]);
+
+  // Listen for notebook content changes from the editor (user edits, programmatic updates)
+  useEffect(() => {
+    if (!bookId) return;
+    notebookContentChangeMap.current.set(bookId, (markdown: string) => {
+      setNotebookMarkdown(markdown);
+    });
+    return () => {
+      notebookContentChangeMap.current.delete(bookId);
+    };
+  }, [bookId, notebookContentChangeMap]);
 
   // Refs that stay up-to-date with the reader's current chapter index and visible text
   const currentChapterRef = useRef<number | undefined>(undefined);

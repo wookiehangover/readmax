@@ -175,8 +175,10 @@ describe("createNotebookSDK", () => {
     it("find matches a list item without false positives from concatenated text", () => {
       const { sdk } = setup(doc(bulletList("one", "two", "three")));
       const results = sdk.find("one");
-      expect(results).toHaveLength(1);
+      // Matches both the bulletList (text contains "one") and the listItem "one"
+      expect(results).toHaveLength(2);
       expect(results[0].type).toBe("bulletList");
+      expect(results[1].type).toBe("listItem");
       // Should NOT match on concatenated "onetwothree"
       const noMatch = sdk.find("onetwothree");
       expect(noMatch).toHaveLength(0);
@@ -215,6 +217,89 @@ describe("createNotebookSDK", () => {
       expect(texts).not.toContain("Replace me");
       expect(texts).toContain("Keep");
       expect(texts).toContain("Also keep");
+    });
+  });
+
+  describe("listItem blocks", () => {
+    it("getBlocks emits listItem blocks after their parent list", () => {
+      const { sdk } = setup(doc(bulletList("alpha", "beta", "gamma")));
+      const blocks = sdk.getBlocks();
+      // Should have 1 bulletList + 3 listItems = 4 blocks
+      expect(blocks).toHaveLength(4);
+      expect(blocks[0].type).toBe("bulletList");
+      expect(blocks[1]).toMatchObject({ type: "listItem", text: "alpha", parentIndex: 0 });
+      expect(blocks[2]).toMatchObject({ type: "listItem", text: "beta", parentIndex: 0 });
+      expect(blocks[3]).toMatchObject({ type: "listItem", text: "gamma", parentIndex: 0 });
+    });
+
+    it("find({ type: 'listItem' }) returns individual list items", () => {
+      const { sdk } = setup(doc(p("Intro"), bulletList("one", "two", "three")));
+      const items = sdk.find({ type: "listItem" });
+      expect(items).toHaveLength(3);
+      expect(items[0].text).toBe("one");
+      expect(items[1].text).toBe("two");
+      expect(items[2].text).toBe("three");
+    });
+
+    it("find({ type: 'listItem', text: '...' }) filters list items by text", () => {
+      const { sdk } = setup(doc(bulletList("apple", "banana", "apricot")));
+      const items = sdk.find({ type: "listItem", text: "ap" });
+      expect(items).toHaveLength(2);
+      expect(items[0].text).toBe("apple");
+      expect(items[1].text).toBe("apricot");
+    });
+
+    it("replace on a listItem replaces just that item", () => {
+      const { sdk } = setup(doc(bulletList("first", "second", "third")));
+      const items = sdk.find({ type: "listItem", text: "second" });
+      expect(items).toHaveLength(1);
+      const result = sdk.replace(items[0], "replaced");
+      expect(result).toBe(true);
+      const allItems = sdk.find({ type: "listItem" });
+      const texts = allItems.map((b) => b.text);
+      expect(texts).toContain("first");
+      expect(texts).toContain("replaced");
+      expect(texts).toContain("third");
+      expect(texts).not.toContain("second");
+    });
+
+    it("remove on a listItem removes just that item", () => {
+      const { sdk } = setup(doc(bulletList("keep1", "remove-me", "keep2")));
+      const items = sdk.find({ type: "listItem", text: "remove-me" });
+      expect(items).toHaveLength(1);
+      const result = sdk.remove(items[0]);
+      expect(result).toBe(true);
+      const remaining = sdk.find({ type: "listItem" });
+      const texts = remaining.map((b) => b.text);
+      expect(texts).toContain("keep1");
+      expect(texts).toContain("keep2");
+      expect(texts).not.toContain("remove-me");
+    });
+  });
+
+  describe("boolean return values", () => {
+    it("replace returns true on success", () => {
+      const { sdk } = setup(doc(p("Hello")));
+      const target = sdk.find("Hello")[0];
+      expect(sdk.replace(target, "World")).toBe(true);
+    });
+
+    it("replace returns false when block not found", () => {
+      const { sdk } = setup(doc(p("Hello")));
+      const fakeBlock = { type: "paragraph" as const, text: "Nope", index: 99, _pos: 999 };
+      expect(sdk.replace(fakeBlock, "World")).toBe(false);
+    });
+
+    it("remove returns true on success", () => {
+      const { sdk } = setup(doc(p("Hello"), p("World")));
+      const target = sdk.find("Hello")[0];
+      expect(sdk.remove(target)).toBe(true);
+    });
+
+    it("remove returns false when block not found", () => {
+      const { sdk } = setup(doc(p("Hello")));
+      const fakeBlock = { type: "paragraph" as const, text: "Nope", index: 99, _pos: 999 };
+      expect(sdk.remove(fakeBlock)).toBe(false);
     });
   });
 

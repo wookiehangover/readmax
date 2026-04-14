@@ -28,6 +28,29 @@ function bulletList(...items: string[]): JSONContent {
   };
 }
 
+function orderedList(...items: string[]): JSONContent {
+  return {
+    type: "orderedList",
+    attrs: { start: 1 },
+    content: items.map((item) => ({
+      type: "listItem",
+      content: [p(item)],
+    })),
+  };
+}
+
+function blockquote(...content: JSONContent[]): JSONContent {
+  return { type: "blockquote", content };
+}
+
+function codeBlock(text: string): JSONContent {
+  return {
+    type: "codeBlock",
+    attrs: { language: null },
+    content: [{ type: "text", text }],
+  };
+}
+
 let destroyFn: (() => void) | null = null;
 
 afterEach(() => {
@@ -425,5 +448,726 @@ describe("createNotebookSDK", () => {
       expect(md).toContain("# Title");
       expect(md).toContain("Some text");
     });
+  });
+});
+
+
+// ─── Comprehensive edge-case tests ───────────────────────────────────────────
+
+describe("complex document structures", () => {
+  it("handles multiple lists interspersed with paragraphs and headings", () => {
+    const { sdk } = setup(
+      doc(
+        heading(1, "Title"),
+        p("Intro"),
+        bulletList("a", "b"),
+        p("Middle"),
+        bulletList("c", "d"),
+        heading(2, "End"),
+      ),
+    );
+    const blocks = sdk.getBlocks();
+    const types = blocks.map((b) => b.type);
+    expect(types.filter((t) => t === "bulletList")).toHaveLength(2);
+    expect(types.filter((t) => t === "listItem")).toHaveLength(4);
+    expect(types.filter((t) => t === "paragraph")).toHaveLength(2);
+    expect(types.filter((t) => t === "heading")).toHaveLength(2);
+  });
+
+  it("handles ordered lists", () => {
+    const { sdk } = setup(doc(orderedList("first", "second", "third")));
+    const blocks = sdk.getBlocks();
+    expect(blocks[0].type).toBe("orderedList");
+    expect(blocks[1]).toMatchObject({ type: "listItem", text: "first" });
+    expect(blocks[2]).toMatchObject({ type: "listItem", text: "second" });
+    expect(blocks[3]).toMatchObject({ type: "listItem", text: "third" });
+  });
+
+  it("handles blockquote containing text", () => {
+    const { sdk } = setup(doc(blockquote(p("Quoted text")), p("Normal")));
+    const blocks = sdk.getBlocks();
+    expect(blocks[0].type).toBe("blockquote");
+    expect(blocks[0].text).toContain("Quoted text");
+  });
+
+  it("handles mixed inline formatting", () => {
+    const { sdk } = setup(
+      doc({
+        type: "paragraph",
+        content: [
+          { type: "text", text: "normal " },
+          { type: "text", marks: [{ type: "bold" }], text: "bold" },
+          { type: "text", text: " and " },
+          { type: "text", marks: [{ type: "italic" }], text: "italic" },
+        ],
+      }),
+    );
+    const blocks = sdk.getBlocks();
+    expect(blocks[0].text).toContain("bold");
+    expect(blocks[0].text).toContain("italic");
+  });
+
+  it("handles code blocks", () => {
+    const { sdk } = setup(doc(p("Before"), codeBlock("const x = 1;"), p("After")));
+    const blocks = sdk.getBlocks();
+    const cb = blocks.find((b) => b.type === "codeBlock");
+    expect(cb).toBeDefined();
+    expect(cb!.text).toBe("const x = 1;");
+  });
+
+  it("handles large document with 20+ blocks", () => {
+    const nodes: JSONContent[] = [];
+    for (let i = 0; i < 25; i++) {
+      nodes.push(p(`Paragraph ${i}`));
+    }
+    const { sdk } = setup(doc(...nodes));
+    const blocks = sdk.getBlocks();
+    expect(blocks).toHaveLength(25);
+    expect(blocks[0].text).toBe("Paragraph 0");
+    expect(blocks[24].text).toBe("Paragraph 24");
+  });
+
+  it("replace at various positions in a large document", () => {
+    const nodes: JSONContent[] = [];
+    for (let i = 0; i < 20; i++) {
+      nodes.push(p(`Item ${i}`));
+    }
+    const { sdk } = setup(doc(...nodes));
+
+    // Replace first
+    let target = sdk.find("Item 0")[0];
+    sdk.replace(target, "Replaced first");
+
+    // Replace middle
+    target = sdk.find("Item 10")[0];
+    sdk.replace(target, "Replaced middle");
+
+    // Replace last
+    target = sdk.find("Item 19")[0];
+    sdk.replace(target, "Replaced last");
+
+    const texts = sdk.getBlocks().map((b) => b.text);
+    expect(texts).toContain("Replaced first");
+    expect(texts).toContain("Replaced middle");
+    expect(texts).toContain("Replaced last");
+    expect(texts).not.toContain("Item 0");
+    expect(texts).not.toContain("Item 10");
+    expect(texts).not.toContain("Item 19");
+    // Others intact
+    expect(texts).toContain("Item 5");
+    expect(texts).toContain("Item 15");
+  });
+});
+
+describe("replace edge cases", () => {
+  it("replaces a block with content that produces multiple blocks", () => {
+    const { sdk } = setup(doc(p("Before"), p("Target"), p("After")));
+    const target = sdk.find("Target")[0];
+    sdk.replace(target, "## Heading\n\nParagraph\n\n- item");
+    const blocks = sdk.getBlocks();
+    const types = blocks.map((b) => b.type);
+    expect(types).toContain("heading");
+    expect(types).toContain("bulletList");
+    expect(blocks.map((b) => b.text)).toContain("Before");
+    expect(blocks.map((b) => b.text)).toContain("After");
+    expect(blocks.map((b) => b.text)).not.toContain("Target");
+  });
+
+  it("replaces a heading with a paragraph (type change)", () => {
+    const { sdk } = setup(doc(heading(2, "Old Heading"), p("Text")));
+    const target = sdk.find({ type: "heading" })[0];
+    sdk.replace(target, "Just a paragraph now");
+    const blocks = sdk.getBlocks();
+    expect(blocks.every((b) => b.type !== "heading")).toBe(true);
+    expect(blocks[0].type).toBe("paragraph");
+    expect(blocks[0].text).toBe("Just a paragraph now");
+  });
+
+  it("replaces a paragraph with a list", () => {
+    const { sdk } = setup(doc(p("Before"), p("Target"), p("After")));
+    const target = sdk.find("Target")[0];
+    sdk.replace(target, "- one\n- two\n- three");
+    const blocks = sdk.getBlocks();
+    expect(blocks.some((b) => b.type === "bulletList")).toBe(true);
+    expect(blocks.map((b) => b.text)).not.toContain("Target");
+  });
+
+  it("replaces a list with a single paragraph", () => {
+    const { sdk } = setup(doc(p("Before"), bulletList("a", "b", "c"), p("After")));
+    const list = sdk.find({ type: "bulletList" })[0];
+    sdk.replace(list, "Just text now");
+    const blocks = sdk.getBlocks();
+    expect(blocks.every((b) => b.type !== "bulletList")).toBe(true);
+    expect(blocks.map((b) => b.text)).toContain("Just text now");
+    expect(blocks.map((b) => b.text)).toContain("Before");
+    expect(blocks.map((b) => b.text)).toContain("After");
+  });
+
+  it("replaces the FIRST block in the document", () => {
+    const { sdk } = setup(doc(p("First"), p("Second"), p("Third")));
+    const target = sdk.find("First")[0];
+    sdk.replace(target, "Replaced");
+    const texts = sdk.getBlocks().map((b) => b.text);
+    expect(texts[0]).toBe("Replaced");
+    expect(texts).toContain("Second");
+    expect(texts).toContain("Third");
+  });
+
+  it("replaces the LAST block in the document", () => {
+    const { sdk } = setup(doc(p("First"), p("Second"), p("Last")));
+    const target = sdk.find("Last")[0];
+    sdk.replace(target, "New Last");
+    const texts = sdk.getBlocks().map((b) => b.text);
+    expect(texts[texts.length - 1]).toBe("New Last");
+    expect(texts).toContain("First");
+  });
+
+  it("replaces a block immediately before a list", () => {
+    const { sdk } = setup(doc(p("Before list"), bulletList("a", "b"), p("After")));
+    const target = sdk.find("Before list")[0];
+    sdk.replace(target, "Changed");
+    const blocks = sdk.getBlocks();
+    expect(blocks.map((b) => b.text)).toContain("Changed");
+    expect(blocks.some((b) => b.type === "bulletList")).toBe(true);
+  });
+
+  it("replaces a block immediately after a list", () => {
+    const { sdk } = setup(doc(p("Before"), bulletList("a", "b"), p("After list")));
+    const target = sdk.find("After list")[0];
+    sdk.replace(target, "Changed");
+    const blocks = sdk.getBlocks();
+    expect(blocks.map((b) => b.text)).toContain("Changed");
+    expect(blocks.some((b) => b.type === "bulletList")).toBe(true);
+  });
+
+  it("sequential replaces: replace 3 blocks one after another", () => {
+    const { sdk } = setup(doc(p("A"), p("B"), p("C"), p("D"), p("E")));
+
+    let target = sdk.find("A")[0];
+    sdk.replace(target, "X");
+
+    target = sdk.find("C")[0];
+    sdk.replace(target, "Y");
+
+    target = sdk.find("E")[0];
+    sdk.replace(target, "Z");
+
+    const texts = sdk.getBlocks().map((b) => b.text);
+    expect(texts).toEqual(["X", "B", "Y", "D", "Z"]);
+  });
+
+  it("replace with empty string produces an empty paragraph", () => {
+    const { sdk } = setup(doc(p("Before"), p("Target"), p("After")));
+    const target = sdk.find("Target")[0];
+    sdk.replace(target, "");
+    const blocks = sdk.getBlocks();
+    // Should still have 3 blocks (empty paragraph replaces Target)
+    expect(blocks.map((b) => b.text)).not.toContain("Target");
+    expect(blocks.map((b) => b.text)).toContain("Before");
+    expect(blocks.map((b) => b.text)).toContain("After");
+  });
+
+  it("replace a block when same text appears in multiple blocks", () => {
+    const { sdk } = setup(doc(p("Duplicate"), p("Middle"), p("Duplicate")));
+    // find returns both, replace the first one
+    const results = sdk.find("Duplicate");
+    expect(results).toHaveLength(2);
+    sdk.replace(results[0], "Replaced first");
+    const texts = sdk.getBlocks().map((b) => b.text);
+    expect(texts).toContain("Replaced first");
+    // Second "Duplicate" should still exist
+    expect(texts).toContain("Duplicate");
+    expect(texts).toContain("Middle");
+  });
+});
+
+describe("remove edge cases", () => {
+  it("removes the first block", () => {
+    const { sdk } = setup(doc(p("First"), p("Second"), p("Third")));
+    const target = sdk.find("First")[0];
+    sdk.remove(target);
+    const texts = sdk.getBlocks().map((b) => b.text);
+    expect(texts).toEqual(["Second", "Third"]);
+  });
+
+  it("removes the last block", () => {
+    const { sdk } = setup(doc(p("First"), p("Second"), p("Third")));
+    const target = sdk.find("Third")[0];
+    sdk.remove(target);
+    const texts = sdk.getBlocks().map((b) => b.text);
+    expect(texts).toEqual(["First", "Second"]);
+  });
+
+  it("removes a block between two lists", () => {
+    const { sdk } = setup(
+      doc(bulletList("a", "b"), p("Between"), bulletList("c", "d")),
+    );
+    const target = sdk.find("Between")[0];
+    sdk.remove(target);
+    const blocks = sdk.getBlocks();
+    const lists = blocks.filter((b) => b.type === "bulletList");
+    expect(lists).toHaveLength(2);
+    expect(blocks.map((b) => b.text)).not.toContain("Between");
+  });
+
+  it("removes all blocks one by one", () => {
+    const { sdk } = setup(doc(p("A"), p("B"), p("C")));
+
+    let target = sdk.find("A")[0];
+    sdk.remove(target);
+
+    target = sdk.find("B")[0];
+    sdk.remove(target);
+
+    target = sdk.find("C")[0];
+    sdk.remove(target);
+
+    const blocks = sdk.getBlocks();
+    // After removing all, tiptap should have at least an empty paragraph
+    expect(blocks.length).toBeLessThanOrEqual(1);
+  });
+
+  it("removes a listItem when there are only 2 items (list survives)", () => {
+    const { sdk } = setup(doc(bulletList("keep", "remove")));
+    const target = sdk.find({ type: "listItem", text: "remove" })[0];
+    sdk.remove(target);
+    const blocks = sdk.getBlocks();
+    const list = blocks.find((b) => b.type === "bulletList");
+    expect(list).toBeDefined();
+    const items = blocks.filter((b) => b.type === "listItem");
+    expect(items).toHaveLength(1);
+    expect(items[0].text).toBe("keep");
+  });
+
+  it("removes from a large document at the end", () => {
+    const nodes: JSONContent[] = [];
+    for (let i = 0; i < 20; i++) {
+      nodes.push(p(`P${i}`));
+    }
+    const { sdk } = setup(doc(...nodes));
+    const target = sdk.find("P19")[0];
+    sdk.remove(target);
+    const blocks = sdk.getBlocks();
+    expect(blocks).toHaveLength(19);
+    expect(blocks.map((b) => b.text)).not.toContain("P19");
+  });
+
+  it("insertAfter in large document", () => {
+    const nodes: JSONContent[] = [];
+    for (let i = 0; i < 20; i++) {
+      nodes.push(p(`P${i}`));
+    }
+    const { sdk } = setup(doc(...nodes));
+    const target = sdk.find("P10")[0];
+    sdk.insertAfter(target, "Inserted");
+    const blocks = sdk.getBlocks();
+    expect(blocks).toHaveLength(21);
+    const texts = blocks.map((b) => b.text);
+    const insertedIdx = texts.indexOf("Inserted");
+    const p10Idx = texts.indexOf("P10");
+    expect(insertedIdx).toBe(p10Idx + 1);
+  });
+});
+
+describe("listItem operations", () => {
+  it("replaces listItem with text containing markdown bold", () => {
+    const { sdk } = setup(doc(bulletList("plain", "target", "other")));
+    const target = sdk.find({ type: "listItem", text: "target" })[0];
+    sdk.replace(target, "**bold text**");
+    const items = sdk.find({ type: "listItem" });
+    // The replaced item should contain "bold text"
+    expect(items.some((i) => i.text.includes("bold text"))).toBe(true);
+    expect(items.map((i) => i.text)).toContain("plain");
+    expect(items.map((i) => i.text)).toContain("other");
+  });
+
+  it("replaces first item in a 5-item list", () => {
+    const { sdk } = setup(doc(bulletList("one", "two", "three", "four", "five")));
+    const target = sdk.find({ type: "listItem", text: "one" })[0];
+    sdk.replace(target, "replaced");
+    const items = sdk.find({ type: "listItem" });
+    expect(items.map((i) => i.text)).toEqual(["replaced", "two", "three", "four", "five"]);
+  });
+
+  it("replaces middle item in a 5-item list", () => {
+    const { sdk } = setup(doc(bulletList("one", "two", "three", "four", "five")));
+    const target = sdk.find({ type: "listItem", text: "three" })[0];
+    sdk.replace(target, "replaced");
+    const items = sdk.find({ type: "listItem" });
+    expect(items.map((i) => i.text)).toEqual(["one", "two", "replaced", "four", "five"]);
+  });
+
+  it("replaces last item in a 5-item list", () => {
+    const { sdk } = setup(doc(bulletList("one", "two", "three", "four", "five")));
+    const target = sdk.find({ type: "listItem", text: "five" })[0];
+    sdk.replace(target, "replaced");
+    const items = sdk.find({ type: "listItem" });
+    expect(items.map((i) => i.text)).toEqual(["one", "two", "three", "four", "replaced"]);
+  });
+
+  it("removes first item in a 5-item list", () => {
+    const { sdk } = setup(doc(bulletList("one", "two", "three", "four", "five")));
+    const target = sdk.find({ type: "listItem", text: "one" })[0];
+    sdk.remove(target);
+    const items = sdk.find({ type: "listItem" });
+    expect(items.map((i) => i.text)).toEqual(["two", "three", "four", "five"]);
+  });
+
+  it("removes middle item in a 5-item list", () => {
+    const { sdk } = setup(doc(bulletList("one", "two", "three", "four", "five")));
+    const target = sdk.find({ type: "listItem", text: "three" })[0];
+    sdk.remove(target);
+    const items = sdk.find({ type: "listItem" });
+    expect(items.map((i) => i.text)).toEqual(["one", "two", "four", "five"]);
+  });
+
+  it("removes last item in a 5-item list", () => {
+    const { sdk } = setup(doc(bulletList("one", "two", "three", "four", "five")));
+    const target = sdk.find({ type: "listItem", text: "five" })[0];
+    sdk.remove(target);
+    const items = sdk.find({ type: "listItem" });
+    expect(items.map((i) => i.text)).toEqual(["one", "two", "three", "four"]);
+  });
+
+  it("insertAfter a listItem adds a new item to the list", () => {
+    const { sdk } = setup(doc(bulletList("first", "second", "third")));
+    const target = sdk.find({ type: "listItem", text: "second" })[0];
+    sdk.insertAfter(target, "inserted");
+    const items = sdk.find({ type: "listItem" });
+    expect(items.map((i) => i.text)).toEqual(["first", "second", "inserted", "third"]);
+  });
+
+  it("operations on ordered list items", () => {
+    const { sdk } = setup(doc(orderedList("alpha", "beta", "gamma")));
+    const target = sdk.find({ type: "listItem", text: "beta" })[0];
+    sdk.replace(target, "replaced");
+    const items = sdk.find({ type: "listItem" });
+    expect(items.map((i) => i.text)).toEqual(["alpha", "replaced", "gamma"]);
+    // List type should still be orderedList
+    const blocks = sdk.getBlocks();
+    expect(blocks[0].type).toBe("orderedList");
+  });
+
+  it("list with single item — replace it", () => {
+    const { sdk } = setup(doc(bulletList("only")));
+    const target = sdk.find({ type: "listItem", text: "only" })[0];
+    sdk.replace(target, "replaced");
+    const items = sdk.find({ type: "listItem" });
+    expect(items).toHaveLength(1);
+    expect(items[0].text).toBe("replaced");
+  });
+
+  it("list with single item — remove it removes the list", () => {
+    const { sdk } = setup(doc(p("Before"), bulletList("only"), p("After")));
+    const target = sdk.find({ type: "listItem", text: "only" })[0];
+    sdk.remove(target);
+    const blocks = sdk.getBlocks();
+    expect(blocks.every((b) => b.type !== "bulletList")).toBe(true);
+    expect(blocks.every((b) => b.type !== "listItem")).toBe(true);
+  });
+
+  it("two separate lists — target items in the second list", () => {
+    const { sdk } = setup(
+      doc(bulletList("a1", "a2"), p("separator"), bulletList("b1", "b2")),
+    );
+    // Find b1 which is in the second list
+    const items = sdk.find({ type: "listItem", text: "b1" });
+    expect(items).toHaveLength(1);
+    sdk.replace(items[0], "replaced-b1");
+    const allItems = sdk.find({ type: "listItem" });
+    expect(allItems.map((i) => i.text)).toContain("a1");
+    expect(allItems.map((i) => i.text)).toContain("a2");
+    expect(allItems.map((i) => i.text)).toContain("replaced-b1");
+    expect(allItems.map((i) => i.text)).toContain("b2");
+  });
+
+  it("remove from ordered list", () => {
+    const { sdk } = setup(doc(orderedList("one", "two", "three")));
+    const target = sdk.find({ type: "listItem", text: "two" })[0];
+    sdk.remove(target);
+    const items = sdk.find({ type: "listItem" });
+    expect(items.map((i) => i.text)).toEqual(["one", "three"]);
+  });
+});
+
+describe("find edge cases", () => {
+  it("find with empty string matches all blocks with text", () => {
+    const { sdk } = setup(doc(p("Hello"), p("World")));
+    const results = sdk.find("");
+    // Empty string is included in every string, so all blocks should match
+    expect(results.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("find in a doc with no content returns empty", () => {
+    const { sdk } = setup({ type: "doc", content: [] });
+    const results = sdk.find("anything");
+    expect(results).toHaveLength(0);
+  });
+
+  it("find listItem by partial text match", () => {
+    const { sdk } = setup(doc(bulletList("apple pie", "banana split", "apple sauce")));
+    const results = sdk.find({ type: "listItem", text: "apple" });
+    expect(results).toHaveLength(2);
+    expect(results[0].text).toBe("apple pie");
+    expect(results[1].text).toBe("apple sauce");
+  });
+
+  it("find text that exists in both a paragraph and a list item", () => {
+    const { sdk } = setup(doc(p("shared text"), bulletList("shared text", "other")));
+    const results = sdk.find("shared text");
+    // Should match: the paragraph, the bulletList (contains "shared text"), and the listItem
+    expect(results.length).toBeGreaterThanOrEqual(2);
+    const types = results.map((r) => r.type);
+    expect(types).toContain("paragraph");
+    expect(types).toContain("listItem");
+  });
+
+  it("find heading by type and text when multiple heading levels exist", () => {
+    const { sdk } = setup(
+      doc(heading(1, "Main Title"), heading(2, "Subtitle"), heading(1, "Another Title")),
+    );
+    const h1s = sdk.find({ type: "heading", text: "Title" });
+    // "Main Title" and "Another Title" both contain "Title"
+    expect(h1s).toHaveLength(2);
+  });
+
+  it("find with regex matching special characters", () => {
+    const { sdk } = setup(doc(p("Price: $10.00"), p("Normal text"), p("Rate: $5.50")));
+    const results = sdk.find({ text: /\$[0-9]+\.[0-9]+/ });
+    expect(results).toHaveLength(2);
+  });
+
+  it("find with regex anchors", () => {
+    const { sdk } = setup(doc(p("Hello world"), p("Hello"), p("world Hello")));
+    const results = sdk.find({ text: /^Hello$/ });
+    expect(results).toHaveLength(1);
+    expect(results[0].text).toBe("Hello");
+  });
+
+  it("find by type only returns all blocks of that type", () => {
+    const { sdk } = setup(
+      doc(p("p1"), heading(1, "h1"), p("p2"), heading(2, "h2"), p("p3")),
+    );
+    const paragraphs = sdk.find({ type: "paragraph" });
+    expect(paragraphs).toHaveLength(3);
+    const headings = sdk.find({ type: "heading" });
+    expect(headings).toHaveLength(2);
+  });
+});
+
+describe("markdown round-trip", () => {
+  it("setContent with complex markdown preserves structure", () => {
+    const { sdk } = setup(doc(p("Old")));
+    sdk.setContent(
+      "# Title\n\n## Section 1\n\nA paragraph.\n\n- item 1\n- item 2\n\n## Section 2\n\nAnother paragraph.",
+    );
+    const blocks = sdk.getBlocks();
+    const types = blocks.map((b) => b.type);
+    expect(types).toContain("heading");
+    expect(types).toContain("paragraph");
+    expect(types).toContain("bulletList");
+    expect(blocks.find((b) => b.text === "Title")).toBeDefined();
+  });
+
+  it("getMarkdown after mutations preserves structure", () => {
+    const { sdk } = setup(doc(heading(1, "Title"), p("Original")));
+    sdk.append("## Added Section\n\nAdded text");
+    const md = sdk.getMarkdown();
+    expect(md).toContain("# Title");
+    expect(md).toContain("Original");
+    expect(md).toContain("## Added Section");
+    expect(md).toContain("Added text");
+  });
+
+  it("setContent with ordered list", () => {
+    const { sdk } = setup(doc(p("Old")));
+    sdk.setContent("1. First\n2. Second\n3. Third");
+    const blocks = sdk.getBlocks();
+    expect(blocks.some((b) => b.type === "orderedList")).toBe(true);
+    const items = blocks.filter((b) => b.type === "listItem");
+    expect(items).toHaveLength(3);
+  });
+
+  it("setContent then getMarkdown round-trips correctly", () => {
+    const { sdk } = setup(doc(p("Old")));
+    const input = "# Heading\n\nParagraph text\n\n- bullet 1\n- bullet 2";
+    sdk.setContent(input);
+    const md = sdk.getMarkdown();
+    expect(md).toContain("# Heading");
+    expect(md).toContain("Paragraph text");
+    expect(md).toContain("bullet 1");
+    expect(md).toContain("bullet 2");
+  });
+
+  it("setContent with code block", () => {
+    const { sdk } = setup(doc(p("Old")));
+    sdk.setContent("```\nconst x = 1;\n```");
+    const blocks = sdk.getBlocks();
+    expect(blocks.some((b) => b.type === "codeBlock")).toBe(true);
+  });
+
+  it("setContent with blockquote", () => {
+    const { sdk } = setup(doc(p("Old")));
+    sdk.setContent("> This is quoted");
+    const blocks = sdk.getBlocks();
+    expect(blocks.some((b) => b.type === "blockquote")).toBe(true);
+  });
+
+  it("append preserves existing content", () => {
+    const { sdk } = setup(doc(heading(1, "Title"), p("Existing")));
+    sdk.append("## New Section");
+    sdk.append("More content");
+    const md = sdk.getMarkdown();
+    expect(md).toContain("# Title");
+    expect(md).toContain("Existing");
+    expect(md).toContain("## New Section");
+    expect(md).toContain("More content");
+  });
+});
+
+describe("sequential mutation scenarios (simulating AI usage)", () => {
+  it("read → find section → replace with reorganized content → verify", () => {
+    const { sdk } = setup(
+      doc(
+        heading(1, "Notes"),
+        heading(2, "Section A"),
+        p("Content A"),
+        heading(2, "Section B"),
+        p("Content B"),
+      ),
+    );
+
+    // Find Section A heading and replace with reorganized content
+    const sectionA = sdk.find({ type: "heading", text: "Section A" })[0];
+    sdk.replace(sectionA, "## Reorganized A");
+
+    // Find old content and replace
+    const contentA = sdk.find("Content A")[0];
+    sdk.replace(contentA, "New content for section A with more detail");
+
+    const blocks = sdk.getBlocks();
+    expect(blocks.map((b) => b.text)).toContain("Reorganized A");
+    expect(blocks.map((b) => b.text)).toContain("New content for section A with more detail");
+    expect(blocks.map((b) => b.text)).toContain("Section B");
+    expect(blocks.map((b) => b.text)).toContain("Content B");
+  });
+
+  it("find all list items → remove specific ones → add new ones → verify order", () => {
+    const { sdk } = setup(doc(bulletList("todo1", "done1", "todo2", "done2", "todo3")));
+
+    // Remove "done" items
+    let items = sdk.find({ type: "listItem", text: "done1" });
+    sdk.remove(items[0]);
+
+    items = sdk.find({ type: "listItem", text: "done2" });
+    sdk.remove(items[0]);
+
+    // Add a new item after todo2
+    const todo2 = sdk.find({ type: "listItem", text: "todo2" })[0];
+    sdk.insertAfter(todo2, "new-todo");
+
+    const finalItems = sdk.find({ type: "listItem" });
+    const texts = finalItems.map((i) => i.text);
+    expect(texts).toContain("todo1");
+    expect(texts).toContain("todo2");
+    expect(texts).toContain("todo3");
+    expect(texts).toContain("new-todo");
+    expect(texts).not.toContain("done1");
+    expect(texts).not.toContain("done2");
+  });
+
+  it("find heading → insertAfter with new section content → verify", () => {
+    const { sdk } = setup(
+      doc(heading(1, "Title"), heading(2, "Existing Section"), p("Existing content")),
+    );
+
+    const heading2 = sdk.find({ type: "heading", text: "Existing Section" })[0];
+    sdk.insertAfter(heading2, "Added after heading");
+
+    const blocks = sdk.getBlocks();
+    const texts = blocks.map((b) => b.text);
+    const existingIdx = texts.indexOf("Existing Section");
+    const insertedIdx = texts.indexOf("Added after heading");
+    expect(insertedIdx).toBe(existingIdx + 1);
+  });
+
+  it("setContent with full markdown → surgical edits → verify", () => {
+    const { sdk } = setup(doc(p("placeholder")));
+
+    // First: set entire content
+    sdk.setContent("# Project\n\n## Status\n\nAll good\n\n## TODO\n\n- task 1\n- task 2");
+
+    // Then: surgical edit - replace status
+    const status = sdk.find("All good")[0];
+    sdk.replace(status, "Needs review");
+
+    // Verify both the setContent and surgical edit worked
+    const blocks = sdk.getBlocks();
+    expect(blocks.map((b) => b.text)).toContain("Project");
+    expect(blocks.map((b) => b.text)).toContain("Needs review");
+    expect(blocks.map((b) => b.text)).not.toContain("All good");
+    expect(blocks.some((b) => b.type === "bulletList")).toBe(true);
+  });
+
+  it("multiple appends in sequence", () => {
+    const { sdk } = setup(doc(heading(1, "Log")));
+
+    sdk.append("Entry 1");
+    sdk.append("Entry 2");
+    sdk.append("Entry 3");
+
+    const blocks = sdk.getBlocks();
+    const texts = blocks.map((b) => b.text);
+    expect(texts).toContain("Log");
+    expect(texts).toContain("Entry 1");
+    expect(texts).toContain("Entry 2");
+    expect(texts).toContain("Entry 3");
+    // Verify order
+    expect(texts.indexOf("Entry 1")).toBeLessThan(texts.indexOf("Entry 2"));
+    expect(texts.indexOf("Entry 2")).toBeLessThan(texts.indexOf("Entry 3"));
+  });
+
+  it("insertBefore on a listItem adds item within the list", () => {
+    const { sdk } = setup(doc(bulletList("first", "second", "third")));
+    const target = sdk.find({ type: "listItem", text: "second" })[0];
+    sdk.insertBefore(target, "inserted");
+    const items = sdk.find({ type: "listItem" });
+    expect(items.map((i) => i.text)).toEqual(["first", "inserted", "second", "third"]);
+  });
+
+  it("replace then insertAfter on the replacement", () => {
+    const { sdk } = setup(doc(p("A"), p("B"), p("C")));
+
+    const target = sdk.find("B")[0];
+    sdk.replace(target, "B-replaced");
+
+    const replaced = sdk.find("B-replaced")[0];
+    sdk.insertAfter(replaced, "B-inserted");
+
+    const texts = sdk.getBlocks().map((b) => b.text);
+    expect(texts).toEqual(["A", "B-replaced", "B-inserted", "C"]);
+  });
+
+  it("complex workflow: setContent → find → remove → append → verify", () => {
+    const { sdk } = setup(doc(p("placeholder")));
+
+    sdk.setContent("# Doc\n\n- keep\n- remove-me\n- also-keep\n\nFooter");
+
+    // Remove a list item
+    const removeTarget = sdk.find({ type: "listItem", text: "remove-me" })[0];
+    sdk.remove(removeTarget);
+
+    // Append new content
+    sdk.append("## Appendix\n\nExtra info");
+
+    const blocks = sdk.getBlocks();
+    const texts = blocks.map((b) => b.text);
+    expect(texts).toContain("Doc");
+    expect(texts).not.toContain("remove-me");
+    expect(texts).toContain("Extra info");
+
+    const items = sdk.find({ type: "listItem" });
+    expect(items.map((i) => i.text)).toContain("keep");
+    expect(items.map((i) => i.text)).toContain("also-keep");
   });
 });

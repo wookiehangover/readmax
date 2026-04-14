@@ -8,6 +8,8 @@ export interface NotebookEditorCallbacks {
   appendContent: (nodes: JSONContent[]) => void;
   setContent: (content: JSONContent) => void;
   getContent: () => JSONContent;
+  getTopLevelNodeCount: () => number;
+  replaceContentFrom: (fromIndex: number, nodes: JSONContent[]) => void;
 }
 
 interface WorkspaceContextValue {

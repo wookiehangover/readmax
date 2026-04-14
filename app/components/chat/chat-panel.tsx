@@ -22,6 +22,7 @@ import {
 import { ChatMessage } from "./chat-message";
 import { ChatEmptyState, SuggestedPrompts } from "./chat-empty-state";
 import { useChatToolHandlers } from "./use-chat-tool-handlers";
+import { useStreamingAppend } from "./use-streaming-append";
 import { ChatInput } from "./chat-input";
 import { SessionMenuButton, ChatSessionList, EditableTitle } from "./chat-session-menu";
 
@@ -203,7 +204,7 @@ function ChatPanelInner({
   onNewSession: () => void;
   onSessionTitleChange: (title: string) => void;
 }) {
-  const { chatContextMap, notebookContentChangeMap } = useWorkspace();
+  const { chatContextMap, notebookContentChangeMap, notebookEditorCallbackMap } = useWorkspace();
   const [showSessionList, setShowSessionList] = useState(false);
 
   // Load notebook markdown for the AI's read_notes tool
@@ -278,12 +279,16 @@ function ChatPanelInner({
     ).catch(console.error);
   }, [bookId, activeSessionId]);
 
+  // Shared ref so streaming hook can tell onToolCall that content was already inserted
+  const streamedToolCallIdRef = useRef<string | null>(null);
+
   const { onToolCall, onFinish: onToolFinish } = useChatToolHandlers({
     bookId,
     bookFormat,
     bookDataRef,
     persistMessages,
     setNotebookMarkdown,
+    streamedToolCallIdRef,
   });
 
   // Track whether title generation has already been triggered for this session
@@ -356,6 +361,15 @@ function ChatPanelInner({
 
   // Keep messagesRef in sync
   messagesRef.current = messages;
+
+  // Stream append_to_notes content to the notebook in real-time as tokens arrive
+  useStreamingAppend({
+    messages,
+    bookId,
+    status,
+    notebookEditorCallbackMap,
+    streamedToolCallIdRef,
+  });
 
   const isLoading = status === "streaming" || status === "submitted";
 

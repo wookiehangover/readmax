@@ -14,6 +14,13 @@ export interface TiptapEditorHandle {
   appendContent: (nodes: JSONContent[]) => void;
   setContent: (content: JSONContent) => void;
   getContent: () => JSONContent;
+  /** Returns the current number of top-level nodes in the document. */
+  getTopLevelNodeCount: () => number;
+  /**
+   * Replace content from a given top-level node index to end of document.
+   * Used for streaming preview: truncate to `fromIndex` then append `nodes`.
+   */
+  replaceContentFrom: (fromIndex: number, nodes: JSONContent[]) => void;
 }
 
 interface TiptapEditorProps {
@@ -155,6 +162,22 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
       getContent() {
         if (!editor) return { type: "doc", content: [] };
         return editor.getJSON();
+      },
+      getTopLevelNodeCount() {
+        if (!editor) return 0;
+        return editor.state.doc.childCount;
+      },
+      replaceContentFrom(fromIndex: number, nodes: JSONContent[]) {
+        if (!editor) return;
+        const doc = editor.state.doc;
+        // Find the position at the start of the node at fromIndex
+        let pos = 0;
+        for (let i = 0; i < Math.min(fromIndex, doc.childCount); i++) {
+          pos += doc.child(i).nodeSize;
+        }
+        // Delete from pos to end, then insert new nodes
+        const endPos = doc.content.size;
+        editor.chain().deleteRange({ from: pos, to: endPos }).insertContentAt(pos, nodes).run();
       },
     }),
     [editor],

@@ -119,6 +119,12 @@ export function WorkspaceNotebook({
       getContent: () => {
         return editorRef.current?.getContent() ?? { type: "doc", content: [] };
       },
+      getTopLevelNodeCount: () => {
+        return editorRef.current?.getTopLevelNodeCount() ?? 0;
+      },
+      replaceContentFrom: (fromIndex, nodes) => {
+        editorRef.current?.replaceContentFrom(fromIndex, nodes);
+      },
     });
     return () => {
       notebookEditorCallbackMap.current.delete(bookId);

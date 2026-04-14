@@ -15,6 +15,8 @@ interface UseChatToolHandlersOptions {
   bookDataRef: React.RefObject<ArrayBuffer | null>;
   persistMessages: () => void;
   setNotebookMarkdown: React.Dispatch<React.SetStateAction<string>>;
+  /** Set by useStreamingAppend when streaming already inserted append_to_notes content */
+  streamedToolCallIdRef?: React.MutableRefObject<string | null>;
 }
 
 export function useChatToolHandlers({
@@ -23,6 +25,7 @@ export function useChatToolHandlers({
   bookDataRef,
   persistMessages,
   setNotebookMarkdown,
+  streamedToolCallIdRef,
 }: UseChatToolHandlersOptions) {
   const {
     waitForNavForBook,
@@ -39,6 +42,20 @@ export function useChatToolHandlers({
       if (toolCall.toolName === "append_to_notes") {
         const text = typeof args?.text === "string" ? args.text : undefined;
         if (!text || !bookId) return;
+
+        const toolCallId = (toolCall as any).toolCallId as string | undefined;
+
+        // If streaming already inserted this content, just update markdown state
+        // (the streaming hook already did replaceContentFrom with the final text)
+        if (
+          streamedToolCallIdRef?.current &&
+          toolCallId &&
+          streamedToolCallIdRef.current === toolCallId
+        ) {
+          streamedToolCallIdRef.current = null;
+          setNotebookMarkdown((prev) => prev + "\n" + text);
+          return;
+        }
 
         const parsed = markdownToTiptapJson(text);
         const newNodes = parsed.content ?? [];

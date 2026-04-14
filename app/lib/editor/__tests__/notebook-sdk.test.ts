@@ -28,6 +28,32 @@ function bulletList(...items: string[]): JSONContent {
   };
 }
 
+/** Create a listItem with text and a nested bulletList */
+function listItemWithNested(text: string, ...subItems: string[]): JSONContent {
+  return {
+    type: "listItem",
+    content: [
+      p(text),
+      {
+        type: "bulletList",
+        content: subItems.map((sub) => ({
+          type: "listItem",
+          content: [p(sub)],
+        })),
+      },
+    ],
+  };
+}
+
+/** Create a bulletList with arbitrary listItem nodes (supports nesting) */
+function nestedBulletList(...items: JSONContent[]): JSONContent {
+  return { type: "bulletList", content: items };
+}
+
+function simpleListItem(text: string): JSONContent {
+  return { type: "listItem", content: [p(text)] };
+}
+
 function orderedList(...items: string[]): JSONContent {
   return {
     type: "orderedList",
@@ -451,7 +477,6 @@ describe("createNotebookSDK", () => {
   });
 });
 
-
 // ─── Comprehensive edge-case tests ───────────────────────────────────────────
 
 describe("complex document structures", () => {
@@ -699,9 +724,7 @@ describe("remove edge cases", () => {
   });
 
   it("removes a block between two lists", () => {
-    const { sdk } = setup(
-      doc(bulletList("a", "b"), p("Between"), bulletList("c", "d")),
-    );
+    const { sdk } = setup(doc(bulletList("a", "b"), p("Between"), bulletList("c", "d")));
     const target = sdk.find("Between")[0];
     sdk.remove(target);
     const blocks = sdk.getBlocks();
@@ -867,9 +890,7 @@ describe("listItem operations", () => {
   });
 
   it("two separate lists — target items in the second list", () => {
-    const { sdk } = setup(
-      doc(bulletList("a1", "a2"), p("separator"), bulletList("b1", "b2")),
-    );
+    const { sdk } = setup(doc(bulletList("a1", "a2"), p("separator"), bulletList("b1", "b2")));
     // Find b1 which is in the second list
     const items = sdk.find({ type: "listItem", text: "b1" });
     expect(items).toHaveLength(1);
@@ -945,9 +966,7 @@ describe("find edge cases", () => {
   });
 
   it("find by type only returns all blocks of that type", () => {
-    const { sdk } = setup(
-      doc(p("p1"), heading(1, "h1"), p("p2"), heading(2, "h2"), p("p3")),
-    );
+    const { sdk } = setup(doc(p("p1"), heading(1, "h1"), p("p2"), heading(2, "h2"), p("p3")));
     const paragraphs = sdk.find({ type: "paragraph" });
     expect(paragraphs).toHaveLength(3);
     const headings = sdk.find({ type: "heading" });
@@ -1169,5 +1188,152 @@ describe("sequential mutation scenarios (simulating AI usage)", () => {
     const items = sdk.find({ type: "listItem" });
     expect(items.map((i) => i.text)).toContain("keep");
     expect(items.map((i) => i.text)).toContain("also-keep");
+  });
+});
+
+describe("nested list handling", () => {
+  it("find({ type: 'listItem' }) returns items at all nesting levels", () => {
+    const { sdk } = setup(
+      doc(
+        nestedBulletList(
+          listItemWithNested("parent1", "child1a", "child1b"),
+          simpleListItem("parent2"),
+        ),
+      ),
+    );
+    const items = sdk.find({ type: "listItem" });
+    expect(items).toHaveLength(4);
+    expect(items.map((i) => i.text)).toEqual(["parent1", "child1a", "child1b", "parent2"]);
+  });
+
+  it("nested listItem has correct depth field", () => {
+    const { sdk } = setup(
+      doc(nestedBulletList(listItemWithNested("top", "nested"), simpleListItem("also-top"))),
+    );
+    const items = sdk.find({ type: "listItem" });
+    expect(items[0]).toMatchObject({ text: "top", depth: 0 });
+    expect(items[1]).toMatchObject({ text: "nested", depth: 1 });
+    expect(items[2]).toMatchObject({ text: "also-top", depth: 0 });
+  });
+
+  it("listItem text excludes nested sub-list content", () => {
+    const { sdk } = setup(doc(nestedBulletList(listItemWithNested("parent text", "child text"))));
+    const items = sdk.find({ type: "listItem" });
+    const parent = items.find((i) => i.text === "parent text");
+    expect(parent).toBeDefined();
+    // parent text should NOT contain "child text"
+    expect(parent!.text).toBe("parent text");
+    expect(parent!.text).not.toContain("child text");
+  });
+
+  it("replace on a nested listItem replaces just that sub-item", () => {
+    const { sdk } = setup(
+      doc(
+        nestedBulletList(
+          listItemWithNested("parent", "child1", "child2"),
+          simpleListItem("sibling"),
+        ),
+      ),
+    );
+    const child1 = sdk.find({ type: "listItem", text: "child1" })[0];
+    expect(child1).toBeDefined();
+    const result = sdk.replace(child1, "replaced-child");
+    expect(result).toBe(true);
+
+    const items = sdk.find({ type: "listItem" });
+    const texts = items.map((i) => i.text);
+    expect(texts).toContain("parent");
+    expect(texts).toContain("replaced-child");
+    expect(texts).toContain("child2");
+    expect(texts).toContain("sibling");
+    expect(texts).not.toContain("child1");
+  });
+
+  it("remove on a nested listItem removes just that sub-item", () => {
+    const { sdk } = setup(
+      doc(
+        nestedBulletList(
+          listItemWithNested("parent", "child1", "child2"),
+          simpleListItem("sibling"),
+        ),
+      ),
+    );
+    const child1 = sdk.find({ type: "listItem", text: "child1" })[0];
+    const result = sdk.remove(child1);
+    expect(result).toBe(true);
+
+    const items = sdk.find({ type: "listItem" });
+    const texts = items.map((i) => i.text);
+    expect(texts).toContain("parent");
+    expect(texts).toContain("child2");
+    expect(texts).toContain("sibling");
+    expect(texts).not.toContain("child1");
+  });
+
+  it("remove last nested item removes the nested list", () => {
+    const { sdk } = setup(doc(nestedBulletList(listItemWithNested("parent", "only-child"))));
+    const child = sdk.find({ type: "listItem", text: "only-child" })[0];
+    sdk.remove(child);
+
+    const items = sdk.find({ type: "listItem" });
+    expect(items).toHaveLength(1);
+    expect(items[0].text).toBe("parent");
+    // Parent should no longer have nested list
+    expect(items[0].depth).toBe(0);
+  });
+
+  it("insertAfter on a nested listItem inserts within the nested list", () => {
+    const { sdk } = setup(doc(nestedBulletList(listItemWithNested("parent", "child1", "child2"))));
+    const child1 = sdk.find({ type: "listItem", text: "child1" })[0];
+    sdk.insertAfter(child1, "inserted");
+
+    const items = sdk.find({ type: "listItem" });
+    const nestedItems = items.filter((i) => i.depth === 1);
+    expect(nestedItems.map((i) => i.text)).toEqual(["child1", "inserted", "child2"]);
+  });
+
+  it("insertBefore on a nested listItem inserts within the nested list", () => {
+    const { sdk } = setup(doc(nestedBulletList(listItemWithNested("parent", "child1", "child2"))));
+    const child2 = sdk.find({ type: "listItem", text: "child2" })[0];
+    sdk.insertBefore(child2, "inserted");
+
+    const items = sdk.find({ type: "listItem" });
+    const nestedItems = items.filter((i) => i.depth === 1);
+    expect(nestedItems.map((i) => i.text)).toEqual(["child1", "inserted", "child2"]);
+  });
+
+  it("deeply nested lists (3 levels) are extracted correctly", () => {
+    const deeplyNested: JSONContent = {
+      type: "bulletList",
+      content: [
+        {
+          type: "listItem",
+          content: [
+            p("level0"),
+            {
+              type: "bulletList",
+              content: [
+                {
+                  type: "listItem",
+                  content: [
+                    p("level1"),
+                    {
+                      type: "bulletList",
+                      content: [{ type: "listItem", content: [p("level2")] }],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const { sdk } = setup(doc(deeplyNested));
+    const items = sdk.find({ type: "listItem" });
+    expect(items).toHaveLength(3);
+    expect(items[0]).toMatchObject({ text: "level0", depth: 0 });
+    expect(items[1]).toMatchObject({ text: "level1", depth: 1 });
+    expect(items[2]).toMatchObject({ text: "level2", depth: 2 });
   });
 });

@@ -111,6 +111,10 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
     };
   }, [bookId]);
 
+  // Track current messages for sync comparison without re-registering the listener
+  const initialMessagesRef = useRef(initialMessages);
+  initialMessagesRef.current = initialMessages;
+
   // Reload chat messages when sync pulls new data from server
   useEffect(() => {
     function handleSyncPull() {
@@ -119,8 +123,13 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
         ChatService.pipe(Effect.andThen((s) => s.getSession(activeSessionId, bookId))),
       )
         .then((session) => {
-          if (session) {
-            setInitialMessages(toUIMessages(session.messages));
+          if (!session) return;
+          const newMessages = toUIMessages(session.messages);
+          const currentLast = initialMessagesRef.current?.[initialMessagesRef.current.length - 1];
+          const newLast = newMessages[newMessages.length - 1];
+          // Only remount if the last message actually changed
+          if (currentLast?.id !== newLast?.id) {
+            setInitialMessages(newMessages);
             setSessionTitle(session.title);
             setSessionKey((k) => k + 1);
           }

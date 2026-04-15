@@ -5,6 +5,8 @@ import { makeSyncEngine, type SyncEngine } from "./sync-engine";
 export interface SyncState {
   /** Whether a sync cycle is currently running. */
   isSyncing: boolean;
+  /** Whether there are local changes not yet pushed to the server. */
+  hasPendingChanges: boolean;
   /** ISO timestamp of the last successful sync completion. */
   lastSyncedAt: string | null;
   /** Most recent sync error, or null if last sync succeeded. */
@@ -19,6 +21,7 @@ export interface SyncState {
 
 const defaultSyncState: SyncState = {
   isSyncing: false,
+  hasPendingChanges: false,
   lastSyncedAt: null,
   syncError: null,
   isOnline: true,
@@ -46,6 +49,7 @@ export function useSync(): SyncState {
   const { isAuthenticated } = useAuth();
   const engineRef = useRef<SyncEngine | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [hasPendingChanges, setHasPendingChanges] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<Error | null>(null);
   const [isOnline, setIsOnline] = useState(
@@ -81,6 +85,7 @@ export function useSync(): SyncState {
       onSyncStart: () => setIsSyncing(true),
       onSyncEnd: () => {
         setIsSyncing(false);
+        setHasPendingChanges(false);
         setSyncError(null);
         setLastSyncedAt(new Date().toISOString());
       },
@@ -116,6 +121,7 @@ export function useSync(): SyncState {
 
     // Custom event: book mutations trigger immediate push
     function handlePushNeeded() {
+      setHasPendingChanges(true);
       engineRef.current?.triggerPush();
     }
 
@@ -136,6 +142,7 @@ export function useSync(): SyncState {
 
   return {
     isSyncing,
+    hasPendingChanges,
     lastSyncedAt,
     syncError,
     isOnline,

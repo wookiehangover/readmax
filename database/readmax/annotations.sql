@@ -5,7 +5,7 @@ SET search_path TO readmax;
 CREATE TABLE readmax.highlight (
     id TEXT PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES readmax.user(id),
-    book_id TEXT NOT NULL REFERENCES readmax.book(id),
+    book_id TEXT NOT NULL,
     cfi_range TEXT,
     text TEXT,
     color TEXT,
@@ -23,7 +23,7 @@ CREATE INDEX highlight_book_id_idx ON readmax.highlight (book_id);
 
 CREATE TABLE readmax.notebook (
     user_id UUID NOT NULL REFERENCES readmax.user(id),
-    book_id TEXT NOT NULL REFERENCES readmax.book(id),
+    book_id TEXT NOT NULL,
     content JSONB,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (user_id, book_id)

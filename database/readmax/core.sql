@@ -74,7 +74,7 @@ CREATE INDEX book_user_id_idx ON readmax.book (user_id);
 
 CREATE TABLE readmax.reading_position (
     user_id UUID NOT NULL REFERENCES readmax.user(id),
-    book_id TEXT NOT NULL REFERENCES readmax.book(id),
+    book_id TEXT NOT NULL,
     cfi TEXT,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (user_id, book_id)

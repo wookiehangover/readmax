@@ -5,7 +5,7 @@ SET search_path TO readmax;
 CREATE TABLE readmax.chat_session (
     id TEXT PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES readmax.user(id),
-    book_id TEXT REFERENCES readmax.book(id),
+    book_id TEXT,
     title TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

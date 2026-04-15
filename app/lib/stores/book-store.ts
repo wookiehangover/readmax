@@ -2,6 +2,7 @@ import { createStore, get, set, entries } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
 import { Context, Effect, Layer, Schema } from "effect";
 import { StorageError, BookNotFoundError, DecodeError } from "~/lib/errors";
+import { recordChange } from "~/lib/sync/change-log";
 
 // --- Schema ---
 
@@ -86,13 +87,30 @@ export function makeBookService(stores: BookServiceStores): BookService["Type"] 
           const stamped = { ...meta, updatedAt: meta.updatedAt ?? Date.now() };
           await set(meta.id, stamped, bookStore);
           await set(meta.id, data, bookDataStore);
+          recordChange({
+            entity: "book",
+            entityId: meta.id,
+            operation: "put",
+            data: stamped,
+            timestamp: stamped.updatedAt,
+          }).catch(console.error);
         },
         catch: (cause) => new StorageError({ operation: "saveBook", cause }),
       }),
 
     updateBookMeta: (meta: BookMeta) =>
       Effect.tryPromise({
-        try: () => set(meta.id, { ...meta, updatedAt: Date.now() }, bookStore),
+        try: async () => {
+          const stamped = { ...meta, updatedAt: Date.now() };
+          await set(meta.id, stamped, bookStore);
+          recordChange({
+            entity: "book",
+            entityId: meta.id,
+            operation: "put",
+            data: stamped,
+            timestamp: stamped.updatedAt,
+          }).catch(console.error);
+        },
         catch: (cause) => new StorageError({ operation: "updateBookMeta", cause }),
       }),
 
@@ -172,11 +190,19 @@ export function makeBookService(stores: BookServiceStores): BookService["Type"] 
             try: () => decodeBookMeta(raw),
             catch: (cause) => new DecodeError({ operation: "deleteBook.decode", cause }),
           });
+          const now = Date.now();
+          const tombstone = { ...existing, deletedAt: now, updatedAt: now };
           yield* Effect.tryPromise({
-            try: () =>
-              set(id, { ...existing, deletedAt: Date.now(), updatedAt: Date.now() }, bookStore),
+            try: () => set(id, tombstone, bookStore),
             catch: (cause) => new StorageError({ operation: "deleteBook.write", cause }),
           });
+          recordChange({
+            entity: "book",
+            entityId: id,
+            operation: "delete",
+            data: tombstone,
+            timestamp: now,
+          }).catch(console.error);
         }
       }),
   };

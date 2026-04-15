@@ -2,6 +2,7 @@ import { createStore, get, set } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
 import { Context, Effect, Layer } from "effect";
 import { PositionError } from "~/lib/errors";
+import { recordChange } from "~/lib/sync/change-log";
 
 // --- Types ---
 
@@ -59,9 +60,16 @@ export function makePositionService(stores: PositionServiceStores): ReadingPosit
   return {
     savePosition: (bookId: string, cfi: string) =>
       Effect.tryPromise({
-        try: () => {
+        try: async () => {
           const record: PositionRecord = { cfi, updatedAt: Date.now() };
-          return set(bookId, record, positionStore);
+          await set(bookId, record, positionStore);
+          recordChange({
+            entity: "position",
+            entityId: bookId,
+            operation: "put",
+            data: record,
+            timestamp: record.updatedAt,
+          }).catch(console.error);
         },
         catch: (cause) => new PositionError({ operation: "savePosition", bookId, cause }),
       }),

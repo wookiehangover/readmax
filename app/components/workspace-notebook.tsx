@@ -57,9 +57,22 @@ export function WorkspaceNotebook({
   const displayTitle = book?.title ?? bookTitle;
   const displayAuthor = book?.author;
 
+  // Bump syncVersion on pull-complete to re-read notebook from IDB
+  const [syncVersion, setSyncVersion] = useState(0);
+  useEffect(() => {
+    const handler = () => {
+      // Only reload if user hasn't made local edits (avoid fighting with cursor)
+      if (!pendingContentRef.current) {
+        setSyncVersion((v) => v + 1);
+      }
+    };
+    window.addEventListener("sync:pull-complete", handler);
+    return () => window.removeEventListener("sync:pull-complete", handler);
+  }, []);
+
   const { data: notebook, isLoading } = useEffectQuery(
     () => AnnotationService.pipe(Effect.andThen((svc) => svc.getNotebook(bookId))),
-    [bookId],
+    [bookId, syncVersion],
   );
   const content = notebook?.content;
   const loaded = !isLoading;

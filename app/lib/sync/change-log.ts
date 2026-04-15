@@ -31,6 +31,11 @@ export async function recordChange(
     synced: false,
   };
   await set(change.id, change, getChangeLogStore());
+  // Signal the sync engine to push immediately rather than waiting for the
+  // next interval (reduces cross-device latency from ~30s+ to near-instant).
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("sync:push-needed"));
+  }
   return change;
 }
 

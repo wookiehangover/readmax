@@ -358,12 +358,13 @@ async function mergeChatMessageRecord(record: Record<string, unknown>): Promise<
     if (sIdx < 0) continue;
 
     const session = sessions[sIdx];
-    // Append-only: add if not already present by ID
+    // Append-only: add if not already present by ID.
+    // Messages arrive from the server in created_at ASC order, so simply
+    // appending preserves the correct sequence without needing a sort
+    // (sorting was unreliable because some messages had createdAt of 0).
     const exists = session.messages.some((m) => m.id === remoteMsg.id);
     if (!exists) {
       session.messages.push(remoteMsg);
-      // Keep messages sorted by createdAt
-      session.messages.sort((a, b) => a.createdAt - b.createdAt);
       sessions[sIdx] = { ...session, updatedAt: Math.max(session.updatedAt, remoteMsg.createdAt) };
       await set(bookId, sessions, store);
     }

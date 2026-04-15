@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useAuth } from "~/lib/context/auth-context";
+import { runInitialSyncIfNeeded } from "./initial-sync";
 import { makeSyncEngine, type SyncEngine } from "./sync-engine";
 
 export interface SyncState {
@@ -100,7 +101,17 @@ export function useSync(): SyncState {
     });
 
     engineRef.current = engine;
-    engine.startSync();
+
+    // Run initial sync for existing users before starting the engine.
+    // This scans all IDB stores and creates change-log entries for
+    // pre-existing data so it gets pushed on the first sync cycle.
+    runInitialSyncIfNeeded()
+      .catch((err) => {
+        console.error("[sync] Initial sync scan failed:", err);
+      })
+      .finally(() => {
+        engine.startSync();
+      });
 
     // Window focus → immediate push + pull
     function handleFocus() {

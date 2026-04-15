@@ -70,10 +70,17 @@ export async function action({ request }: { request: Request }) {
     return Response.json({ error: "Missing or invalid 'changes' array" }, { status: 400 });
   }
 
+  // Sort changes so parent entities (book) are processed before dependents (position).
+  // This prevents FK violations when a position references a book in the same push batch.
+  const entityOrder: Record<string, number> = { book: 0, position: 1 };
+  const sortedChanges = [...body.changes].sort(
+    (a, b) => (entityOrder[a.entity] ?? 99) - (entityOrder[b.entity] ?? 99),
+  );
+
   const accepted: string[] = [];
   const rejected: SyncPushResponse["rejected"] = [];
 
-  for (const entry of body.changes) {
+  for (const entry of sortedChanges) {
     try {
       const result = await processEntry(userId, entry);
       if (result.accepted) {

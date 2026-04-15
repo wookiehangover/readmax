@@ -288,3 +288,175 @@ describe("appendOnlyMerge", () => {
     expect(result.find((r) => r.id === "2")).toBeDefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// lwwMerge — chat session–shaped records
+// ---------------------------------------------------------------------------
+
+type ChatSessionItem = {
+  id: string;
+  bookId: string;
+  title: string;
+  updatedAt: number;
+};
+
+function makeChatSession(overrides: Partial<ChatSessionItem> & { id: string }): ChatSessionItem {
+  return {
+    bookId: "book-1",
+    title: "Chat about chapter 1",
+    updatedAt: 100,
+    ...overrides,
+  };
+}
+
+describe("lwwMerge — chat sessions", () => {
+  it("remote newer session wins", () => {
+    const local = makeChatSession({ id: "s1", updatedAt: 100, title: "old title" });
+    const remote = makeChatSession({ id: "s1", updatedAt: 200, title: "new title" });
+    const result = lwwMerge(local, remote);
+    expect(result).toBe(remote);
+    expect(result.title).toBe("new title");
+  });
+
+  it("local newer session wins", () => {
+    const local = makeChatSession({ id: "s1", updatedAt: 300, title: "local title" });
+    const remote = makeChatSession({ id: "s1", updatedAt: 200, title: "remote title" });
+    const result = lwwMerge(local, remote);
+    expect(result).toBe(local);
+    expect(result.title).toBe("local title");
+  });
+
+  it("equal timestamps — remote wins (server authority)", () => {
+    const local = makeChatSession({ id: "s1", updatedAt: 100, title: "local" });
+    const remote = makeChatSession({ id: "s1", updatedAt: 100, title: "remote" });
+    const result = lwwMerge(local, remote);
+    expect(result).toBe(remote);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// appendOnlyMerge — chat message–shaped records
+// ---------------------------------------------------------------------------
+
+type ChatMessageItem = {
+  id: string;
+  role: string;
+  content: string;
+  createdAt: number;
+};
+
+function makeChatMessage(overrides: Partial<ChatMessageItem> & { id: string }): ChatMessageItem {
+  return {
+    role: "user",
+    content: "Hello",
+    createdAt: 100,
+    ...overrides,
+  };
+}
+
+const getChatMsgId = (m: ChatMessageItem) => m.id;
+
+describe("appendOnlyMerge — chat messages", () => {
+  it("remote messages not present locally are added", () => {
+    const local = [makeChatMessage({ id: "m1", content: "Hi" })];
+    const remote = [
+      makeChatMessage({ id: "m2", role: "assistant", content: "Hello!" }),
+      makeChatMessage({ id: "m3", role: "user", content: "Tell me more" }),
+    ];
+    const result = appendOnlyMerge(local, remote, getChatMsgId);
+    expect(result).toHaveLength(3);
+    expect(result.map((r) => r.id).sort()).toEqual(["m1", "m2", "m3"]);
+  });
+
+  it("duplicate messages (same ID) are not added twice", () => {
+    const local = [
+      makeChatMessage({ id: "m1", content: "Hi" }),
+      makeChatMessage({ id: "m2", content: "How are you?" }),
+    ];
+    const remote = [
+      makeChatMessage({ id: "m1", content: "Hi" }),
+      makeChatMessage({ id: "m2", content: "How are you?" }),
+    ];
+    const result = appendOnlyMerge(local, remote, getChatMsgId);
+    expect(result).toHaveLength(2);
+  });
+
+  it("messages are never removed even if absent from remote", () => {
+    const local = [
+      makeChatMessage({ id: "m1", content: "First" }),
+      makeChatMessage({ id: "m2", content: "Second" }),
+      makeChatMessage({ id: "m3", content: "Third" }),
+    ];
+    const remote = [makeChatMessage({ id: "m2", content: "Second-updated" })];
+    const result = appendOnlyMerge(local, remote, getChatMsgId);
+    expect(result).toHaveLength(3);
+    expect(result.find((r) => r.id === "m1")).toBeDefined();
+    expect(result.find((r) => r.id === "m3")).toBeDefined();
+    // Remote copy preferred for m2
+    expect(result.find((r) => r.id === "m2")!.content).toBe("Second-updated");
+  });
+
+  it("empty local + remote messages yields remote messages", () => {
+    const local: ChatMessageItem[] = [];
+    const remote = [
+      makeChatMessage({ id: "m1", content: "From server" }),
+      makeChatMessage({ id: "m2", role: "assistant", content: "Response" }),
+    ];
+    const result = appendOnlyMerge(local, remote, getChatMsgId);
+    expect(result).toHaveLength(2);
+  });
+
+  it("empty remote does not remove local messages", () => {
+    const local = [makeChatMessage({ id: "m1" }), makeChatMessage({ id: "m2" })];
+    const remote: ChatMessageItem[] = [];
+    const result = appendOnlyMerge(local, remote, getChatMsgId);
+    expect(result).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// lwwMerge — settings-shaped records
+// ---------------------------------------------------------------------------
+
+type SettingsItem = {
+  theme: string;
+  fontSize: number;
+  updatedAt: number;
+};
+
+function makeSettings(overrides: Partial<SettingsItem>): SettingsItem {
+  return {
+    theme: "light",
+    fontSize: 16,
+    updatedAt: 100,
+    ...overrides,
+  };
+}
+
+describe("lwwMerge — settings", () => {
+  it("remote newer settings win", () => {
+    const local = makeSettings({ updatedAt: 100, theme: "light", fontSize: 16 });
+    const remote = makeSettings({ updatedAt: 200, theme: "dark", fontSize: 18 });
+    const result = lwwMerge(local, remote);
+    expect(result).toBe(remote);
+    expect(result.theme).toBe("dark");
+    expect(result.fontSize).toBe(18);
+  });
+
+  it("local newer settings win", () => {
+    const local = makeSettings({ updatedAt: 300, theme: "sepia", fontSize: 20 });
+    const remote = makeSettings({ updatedAt: 200, theme: "dark", fontSize: 18 });
+    const result = lwwMerge(local, remote);
+    expect(result).toBe(local);
+    expect(result.theme).toBe("sepia");
+    expect(result.fontSize).toBe(20);
+  });
+
+  it("equal timestamps — remote wins (server authority)", () => {
+    const local = makeSettings({ updatedAt: 100, theme: "light" });
+    const remote = makeSettings({ updatedAt: 100, theme: "dark" });
+    const result = lwwMerge(local, remote);
+    expect(result).toBe(remote);
+    expect(result.theme).toBe("dark");
+  });
+});

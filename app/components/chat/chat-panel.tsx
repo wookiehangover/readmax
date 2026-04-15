@@ -111,6 +111,26 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
     };
   }, [bookId]);
 
+  // Reload chat messages when sync pulls new data from server
+  useEffect(() => {
+    function handleSyncPull() {
+      if (!activeSessionId) return;
+      AppRuntime.runPromise(
+        ChatService.pipe(Effect.andThen((s) => s.getSession(activeSessionId, bookId))),
+      )
+        .then((session) => {
+          if (session) {
+            setInitialMessages(toUIMessages(session.messages));
+            setSessionTitle(session.title);
+            setSessionKey((k) => k + 1);
+          }
+        })
+        .catch(console.error);
+    }
+    window.addEventListener("sync:pull-complete", handleSyncPull);
+    return () => window.removeEventListener("sync:pull-complete", handleSyncPull);
+  }, [bookId, activeSessionId]);
+
   const handleSwitchSession = useCallback(
     async (sessionId: string) => {
       await AppRuntime.runPromise(

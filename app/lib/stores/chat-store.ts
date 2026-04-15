@@ -78,9 +78,14 @@ function trackSessionChange(session: ChatSession, operation: "put" | "delete" = 
   });
 }
 
-/** Fire-and-forget: record each message in the sync change log. */
-function trackMessages(session: ChatSession): void {
-  for (const msg of session.messages) {
+/** Fire-and-forget: record new messages in the sync change log.
+ *  `previousMessageCount` is the number of messages before the update —
+ *  only messages after that index are recorded. When omitted (e.g. during
+ *  migration or first save) all messages are tracked. */
+function trackMessages(session: ChatSession, previousMessageCount?: number): void {
+  const start = previousMessageCount ?? 0;
+  const newMessages = session.messages.slice(start);
+  for (const msg of newMessages) {
     recordChange({
       entity: "chat_message",
       entityId: msg.id,
@@ -219,10 +224,11 @@ export const ChatServiceLive = Layer.succeed(ChatService, {
 
         const idx = activeId ? sessions.findIndex((s) => s.id === activeId) : sessions.length - 1;
         if (idx >= 0) {
+          const previousCount = sessions[idx].messages.length;
           sessions[idx] = { ...sessions[idx], messages, updatedAt: now };
           await set(bookId, sessions, getSessionStore());
           trackSessionChange(sessions[idx]);
-          trackMessages(sessions[idx]);
+          trackMessages(sessions[idx], previousCount);
         }
       },
       catch: (cause) => new ChatError({ operation: "saveMessages", cause }),
@@ -296,6 +302,7 @@ export const ChatServiceLive = Layer.succeed(ChatService, {
       try: async () => {
         const sessions = (await get<ChatSession[]>(session.bookId, getSessionStore())) ?? [];
         const idx = sessions.findIndex((s) => s.id === session.id);
+        const previousCount = idx >= 0 ? sessions[idx].messages.length : 0;
         if (idx >= 0) {
           sessions[idx] = { ...session, updatedAt: Date.now() };
         } else {
@@ -304,7 +311,7 @@ export const ChatServiceLive = Layer.succeed(ChatService, {
         await set(session.bookId, sessions, getSessionStore());
         const saved = sessions.find((s) => s.id === session.id)!;
         trackSessionChange(saved);
-        trackMessages(saved);
+        trackMessages(saved, previousCount);
       },
       catch: (cause) => new ChatError({ operation: "saveSession", cause }),
     }),

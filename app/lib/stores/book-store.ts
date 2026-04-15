@@ -62,6 +62,29 @@ function getBookDataStore() {
   return _bookDataStore;
 }
 
+let _migrated = false;
+
+async function migrateHasLocalFile(): Promise<void> {
+  const bookStore = getBookStore();
+  const bookDataStore = getBookDataStore();
+  const allEntries = await entries<string, BookMeta>(bookStore);
+
+  for (const [id, meta] of allEntries) {
+    if (meta.hasLocalFile) continue;
+
+    const data = await get(id, bookDataStore);
+    if (data) {
+      await set(id, { ...meta, hasLocalFile: true }, bookStore);
+    }
+  }
+}
+
+async function ensureMigrated() {
+  if (_migrated) return;
+  _migrated = true;
+  await migrateHasLocalFile();
+}
+
 // --- Effect Service ---
 
 export class BookService extends Context.Tag("BookService")<
@@ -123,6 +146,10 @@ export function makeBookService(stores: BookServiceStores): BookService["Type"] 
 
     getBooks: () =>
       Effect.gen(function* () {
+        yield* Effect.tryPromise({
+          try: () => ensureMigrated(),
+          catch: (cause) => new StorageError({ operation: "getBooks.migrateHasLocalFile", cause }),
+        });
         const allEntries = yield* Effect.tryPromise({
           try: () => entries<string, unknown>(bookStore),
           catch: (cause) => new StorageError({ operation: "getBooks", cause }),

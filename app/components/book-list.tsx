@@ -16,9 +16,11 @@ interface BookListProps {
 export function BookCover({
   coverImage,
   remoteCoverUrl,
+  bookId,
 }: {
   coverImage: Blob | null;
   remoteCoverUrl?: string;
+  bookId?: string;
 }) {
   const [url, setUrl] = useState<string | null>(null);
 
@@ -28,10 +30,10 @@ export function BookCover({
       setUrl(objectUrl);
       return () => URL.revokeObjectURL(objectUrl);
     }
-    if (remoteCoverUrl) {
-      setUrl(remoteCoverUrl);
+    if (remoteCoverUrl && bookId) {
+      setUrl(`/api/sync/files/download?bookId=${encodeURIComponent(bookId)}&type=cover`);
     }
-  }, [coverImage, remoteCoverUrl]);
+  }, [coverImage, remoteCoverUrl, bookId]);
 
   if (!url) return null;
 
@@ -77,7 +79,11 @@ function BookItemContent({ book, collapsed }: { book: BookMeta; collapsed: boole
   return (
     <>
       {book.coverImage || book.remoteCoverUrl ? (
-        <BookCover coverImage={book.coverImage} remoteCoverUrl={book.remoteCoverUrl} />
+        <BookCover
+          coverImage={book.coverImage}
+          remoteCoverUrl={book.remoteCoverUrl}
+          bookId={book.id}
+        />
       ) : (
         <div className="flex h-12 w-8 shrink-0 items-center justify-center rounded bg-muted">
           <span className="text-xs text-muted-foreground">📖</span>

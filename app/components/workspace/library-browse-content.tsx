@@ -98,6 +98,7 @@ export function LibraryBrowseContent() {
                         coverImage={book.coverImage}
                         alt={book.title}
                         remoteCoverUrl={book.remoteCoverUrl}
+                        bookId={book.id}
                       />
                     ) : (
                       <CoverPlaceholder title={book.title} author={book.author} />

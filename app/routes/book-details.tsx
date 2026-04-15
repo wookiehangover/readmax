@@ -44,10 +44,12 @@ function CoverImage({
   coverImage,
   alt,
   remoteCoverUrl,
+  bookId,
 }: {
   coverImage: Blob | null;
   alt: string;
   remoteCoverUrl?: string;
+  bookId?: string;
 }) {
   const [url, setUrl] = useState<string | null>(null);
 
@@ -57,10 +59,10 @@ function CoverImage({
       setUrl(objectUrl);
       return () => URL.revokeObjectURL(objectUrl);
     }
-    if (remoteCoverUrl) {
-      setUrl(remoteCoverUrl);
+    if (remoteCoverUrl && bookId) {
+      setUrl(`/api/sync/files/download?bookId=${encodeURIComponent(bookId)}&type=cover`);
     }
-  }, [coverImage, remoteCoverUrl]);
+  }, [coverImage, remoteCoverUrl, bookId]);
 
   if (!url) return null;
 
@@ -162,6 +164,7 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
               coverImage={book.coverImage}
               alt={title}
               remoteCoverUrl={book.remoteCoverUrl}
+              bookId={book.id}
             />
           ) : (
             <CoverPlaceholder />

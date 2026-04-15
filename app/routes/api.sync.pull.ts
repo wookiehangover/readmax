@@ -3,9 +3,19 @@ import { getHighlightsByUserSince } from "~/lib/database/annotation/highlight";
 import { getNotebooksByUserSince } from "~/lib/database/annotation/notebook";
 import { getBooksByUserSince } from "~/lib/database/book/book";
 import { getPositionsByUserSince } from "~/lib/database/book/reading-position";
+import { getSessionsByUserSince, getMessagesByUserSince } from "~/lib/database/chat/chat-session";
+import { getSettingsSince } from "~/lib/database/settings/user-settings";
 import type { EntityType, SyncPullResponse } from "~/lib/sync/types";
 
-const SUPPORTED_ENTITY_TYPES: EntityType[] = ["book", "position", "highlight", "notebook"];
+const SUPPORTED_ENTITY_TYPES: EntityType[] = [
+  "book",
+  "position",
+  "highlight",
+  "notebook",
+  "chat_session",
+  "chat_message",
+  "settings",
+];
 
 export async function loader({ request }: { request: Request }) {
   const { userId } = await requireAuth(request);
@@ -79,6 +89,47 @@ export async function loader({ request }: { request: Request }) {
             entity: "notebook",
             records: notebooks,
             cursor: latestUpdatedAt.toISOString(),
+            hasMore: false,
+          });
+        }
+        break;
+      }
+
+      case "chat_session": {
+        const sessions = await getSessionsByUserSince(userId, since);
+        if (sessions.length > 0) {
+          const latestUpdatedAt = sessions[sessions.length - 1].updatedAt;
+          changes.push({
+            entity: "chat_session",
+            records: sessions,
+            cursor: latestUpdatedAt.toISOString(),
+            hasMore: false,
+          });
+        }
+        break;
+      }
+
+      case "chat_message": {
+        const messages = await getMessagesByUserSince(userId, since);
+        if (messages.length > 0) {
+          const latestCreatedAt = messages[messages.length - 1].createdAt;
+          changes.push({
+            entity: "chat_message",
+            records: messages,
+            cursor: latestCreatedAt.toISOString(),
+            hasMore: false,
+          });
+        }
+        break;
+      }
+
+      case "settings": {
+        const settingsRow = await getSettingsSince(userId, since);
+        if (settingsRow) {
+          changes.push({
+            entity: "settings",
+            records: [settingsRow],
+            cursor: settingsRow.updatedAt.toISOString(),
             hasMore: false,
           });
         }

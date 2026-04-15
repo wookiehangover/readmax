@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { Schema } from "effect";
+import { recordChange } from "~/lib/sync/change-log";
 
 export type Theme = "light" | "dark" | "system";
 export type ReaderLayout = "single" | "spread" | "scroll";
@@ -89,6 +90,13 @@ export function saveSettings(settings: Settings): void {
   const stamped = { ...settings, updatedAt: Date.now() };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(stamped));
   window.dispatchEvent(new CustomEvent(SETTINGS_CHANGED_EVENT));
+  recordChange({
+    entity: "settings",
+    entityId: "user-settings",
+    operation: "put",
+    data: stamped,
+    timestamp: stamped.updatedAt!,
+  });
 }
 
 export function useSettings(): [Settings, (update: Partial<Settings>) => void] {

@@ -3,6 +3,8 @@ import { upsertHighlight, softDeleteHighlight } from "~/lib/database/annotation/
 import { upsertNotebook } from "~/lib/database/annotation/notebook";
 import { upsertBook, softDeleteBook } from "~/lib/database/book/book";
 import { upsertPosition } from "~/lib/database/book/reading-position";
+import { upsertSession, softDeleteSession, upsertMessage } from "~/lib/database/chat/chat-session";
+import { upsertSettings } from "~/lib/database/settings/user-settings";
 import { upsertUser } from "~/lib/database/user/user";
 import type { SyncPushRequest, SyncPushResponse, ChangeEntry } from "~/lib/sync/types";
 
@@ -97,6 +99,61 @@ async function processEntry(
       return { accepted: true };
     }
 
+    case "chat_session": {
+      if (entry.operation === "put") {
+        const data = entry.data as {
+          id: string;
+          bookId?: string | null;
+          title?: string | null;
+          createdAt?: number | null;
+          updatedAt?: number | null;
+          deletedAt?: number | null;
+        };
+        await upsertSession(userId, {
+          id: entry.entityId,
+          bookId: data.bookId,
+          title: data.title,
+          createdAt: data.createdAt ? new Date(data.createdAt) : new Date(entry.timestamp),
+          updatedAt: data.updatedAt ? new Date(data.updatedAt) : new Date(entry.timestamp),
+          deletedAt: data.deletedAt ? new Date(data.deletedAt) : null,
+        });
+      } else {
+        await softDeleteSession(userId, entry.entityId);
+      }
+      return { accepted: true };
+    }
+
+    case "chat_message": {
+      if (entry.operation === "put") {
+        const data = entry.data as {
+          id: string;
+          sessionId: string;
+          role: string;
+          content?: string | null;
+          parts?: unknown | null;
+          createdAt?: number | null;
+        };
+        await upsertMessage({
+          id: entry.entityId,
+          sessionId: data.sessionId,
+          role: data.role,
+          content: data.content,
+          parts: data.parts,
+          createdAt: data.createdAt ? new Date(data.createdAt) : new Date(entry.timestamp),
+        });
+      }
+      // delete is a no-op for append-only messages
+      return { accepted: true };
+    }
+
+    case "settings": {
+      if (entry.operation === "put") {
+        await upsertSettings(userId, entry.data, new Date(entry.timestamp));
+      }
+      // delete is a no-op for settings
+      return { accepted: true };
+    }
+
     default: {
       console.warn(`[sync/push] Skipping unsupported entity type: ${entry.entity}`);
       return { accepted: false, reason: `Unsupported entity type: ${entry.entity}` };
@@ -124,7 +181,15 @@ export async function action({ request }: { request: Request }) {
 
   // Sort changes so parent entities (book) are processed before dependents (position).
   // This prevents FK violations when a position references a book in the same push batch.
-  const entityOrder: Record<string, number> = { book: 0, position: 1, highlight: 2, notebook: 3 };
+  const entityOrder: Record<string, number> = {
+    book: 0,
+    position: 1,
+    highlight: 2,
+    notebook: 3,
+    chat_session: 4,
+    chat_message: 5,
+    settings: 6,
+  };
   const sortedChanges = [...body.changes].sort(
     (a, b) => (entityOrder[a.entity] ?? 99) - (entityOrder[b.entity] ?? 99),
   );

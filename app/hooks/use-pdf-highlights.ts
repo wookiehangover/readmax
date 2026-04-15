@@ -383,19 +383,62 @@ export function usePdfHighlights({
     [bookId, applyHighlightOverlay],
   );
 
-  // Re-apply highlights when sync pulls new data
+  // Incrementally sync highlights when sync pulls new data
   useEffect(() => {
-    const handler = () => {
-      // Clear existing overlays and reload from IDB
-      for (const overlay of overlaysRef.current.values()) {
-        overlay.remove();
+    const handler = async () => {
+      const program = Effect.gen(function* () {
+        const svc = yield* AnnotationService;
+        return yield* svc.getHighlightsByBook(bookId);
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            console.error("Failed to sync PDF highlights:", error);
+            return [] as Highlight[];
+          }),
+        ),
+      );
+
+      try {
+        const freshHighlights = await AppRuntime.runPromise(program);
+
+        const existingIds = new Set(Array.from(highlightsRef.current.values()).map((h) => h.id));
+        const freshIds = new Set(freshHighlights.map((h) => h.id));
+
+        // Skip if nothing changed
+        if (
+          existingIds.size === freshIds.size &&
+          [...freshIds].every((id) => existingIds.has(id))
+        ) {
+          return;
+        }
+
+        // Add only NEW highlights
+        for (const hl of freshHighlights) {
+          if (!highlightsRef.current.has(hl.cfiRange)) {
+            highlightsRef.current.set(hl.cfiRange, hl);
+            applyHighlightOverlay(hl);
+          }
+        }
+
+        // Remove highlights that are no longer in fresh set (soft-deleted)
+        const freshCfiRanges = new Set(freshHighlights.map((h) => h.cfiRange));
+        for (const [cfiRange, hl] of highlightsRef.current) {
+          if (!freshCfiRanges.has(cfiRange)) {
+            const overlay = overlaysRef.current.get(hl.id);
+            if (overlay) {
+              overlay.remove();
+              overlaysRef.current.delete(hl.id);
+            }
+            highlightsRef.current.delete(cfiRange);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to sync PDF highlights:", err);
       }
-      overlaysRef.current.clear();
-      loadAndApplyHighlights().catch(console.error);
     };
     window.addEventListener("sync:pull-complete", handler);
     return () => window.removeEventListener("sync:pull-complete", handler);
-  }, [loadAndApplyHighlights]);
+  }, [bookId, applyHighlightOverlay]);
 
   const dismissPopovers = useCallback(() => {
     setSelectionPopover(null);

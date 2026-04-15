@@ -147,32 +147,65 @@ export function useHighlights({
     return highlight;
   }, [selectionPopover, bookId, renditionRef, applyHighlightToRendition]);
 
-  /** Clear existing highlights from rendition and reload from IDB. */
-  const reloadHighlights = useCallback(async () => {
-    const rendition = renditionRef.current;
-    if (!rendition) return;
-
-    // Clear existing highlights from rendition
-    for (const cfiRange of highlightsRef.current.keys()) {
-      try {
-        rendition.annotations.remove(cfiRange, "highlight");
-      } catch {
-        // ignore removal errors for missing annotations
-      }
-    }
-
-    // Reload from IDB and re-apply
-    await loadAndApplyHighlights(rendition);
-  }, [renditionRef, loadAndApplyHighlights]);
-
-  // Re-apply highlights when sync pulls new data
+  // Incrementally sync highlights when sync pulls new data
   useEffect(() => {
-    const handler = () => {
-      reloadHighlights().catch(console.error);
+    const handler = async () => {
+      const rendition = renditionRef.current;
+      if (!rendition) return;
+
+      const program = Effect.gen(function* () {
+        const svc = yield* AnnotationService;
+        return yield* svc.getHighlightsByBook(bookId);
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            console.error("Failed to sync highlights:", error);
+            return [] as Highlight[];
+          }),
+        ),
+      );
+
+      try {
+        const freshHighlights = await AppRuntime.runPromise(program);
+
+        const existingIds = new Set(Array.from(highlightsRef.current.values()).map((h) => h.id));
+        const freshIds = new Set(freshHighlights.map((h) => h.id));
+
+        // Skip if nothing changed
+        if (
+          existingIds.size === freshIds.size &&
+          [...freshIds].every((id) => existingIds.has(id))
+        ) {
+          return;
+        }
+
+        // Add only NEW highlights
+        for (const hl of freshHighlights) {
+          if (!highlightsRef.current.has(hl.cfiRange)) {
+            highlightsRef.current.set(hl.cfiRange, hl);
+            applyHighlightToRendition(rendition, hl);
+          }
+        }
+
+        // Remove highlights that are no longer in fresh set (soft-deleted)
+        const freshCfiRanges = new Set(freshHighlights.map((h) => h.cfiRange));
+        for (const [cfiRange] of highlightsRef.current) {
+          if (!freshCfiRanges.has(cfiRange)) {
+            try {
+              rendition.annotations.remove(cfiRange, "highlight");
+            } catch {
+              // ignore removal errors
+            }
+            highlightsRef.current.delete(cfiRange);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to sync highlights:", err);
+      }
     };
     window.addEventListener("sync:pull-complete", handler);
     return () => window.removeEventListener("sync:pull-complete", handler);
-  }, [reloadHighlights]);
+  }, [bookId, renditionRef, applyHighlightToRendition]);
 
   const dismissPopovers = useCallback(() => {
     setSelectionPopover(null);

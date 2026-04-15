@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, useParams } from "react-router";
-import { Search } from "lucide-react";
+import { CloudDownload, Search } from "lucide-react";
 import { Input } from "~/components/ui/input";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
-import type { BookMeta } from "~/lib/stores/book-store";
+import { type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
 import { useReaderNavigation, type TocEntry } from "~/lib/context/reader-context";
 import { cn } from "~/lib/utils";
 
@@ -76,21 +76,29 @@ export function TocList({
 }
 
 function BookItemContent({ book, collapsed }: { book: BookMeta; collapsed: boolean }) {
+  const needsDownload = bookNeedsDownload(book);
   return (
     <>
-      {book.coverImage || book.remoteCoverUrl ? (
-        <BookCover
-          coverImage={book.coverImage}
-          remoteCoverUrl={book.remoteCoverUrl}
-          bookId={book.id}
-        />
-      ) : (
-        <div className="flex h-12 w-8 shrink-0 items-center justify-center rounded bg-muted">
-          <span className="text-xs text-muted-foreground">📖</span>
-        </div>
-      )}
+      <div className="relative shrink-0">
+        {book.coverImage || book.remoteCoverUrl ? (
+          <BookCover
+            coverImage={book.coverImage}
+            remoteCoverUrl={book.remoteCoverUrl}
+            bookId={book.id}
+          />
+        ) : (
+          <div className="flex h-12 w-8 items-center justify-center rounded bg-muted">
+            <span className="text-xs text-muted-foreground">📖</span>
+          </div>
+        )}
+        {needsDownload && (
+          <div className="absolute inset-0 flex items-center justify-center rounded bg-black/30">
+            <CloudDownload className="size-4 text-white" />
+          </div>
+        )}
+      </div>
       {!collapsed && (
-        <div className="min-w-0 flex-1">
+        <div className={cn("min-w-0 flex-1", { "opacity-60": needsDownload })}>
           <p className="truncate text-sm font-medium">{book.title}</p>
           <p className="truncate text-xs text-muted-foreground">{book.author}</p>
         </div>

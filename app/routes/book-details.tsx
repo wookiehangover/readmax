@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useNavigate } from "react-router";
 import { Effect } from "effect";
-import { ArrowLeft, BookOpen, BookOpenText } from "lucide-react";
+import { ArrowLeft, BookOpen, BookOpenText, CloudDownload } from "lucide-react";
 import type { Route } from "./+types/book-details";
 import type { JSONContent } from "@tiptap/react";
-import { BookService, type BookMeta } from "~/lib/stores/book-store";
+import { BookService, type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
 import { AnnotationService } from "~/lib/stores/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { useEffectQuery } from "~/hooks/use-effect-query";
@@ -190,10 +190,17 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
             <Button onClick={handleSave} disabled={saving}>
               {saving ? "Saving…" : saved ? "Saved" : "Save"}
             </Button>
-            <Button variant="outline" render={<Link to={`/books/${book.id}`} />}>
-              <BookOpenText className="size-4" />
-              Read
-            </Button>
+            {bookNeedsDownload(book) ? (
+              <Button variant="outline" render={<Link to={`/books/${book.id}`} />}>
+                <CloudDownload className="size-4" />
+                Download &amp; Read
+              </Button>
+            ) : (
+              <Button variant="outline" render={<Link to={`/books/${book.id}`} />}>
+                <BookOpenText className="size-4" />
+                Read
+              </Button>
+            )}
           </div>
         </div>
 

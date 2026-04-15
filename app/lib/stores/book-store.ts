@@ -25,10 +25,17 @@ export const BookMetaSchema = Schema.Struct({
   updatedAt: Schema.optional(Schema.Number),
   /** Soft-delete timestamp. When set, the book is considered deleted. */
   deletedAt: Schema.optional(Schema.Number),
+  /** Whether this device has the epub/pdf file locally in IDB. */
+  hasLocalFile: Schema.optional(Schema.Boolean),
 });
 
 /** Metadata-only book record (no binary epub data). */
 export type BookMeta = typeof BookMetaSchema.Type;
+
+/** Returns true if the book was synced from another device and hasn't been downloaded yet. */
+export function bookNeedsDownload(book: BookMeta): boolean {
+  return !!book.remoteFileUrl && !book.hasLocalFile;
+}
 
 const decodeBookMeta = Schema.decodeUnknownSync(BookMetaSchema);
 
@@ -84,7 +91,7 @@ export function makeBookService(stores: BookServiceStores): BookService["Type"] 
     saveBook: (meta: BookMeta, data: ArrayBuffer) =>
       Effect.tryPromise({
         try: async () => {
-          const stamped = { ...meta, updatedAt: meta.updatedAt ?? Date.now() };
+          const stamped = { ...meta, hasLocalFile: true, updatedAt: meta.updatedAt ?? Date.now() };
           await set(meta.id, stamped, bookStore);
           await set(meta.id, data, bookDataStore);
           recordChange({
@@ -204,6 +211,12 @@ export function makeBookService(stores: BookServiceStores): BookService["Type"] 
             catch: (cause) => new StorageError({ operation: "getBookData.cacheFile", cause }),
           });
 
+          // Mark book as having local file data
+          yield* Effect.tryPromise({
+            try: () => set(id, { ...meta, hasLocalFile: true }, bookStore),
+            catch: (cause) => new StorageError({ operation: "getBookData.markLocal", cause }),
+          });
+
           // Also download and cache the cover image if available
           if (meta.remoteCoverUrl && !meta.coverImage) {
             yield* Effect.tryPromise({
@@ -214,7 +227,7 @@ export function makeBookService(stores: BookServiceStores): BookService["Type"] 
                 );
                 if (coverRes.ok) {
                   const coverBlob = await coverRes.blob();
-                  const updated = { ...meta, coverImage: coverBlob };
+                  const updated = { ...meta, coverImage: coverBlob, hasLocalFile: true };
                   await set(id, updated, bookStore);
                 }
               },
@@ -222,6 +235,11 @@ export function makeBookService(stores: BookServiceStores): BookService["Type"] 
                 /* cover caching is best-effort, ignore errors */
               },
             }).pipe(Effect.catchAll(() => Effect.void));
+          }
+
+          // Notify library views that a download completed
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("sync:pull-complete"));
           }
 
           return downloaded;

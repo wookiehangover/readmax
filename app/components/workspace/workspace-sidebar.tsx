@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { Link } from "react-router";
 import {
   BookOpen,
+  CloudDownload,
   NotebookPen,
   Plus,
   ArrowUpDown,
@@ -15,7 +16,7 @@ import { SyncStatus } from "~/components/sync-status";
 import { Input } from "~/components/ui/input";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "~/components/ui/tooltip";
-import type { BookMeta } from "~/lib/stores/book-store";
+import { type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
 import type { WorkspaceSortBy } from "~/lib/settings";
 import { cn } from "~/lib/utils";
 import { useWorkspace } from "~/lib/context/workspace-context";
@@ -30,21 +31,29 @@ const SORT_OPTIONS: { value: WorkspaceSortBy; label: string }[] = [
 ];
 
 function WorkspaceSidebarBookContent({ book, collapsed }: { book: BookMeta; collapsed: boolean }) {
+  const needsDownload = bookNeedsDownload(book);
   return (
     <>
-      {book.coverImage || book.remoteCoverUrl ? (
-        <BookCover
-          coverImage={book.coverImage}
-          remoteCoverUrl={book.remoteCoverUrl}
-          bookId={book.id}
-        />
-      ) : (
-        <div className="flex h-12 w-8 shrink-0 items-center justify-center rounded bg-muted">
-          <span className="text-xs text-muted-foreground">📖</span>
-        </div>
-      )}
+      <div className="relative shrink-0">
+        {book.coverImage || book.remoteCoverUrl ? (
+          <BookCover
+            coverImage={book.coverImage}
+            remoteCoverUrl={book.remoteCoverUrl}
+            bookId={book.id}
+          />
+        ) : (
+          <div className="flex h-12 w-8 items-center justify-center rounded bg-muted">
+            <span className="text-xs text-muted-foreground">📖</span>
+          </div>
+        )}
+        {needsDownload && (
+          <div className="absolute inset-0 flex items-center justify-center rounded bg-black/30">
+            <CloudDownload className="size-4 text-white" />
+          </div>
+        )}
+      </div>
       {!collapsed && (
-        <div className="min-w-0 flex-1">
+        <div className={cn("min-w-0 flex-1", { "opacity-60": needsDownload })}>
           <p className="truncate text-sm font-medium">{book.title}</p>
           <p className="truncate text-xs text-muted-foreground">{book.author}</p>
         </div>

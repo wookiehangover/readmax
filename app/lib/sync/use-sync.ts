@@ -97,9 +97,10 @@ export function useSync(): SyncState {
     engineRef.current = engine;
     engine.startSync();
 
-    // Window focus → immediate push
+    // Window focus → immediate push + pull
     function handleFocus() {
       engineRef.current?.triggerPush();
+      engineRef.current?.triggerPull();
     }
 
     // Online/offline handling

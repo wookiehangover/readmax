@@ -551,6 +551,17 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     [ws],
   );
 
+  // Reload books when a sync pull brings in new data
+  useEffect(() => {
+    function handleSyncPull() {
+      AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.getBooks())))
+        .then((freshBooks) => updateBooks(() => freshBooks))
+        .catch(console.error);
+    }
+    window.addEventListener("sync:pull-complete", handleSyncPull);
+    return () => window.removeEventListener("sync:pull-complete", handleSyncPull);
+  }, [updateBooks]);
+
   const handleBookAdded = useCallback(
     (book: BookMeta) => {
       updateBooks((prev) => [...prev, book]);

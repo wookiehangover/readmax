@@ -61,6 +61,17 @@ export default function LibraryLayout({ loaderData }: Route.ComponentProps) {
     setMobileOpen(false);
   }, [location.pathname]);
 
+  // Reload books when a sync pull brings in new data
+  useEffect(() => {
+    function handleSyncPull() {
+      AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.getBooks())))
+        .then(setBooks)
+        .catch(console.error);
+    }
+    window.addEventListener("sync:pull-complete", handleSyncPull);
+    return () => window.removeEventListener("sync:pull-complete", handleSyncPull);
+  }, []);
+
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === "b") {

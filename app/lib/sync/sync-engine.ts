@@ -473,7 +473,7 @@ export function makeSyncEngine(callbacks: SyncEngineCallbacks = {}): SyncEngine 
         if (fileData) {
           const url = await uploadFile(bookId, fileData, "file");
           if (url) {
-            await set(bookId, { ...meta, remoteFileUrl: url }, bookStore);
+            await set(bookId, { ...meta, remoteFileUrl: url, hasLocalFile: true }, bookStore);
           }
         }
       }
@@ -484,9 +484,14 @@ export function makeSyncEngine(callbacks: SyncEngineCallbacks = {}): SyncEngine 
         if (url) {
           // Re-read in case the file upload above already updated meta
           const current = (await get<Record<string, unknown>>(bookId, bookStore)) ?? meta;
-          await set(bookId, { ...current, remoteCoverUrl: url }, bookStore);
+          await set(bookId, { ...current, remoteCoverUrl: url, hasLocalFile: true }, bookStore);
         }
       }
+    }
+
+    // Notify UI so book list re-renders without stale cloud icons
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("sync:pull-complete"));
     }
   }
 

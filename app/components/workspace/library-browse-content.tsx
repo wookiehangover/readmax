@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { NotebookPen, Ellipsis, Globe, Trash2 } from "lucide-react";
+import { MessageSquare, NotebookPen, Ellipsis, Globe, Trash2 } from "lucide-react";
 import { CoverImage } from "~/components/book-grid/cover-image";
 import { CoverPlaceholder } from "~/components/book-grid/cover-placeholder";
 import { AddBookCard } from "~/components/book-grid/add-book-card";
@@ -37,6 +37,13 @@ export function LibraryBrowseContent() {
   const handleOpenNotebook = useCallback(
     (book: BookMeta) => {
       ws.openNotebookRef.current?.(book);
+    },
+    [ws],
+  );
+
+  const handleOpenChat = useCallback(
+    (book: BookMeta) => {
+      ws.openChatRef.current?.(book);
     },
     [ws],
   );
@@ -118,10 +125,14 @@ export function LibraryBrowseContent() {
                     >
                       <Ellipsis className="size-4" />
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
+                    <DropdownMenuContent align="end" className="w-auto">
                       <DropdownMenuItem onClick={() => handleOpenNotebook(book)}>
                         <NotebookPen className="size-4" />
                         Open notebook
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleOpenChat(book)}>
+                        <MessageSquare className="size-4" />
+                        Open chat
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         variant="destructive"

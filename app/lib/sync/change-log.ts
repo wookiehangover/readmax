@@ -33,8 +33,11 @@ export async function recordChange(
   await set(change.id, change, getChangeLogStore());
   // Signal the sync engine to push immediately rather than waiting for the
   // next interval (reduces cross-device latency from ~30s+ to near-instant).
+  // Deferred to a microtask to avoid triggering React state updates during render.
   if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent("sync:push-needed"));
+    queueMicrotask(() => {
+      window.dispatchEvent(new CustomEvent("sync:push-needed"));
+    });
   }
   return change;
 }

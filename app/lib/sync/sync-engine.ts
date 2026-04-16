@@ -400,7 +400,9 @@ async function mergeSettingsRecord(record: Record<string, unknown>): Promise<voi
   if (remoteUpdatedAt > localUpdatedAt) {
     const merged = { ...remoteSettings, updatedAt: remoteUpdatedAt };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
-    window.dispatchEvent(new CustomEvent("settings-changed"));
+    queueMicrotask(() => {
+      window.dispatchEvent(new CustomEvent("settings-changed"));
+    });
   }
 }
 
@@ -503,7 +505,11 @@ export function makeSyncEngine(callbacks: SyncEngineCallbacks = {}): SyncEngine 
 
     // Notify UI so book list re-renders without stale cloud icons
     if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("sync:entity-updated", { detail: { entity: "book" } }));
+      queueMicrotask(() => {
+        window.dispatchEvent(
+          new CustomEvent("sync:entity-updated", { detail: { entity: "book" } }),
+        );
+      });
     }
   }
 
@@ -581,9 +587,11 @@ export function makeSyncEngine(callbacks: SyncEngineCallbacks = {}): SyncEngine 
 
       // Dispatch granular per-entity event so only relevant components re-render
       if (group.records.length > 0) {
-        window.dispatchEvent(
-          new CustomEvent("sync:entity-updated", { detail: { entity: group.entity } }),
-        );
+        queueMicrotask(() => {
+          window.dispatchEvent(
+            new CustomEvent("sync:entity-updated", { detail: { entity: group.entity } }),
+          );
+        });
       }
     }
   }

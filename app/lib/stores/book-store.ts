@@ -266,9 +266,11 @@ export function makeBookService(stores: BookServiceStores): BookService["Type"] 
 
           // Notify library views that a download completed
           if (typeof window !== "undefined") {
-            window.dispatchEvent(
-              new CustomEvent("sync:entity-updated", { detail: { entity: "book" } }),
-            );
+            queueMicrotask(() => {
+              window.dispatchEvent(
+                new CustomEvent("sync:entity-updated", { detail: { entity: "book" } }),
+              );
+            });
           }
 
           return downloaded;

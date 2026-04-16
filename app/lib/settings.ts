@@ -89,7 +89,9 @@ export function saveSettings(settings: Settings): void {
   if (typeof window === "undefined") return;
   const stamped = { ...settings, updatedAt: Date.now() };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(stamped));
-  window.dispatchEvent(new CustomEvent(SETTINGS_CHANGED_EVENT));
+  queueMicrotask(() => {
+    window.dispatchEvent(new CustomEvent(SETTINGS_CHANGED_EVENT));
+  });
   recordChange({
     entity: "settings",
     entityId: "user-settings",

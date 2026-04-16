@@ -1,5 +1,5 @@
 import { generateAuthenticationOptions } from "@simplewebauthn/server";
-import { RP_ID, CHALLENGE_TTL_SECONDS } from "~/lib/auth-config";
+import { getRpId, CHALLENGE_TTL_SECONDS } from "~/lib/auth-config";
 import { saveChallenge } from "~/lib/database/auth/challenge";
 
 export async function loader() {
@@ -8,7 +8,7 @@ export async function loader() {
   }
 
   const options = await generateAuthenticationOptions({
-    rpID: RP_ID,
+    rpID: getRpId(),
     // Empty allowCredentials enables discoverable credentials (passkeys)
     allowCredentials: [],
     userVerification: "preferred",

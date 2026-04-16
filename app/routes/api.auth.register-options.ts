@@ -1,5 +1,5 @@
 import { generateRegistrationOptions } from "@simplewebauthn/server";
-import { RP_NAME, RP_ID, CHALLENGE_TTL_SECONDS } from "~/lib/auth-config";
+import { RP_NAME, getRpId, CHALLENGE_TTL_SECONDS } from "~/lib/auth-config";
 import { upsertUser } from "~/lib/database/user/user";
 import { getPasskeysByUserId } from "~/lib/database/auth/passkey";
 import { saveChallenge } from "~/lib/database/auth/challenge";
@@ -24,7 +24,7 @@ export async function loader() {
 
   const options = await generateRegistrationOptions({
     rpName: RP_NAME,
-    rpID: RP_ID,
+    rpID: getRpId(),
     userName: user.displayName ?? user.id,
     userDisplayName: user.displayName ?? "",
     excludeCredentials,

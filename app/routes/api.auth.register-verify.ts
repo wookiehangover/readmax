@@ -1,6 +1,6 @@
 import { verifyRegistrationResponse } from "@simplewebauthn/server";
 import type { RegistrationResponseJSON } from "@simplewebauthn/server";
-import { RP_ID, RP_ORIGIN, SESSION_MAX_AGE_SECONDS } from "~/lib/auth-config";
+import { getRpId, getRpOrigin, SESSION_MAX_AGE_SECONDS } from "~/lib/auth-config";
 import { getChallenge, deleteChallenge } from "~/lib/database/auth/challenge";
 import { savePasskey } from "~/lib/database/auth/passkey";
 import { createSession } from "~/lib/database/auth/session";
@@ -42,8 +42,8 @@ export async function action({ request }: { request: Request }) {
     verification = await verifyRegistrationResponse({
       response,
       expectedChallenge: challengeRow.challenge,
-      expectedOrigin: RP_ORIGIN,
-      expectedRPID: RP_ID,
+      expectedOrigin: getRpOrigin(),
+      expectedRPID: getRpId(),
     });
   } catch (err) {
     return Response.json({ error: "Verification failed", detail: String(err) }, { status: 400 });

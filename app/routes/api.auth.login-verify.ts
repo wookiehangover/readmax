@@ -1,6 +1,6 @@
 import { verifyAuthenticationResponse } from "@simplewebauthn/server";
 import type { AuthenticationResponseJSON } from "@simplewebauthn/server";
-import { RP_ID, RP_ORIGIN, SESSION_MAX_AGE_SECONDS } from "~/lib/auth-config";
+import { getRpId, getRpOrigin, SESSION_MAX_AGE_SECONDS } from "~/lib/auth-config";
 import { getChallenge, deleteChallenge } from "~/lib/database/auth/challenge";
 import { getPasskeyById, updatePasskeyCounter } from "~/lib/database/auth/passkey";
 import { createSession } from "~/lib/database/auth/session";
@@ -48,8 +48,8 @@ export async function action({ request }: { request: Request }) {
     verification = await verifyAuthenticationResponse({
       response,
       expectedChallenge: challengeRow.challenge,
-      expectedOrigin: RP_ORIGIN,
-      expectedRPID: RP_ID,
+      expectedOrigin: getRpOrigin(),
+      expectedRPID: getRpId(),
       credential: {
         id: passkey.id,
         publicKey: new Uint8Array(passkey.publicKey),

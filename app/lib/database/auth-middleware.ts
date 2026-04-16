@@ -49,6 +49,9 @@ export function clearSessionCookie(headers: Headers): void {
  * Note: `getSession` from the DAL already filters out expired sessions.
  */
 export async function getSessionFromRequest(request: Request): Promise<{ userId: string } | null> {
+  // No database configured — auth is unavailable
+  if (!process.env.DATABASE_URL) return null;
+
   const cookieHeader = request.headers.get("Cookie");
   if (!cookieHeader) return null;
 

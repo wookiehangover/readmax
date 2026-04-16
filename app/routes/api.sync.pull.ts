@@ -18,6 +18,10 @@ const SUPPORTED_ENTITY_TYPES: EntityType[] = [
 ];
 
 export async function loader({ request }: { request: Request }) {
+  if (!process.env.DATABASE_URL) {
+    return Response.json({ error: "Sync not configured" }, { status: 503 });
+  }
+
   const { userId } = await requireAuth(request);
 
   const url = new URL(request.url);

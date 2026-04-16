@@ -15,6 +15,10 @@ import { getBookByIdForUser, updateBookBlobUrls } from "~/lib/database/book/book
  *   - file: File (required)
  */
 export async function action({ request }: { request: Request }) {
+  if (!process.env.DATABASE_URL) {
+    return Response.json({ error: "Sync not configured" }, { status: 503 });
+  }
+
   const { userId } = await requireAuth(request);
 
   const token = process.env.BLOB_READ_WRITE_TOKEN;

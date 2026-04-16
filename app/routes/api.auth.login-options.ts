@@ -3,6 +3,10 @@ import { RP_ID, CHALLENGE_TTL_SECONDS } from "~/lib/auth-config";
 import { saveChallenge } from "~/lib/database/auth/challenge";
 
 export async function loader() {
+  if (!process.env.DATABASE_URL) {
+    return Response.json({ error: "Auth not configured" }, { status: 503 });
+  }
+
   const options = await generateAuthenticationOptions({
     rpID: RP_ID,
     // Empty allowCredentials enables discoverable credentials (passkeys)

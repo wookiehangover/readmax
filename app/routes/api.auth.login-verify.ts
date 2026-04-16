@@ -13,6 +13,10 @@ interface LoginVerifyBody {
 }
 
 export async function action({ request }: { request: Request }) {
+  if (!process.env.DATABASE_URL) {
+    return Response.json({ error: "Auth not configured" }, { status: 503 });
+  }
+
   if (request.method !== "POST") {
     return Response.json({ error: "Method not allowed" }, { status: 405 });
   }

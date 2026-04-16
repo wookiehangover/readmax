@@ -5,6 +5,10 @@ import { getPasskeysByUserId } from "~/lib/database/auth/passkey";
 import { saveChallenge } from "~/lib/database/auth/challenge";
 
 export async function loader() {
+  if (!process.env.DATABASE_URL) {
+    return Response.json({ error: "Auth not configured" }, { status: 503 });
+  }
+
   // Create a new user for this registration ceremony
   const user = await upsertUser(crypto.randomUUID());
   if (!user) {

@@ -162,6 +162,10 @@ async function processEntry(
 }
 
 export async function action({ request }: { request: Request }) {
+  if (!process.env.DATABASE_URL) {
+    return Response.json({ error: "Sync not configured" }, { status: 503 });
+  }
+
   if (request.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
   }

@@ -4,6 +4,7 @@ import { useSettings, type Theme, type ReaderLayout, type PdfLayout } from "~/li
 import { COLOR_THEMES, COLOR_THEME_IDS } from "~/lib/color-themes";
 import { Button } from "~/components/ui/button";
 import { cn } from "~/lib/utils";
+import { useAuth } from "~/lib/context/auth-context";
 
 export async function clientLoader() {
   return {};
@@ -132,6 +133,7 @@ function StepperControl({
 
 export default function SettingsPage() {
   const [settings, updateSettings] = useSettings();
+  const { isAuthenticated, logout } = useAuth()
 
   return (
     <div className="flex min-h-dvh flex-col bg-background">
@@ -304,6 +306,13 @@ export default function SettingsPage() {
             </div>
           </div>
         </section>
+        <footer className="mt-20 border-t text-xs pt-4">
+          {isAuthenticated ? (
+            <Button variant="link" onClick={() => logout()}>Logout</Button>
+          ) : (
+            <Link to="/login">Login</Link>
+          )}
+        </footer>
       </main>
     </div>
   );

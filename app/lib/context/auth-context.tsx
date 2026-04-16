@@ -19,6 +19,7 @@ interface AuthState {
 
 interface AuthContextValue extends AuthState {
   refreshAuth: () => void;
+  logout: () => Promise<void>;
 }
 
 const defaultValue: AuthContextValue = {
@@ -26,6 +27,7 @@ const defaultValue: AuthContextValue = {
   user: null,
   isLoading: false,
   refreshAuth: () => {},
+  logout: () => Promise.resolve(),
 };
 
 const AuthContext = createContext<AuthContextValue>(defaultValue);
@@ -61,12 +63,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     checkSession();
   }, [checkSession]);
 
+  const logout = useCallback(async () => {
+    await AppRuntime.runPromise(
+      AuthService.pipe(Effect.andThen((s) => s.logout())),
+    );
+    setState({ isAuthenticated: false, user: null, isLoading: false });
+  }, []);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       ...state,
       refreshAuth: checkSession,
+      logout,
     }),
-    [state, checkSession],
+    [state, checkSession, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

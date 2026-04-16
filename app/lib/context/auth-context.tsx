@@ -1,4 +1,12 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { Effect } from "effect";
 import { AuthService, type AuthUser } from "~/lib/auth-service";
 import { AppRuntime } from "~/lib/effect-runtime";
@@ -9,13 +17,18 @@ interface AuthState {
   isLoading: boolean;
 }
 
-const defaultState: AuthState = {
+interface AuthContextValue extends AuthState {
+  refreshAuth: () => void;
+}
+
+const defaultValue: AuthContextValue = {
   isAuthenticated: false,
   user: null,
   isLoading: false,
+  refreshAuth: () => {},
 };
 
-const AuthContext = createContext<AuthState>(defaultState);
+const AuthContext = createContext<AuthContextValue>(defaultValue);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({
@@ -24,8 +37,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isLoading: true,
   });
 
-  useEffect(() => {
-    // Check session on mount via GET /api/auth/session
+  const checkSession = useCallback(() => {
     const init = Effect.gen(function* () {
       const auth = yield* AuthService;
       const session = yield* auth.getSession();
@@ -45,9 +57,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
   }, []);
 
-  return <AuthContext.Provider value={state}>{children}</AuthContext.Provider>;
+  useEffect(() => {
+    checkSession();
+  }, [checkSession]);
+
+  const value = useMemo<AuthContextValue>(
+    () => ({
+      ...state,
+      refreshAuth: checkSession,
+    }),
+    [state, checkSession],
+  );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-export function useAuth(): AuthState {
+export function useAuth(): AuthContextValue {
   return useContext(AuthContext);
 }

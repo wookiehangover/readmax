@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
+import { Button } from "~/components/ui/button";
 import { MessageSquare, NotebookPen, Ellipsis, Globe, Trash2 } from "lucide-react";
 import { CoverImage } from "~/components/book-grid/cover-image";
 import { CoverPlaceholder } from "~/components/book-grid/cover-placeholder";
@@ -80,14 +81,10 @@ export function LibraryBrowseContent() {
           <div className="w-40">
             <AddBookCard onClick={() => fileInputRef.current?.click()} />
           </div>
-          <button
-            type="button"
-            onClick={() => ws.openStandardEbooksRef.current?.()}
-            className="flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-          >
+          <Button variant="outline" onClick={() => ws.openStandardEbooksRef.current?.()}>
             <Globe className="size-4" />
             Browse Standard Ebooks
-          </button>
+          </Button>
         </div>
       ) : (
         <div className="h-full overflow-y-auto p-4 md:p-6">

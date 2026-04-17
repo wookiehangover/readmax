@@ -2,6 +2,7 @@ import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { NotebookEditorCallbacks } from "~/lib/context/workspace-context";
 import type { JSONContent } from "@tiptap/react";
+import type { UIMessage } from "@ai-sdk/react";
 
 // Mock useWorkspace to return controllable refs
 const mockNotebookEditorCallbackMap = { current: new Map<string, NotebookEditorCallbacks>() };
@@ -36,14 +37,31 @@ vi.mock("~/lib/stores/annotations-store", () => ({
 const { useChatToolHandlers } = await import("../use-chat-tool-handlers");
 import { renderHookSimple } from "./render-hook-simple";
 
-function makeToolCall(toolName: string, input: Record<string, unknown>, toolCallId?: string) {
-  return { toolCall: { toolName, input, toolCallId } };
+function makeAppendOutputMessage(
+  toolCallId: string,
+  text: string,
+  appendedNodes: JSONContent[],
+): UIMessage {
+  return {
+    id: "msg-1",
+    role: "assistant",
+    parts: [
+      {
+        // AI SDK encodes static tool calls as `tool-<name>`.
+        type: "tool-append_to_notes",
+        toolCallId,
+        state: "output-available",
+        input: { text },
+        output: { appended: true, text, appendedNodes },
+      } as unknown as UIMessage["parts"][number],
+    ],
+  };
 }
 
-describe("useChatToolHandlers – append_to_notes dedup", () => {
+describe("useChatToolHandlers – append_to_notes (server-authoritative)", () => {
   let setNotebookMarkdown: React.Dispatch<React.SetStateAction<string>>;
   let setNotebookMarkdownMock: ReturnType<typeof vi.fn>;
-  let streamedToolCallIdRef: { current: string | null };
+  let streamedToolCallIdRef: { current: Set<string> };
   let appendContentSpy: ReturnType<typeof vi.fn<(nodes: JSONContent[]) => void>>;
 
   beforeEach(() => {
@@ -51,14 +69,14 @@ describe("useChatToolHandlers – append_to_notes dedup", () => {
     setNotebookMarkdown = setNotebookMarkdownMock as unknown as React.Dispatch<
       React.SetStateAction<string>
     >;
-    streamedToolCallIdRef = { current: null };
+    streamedToolCallIdRef = { current: new Set<string>() };
     appendContentSpy = vi.fn();
     mockNotebookEditorCallbackMap.current.clear();
     mockNotebookContentChangeMap.current.clear();
   });
 
-  function getOnToolCall() {
-    const { onToolCall } = renderHookSimple(() =>
+  function getOnFinish() {
+    const { onFinish } = renderHookSimple(() =>
       useChatToolHandlers({
         bookId: "book-1",
         bookDataRef: { current: null },
@@ -66,11 +84,10 @@ describe("useChatToolHandlers – append_to_notes dedup", () => {
         streamedToolCallIdRef,
       }),
     );
-    return onToolCall;
+    return onFinish;
   }
 
-  it("does NOT call setNotebookMarkdown when editor is open (non-streaming)", async () => {
-    // Simulate notebook panel open — register editor callbacks
+  it("applies appendedNodes to the live editor and does NOT call setNotebookMarkdown", () => {
     mockNotebookEditorCallbackMap.current.set("book-1", {
       appendContent: appendContentSpy,
       setContent: vi.fn(),
@@ -79,16 +96,18 @@ describe("useChatToolHandlers – append_to_notes dedup", () => {
       replaceContentFrom: vi.fn(),
     });
 
-    const onToolCall = getOnToolCall();
-    await onToolCall(makeToolCall("append_to_notes", { text: "# Hello" }));
+    const appendedNodes: JSONContent[] = [
+      { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "Hello" }] },
+    ];
+    const onFinish = getOnFinish();
+    onFinish({ message: makeAppendOutputMessage("tc-1", "# Hello", appendedNodes) });
 
-    // Editor receives the content
     expect(appendContentSpy).toHaveBeenCalledTimes(1);
-    // But setNotebookMarkdown is NOT called — editor onUpdate handles it
+    expect(appendContentSpy).toHaveBeenCalledWith(appendedNodes);
     expect(setNotebookMarkdownMock).not.toHaveBeenCalled();
   });
 
-  it("does NOT call setNotebookMarkdown when streaming already inserted (editor open)", async () => {
+  it("skips appendContent when the streaming preview already inserted the nodes", () => {
     mockNotebookEditorCallbackMap.current.set("book-1", {
       appendContent: appendContentSpy,
       setContent: vi.fn(),
@@ -97,26 +116,58 @@ describe("useChatToolHandlers – append_to_notes dedup", () => {
       replaceContentFrom: vi.fn(),
     });
 
-    // Streaming hook already inserted content for this tool call
-    streamedToolCallIdRef.current = "tc-123";
+    streamedToolCallIdRef.current.add("tc-1");
 
-    const onToolCall = getOnToolCall();
-    await onToolCall(makeToolCall("append_to_notes", { text: "# Hello" }, "tc-123"));
+    const appendedNodes: JSONContent[] = [
+      { type: "paragraph", content: [{ type: "text", text: "noted" }] },
+    ];
+    const onFinish = getOnFinish();
+    onFinish({ message: makeAppendOutputMessage("tc-1", "noted", appendedNodes) });
 
-    // Streaming path: early return, no appendContent, no setNotebookMarkdown
     expect(appendContentSpy).not.toHaveBeenCalled();
     expect(setNotebookMarkdownMock).not.toHaveBeenCalled();
-    // Ref is cleared
-    expect(streamedToolCallIdRef.current).toBeNull();
+    // Entry is consumed so the set doesn't grow across messages.
+    expect(streamedToolCallIdRef.current.has("tc-1")).toBe(false);
   });
 
-  it("DOES call setNotebookMarkdown when editor is NOT open (fallback)", async () => {
-    // No editor callbacks registered — notebook panel is closed
-    const onToolCall = getOnToolCall();
-    await onToolCall(makeToolCall("append_to_notes", { text: "# Hello" }));
+  it("calls setNotebookMarkdown with appended text when editor is NOT open", () => {
+    const appendedNodes: JSONContent[] = [
+      { type: "paragraph", content: [{ type: "text", text: "jot" }] },
+    ];
+    const onFinish = getOnFinish();
+    onFinish({ message: makeAppendOutputMessage("tc-1", "jot", appendedNodes) });
 
-    // Falls back to IndexedDB write + manual markdown update
     expect(setNotebookMarkdownMock).toHaveBeenCalledTimes(1);
     expect(appendContentSpy).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when server reports appended=false", () => {
+    mockNotebookEditorCallbackMap.current.set("book-1", {
+      appendContent: appendContentSpy,
+      setContent: vi.fn(),
+      getContent: vi.fn().mockReturnValue({ type: "doc", content: [] }),
+      getTopLevelNodeCount: vi.fn().mockReturnValue(0),
+      replaceContentFrom: vi.fn(),
+    });
+
+    const msg: UIMessage = {
+      id: "msg-1",
+      role: "assistant",
+      parts: [
+        {
+          type: "tool-append_to_notes",
+          toolCallId: "tc-1",
+          state: "output-available",
+          input: { text: "x" },
+          output: { appended: false, text: "x", appendedNodes: [] },
+        } as unknown as UIMessage["parts"][number],
+      ],
+    };
+
+    const onFinish = getOnFinish();
+    onFinish({ message: msg });
+
+    expect(appendContentSpy).not.toHaveBeenCalled();
+    expect(setNotebookMarkdownMock).not.toHaveBeenCalled();
   });
 });

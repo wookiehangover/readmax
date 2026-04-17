@@ -6,7 +6,6 @@ import { AnnotationService } from "~/lib/stores/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { getToolInfo } from "./chat-utils";
-import { markdownToTiptapJson } from "~/lib/editor/markdown-to-tiptap";
 import { tiptapJsonToMarkdown } from "~/lib/editor/tiptap-to-markdown";
 
 interface UseChatToolHandlersOptions {
@@ -14,8 +13,12 @@ interface UseChatToolHandlersOptions {
   bookFormat?: string;
   bookDataRef: React.RefObject<ArrayBuffer | null>;
   setNotebookMarkdown: React.Dispatch<React.SetStateAction<string>>;
-  /** Set by useStreamingAppend when streaming already inserted append_to_notes content */
-  streamedToolCallIdRef?: React.MutableRefObject<string | null>;
+  /**
+   * Populated by useStreamingAppend with toolCallIds whose content was already
+   * inserted into the live editor via the input-streaming preview. onFinish
+   * uses this to avoid double-appending the authoritative server output.
+   */
+  streamedToolCallIdRef?: React.MutableRefObject<Set<string>>;
 }
 
 export function useChatToolHandlers({
@@ -32,87 +35,59 @@ export function useChatToolHandlers({
     notebookEditorCallbackMap,
   } = useWorkspace();
 
-  // onToolCall fires as soon as each tool call completes, while the response is still streaming.
-  // We handle append_to_notes and edit_notes here for immediate notebook updates.
+  // onToolCall fires as soon as each tool call has its input parsed. All
+  // notebook tools (append_to_notes, edit_notes) now run on the server; their
+  // outputs are consumed in onFinish from the tool-output parts. This hook
+  // remains a no-op placeholder for potential future client-side tools.
   const onToolCall = useCallback(
-    async ({ toolCall }: { toolCall: { toolName: string; input: unknown } }) => {
-      const args = toolCall.input as Record<string, unknown> | undefined;
-      if (toolCall.toolName === "append_to_notes") {
-        const text = typeof args?.text === "string" ? args.text : undefined;
-        if (!text || !bookId) return;
-
-        const toolCallId = (toolCall as any).toolCallId as string | undefined;
-
-        const parsed = markdownToTiptapJson(text);
-        const newNodes = parsed.content ?? [];
-
-        // If streaming already inserted this content via replaceContentFrom,
-        // skip the editor append but still persist to IndexedDB below.
-        const alreadyStreamed =
-          streamedToolCallIdRef?.current &&
-          toolCallId &&
-          streamedToolCallIdRef.current === toolCallId;
-
-        if (alreadyStreamed) {
-          streamedToolCallIdRef.current = null;
-        }
-
-        // Push through live editor if notebook panel is open and content wasn't already streamed
-        const editorCallbacks = notebookEditorCallbackMap.current.get(bookId);
-        if (editorCallbacks && !alreadyStreamed) {
-          editorCallbacks.appendContent(newNodes);
-        }
-
-        // Always persist to IndexedDB immediately so content survives panel close/unmount
-        await AppRuntime.runPromise(
-          Effect.gen(function* () {
-            const svc = yield* AnnotationService;
-            // If the editor is open, read the authoritative content from it
-            const editorCbs = notebookEditorCallbackMap.current.get(bookId);
-            if (editorCbs) {
-              const currentContent = editorCbs.getContent();
-              yield* svc.saveNotebook({
-                bookId,
-                content: currentContent,
-                updatedAt: Date.now(),
-              });
-            } else {
-              // Editor not open — merge with existing IndexedDB content
-              const notebook = yield* svc.getNotebook(bookId);
-              const existingContent = notebook?.content?.content ?? [];
-              const updatedContent = {
-                type: "doc" as const,
-                content: [...existingContent, ...newNodes],
-              };
-              yield* svc.saveNotebook({
-                bookId,
-                content: updatedContent,
-                updatedAt: Date.now(),
-              });
-            }
-          }),
-        ).catch(console.error);
-
-        // Only update notebookMarkdown manually when the editor is NOT open.
-        // When the editor IS open, its onUpdate fires after appendContent /
-        // replaceContentFrom and syncs notebookMarkdown via
-        // notebookContentChangeMap — calling setNotebookMarkdown here too
-        // would duplicate the appended text.
-        if (!editorCallbacks) {
-          setNotebookMarkdown((prev) => prev + "\n" + text);
-        }
-        return;
-      }
-
-      // edit_notes now runs on the server; its output is consumed in onFinish
-      // from the tool-output part. Nothing to do here on tool call.
+    async (_event: { toolCall: { toolName: string; input: unknown } }) => {
+      // No client-side tool execution today.
     },
-    [bookId, setNotebookMarkdown, notebookEditorCallbackMap, streamedToolCallIdRef],
+    [],
   );
 
   const onFinish = useCallback(
     (event: { message: UIMessage }) => {
       const msg = event.message;
+
+      // Handle append_to_notes: the server parsed the markdown, persisted the
+      // updated notebook to Postgres, and returned the appended Tiptap nodes.
+      // We apply those authoritative nodes to the live editor (if open); the
+      // notebook row itself arrives in IndexedDB via the next sync pull, so
+      // we intentionally do NOT write to IDB here.
+      const appendNotesParts = (msg.parts ?? []).filter((p: any) => {
+        const info = getToolInfo(p);
+        return info && info.toolName === "append_to_notes" && info.state === "output-available";
+      });
+      for (const part of appendNotesParts) {
+        const info = getToolInfo(part);
+        const output = info?.output as
+          | { appended?: boolean; text?: string; appendedNodes?: JSONContent[] }
+          | undefined;
+        if (!output?.appended || !bookId) continue;
+        const appendedNodes = Array.isArray(output.appendedNodes) ? output.appendedNodes : [];
+        if (appendedNodes.length === 0) continue;
+
+        const toolCallId = (part as any).toolCallId as string | undefined;
+        // If the streaming preview already inserted these nodes during
+        // input-streaming, skip the append — the editor already has them and
+        // re-applying would duplicate. We still consume the entry from the set
+        // so it doesn't grow unbounded across messages.
+        if (toolCallId && streamedToolCallIdRef?.current.has(toolCallId)) {
+          streamedToolCallIdRef.current.delete(toolCallId);
+          continue;
+        }
+
+        const editorCbs = notebookEditorCallbackMap.current.get(bookId);
+        if (editorCbs) {
+          editorCbs.appendContent(appendedNodes);
+        } else if (typeof output.text === "string") {
+          // Editor not open — keep the chat's markdown mirror in sync so a
+          // subsequent edit_notes or read_notes call against the cached state
+          // sees the appended content even before the next sync pull lands.
+          setNotebookMarkdown((prev) => (prev ? prev + "\n" + output.text : output.text!));
+        }
+      }
 
       // Handle edit_notes: server ran the SDK code and returned updatedContent.
       // Apply to the live editor if open; mirror to IndexedDB so the local
@@ -358,6 +333,7 @@ export function useChatToolHandlers({
       notebookCallbackMap,
       notebookEditorCallbackMap,
       setNotebookMarkdown,
+      streamedToolCallIdRef,
     ],
   );
 

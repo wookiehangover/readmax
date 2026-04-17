@@ -359,8 +359,9 @@ function ChatPanelInner({
   // Track latest messages for onFinish callbacks (e.g. title generation)
   const messagesRef = useRef<UIMessage[]>(initialMessages);
 
-  // Shared ref so streaming hook can tell onToolCall that content was already inserted
-  const streamedToolCallIdRef = useRef<string | null>(null);
+  // Shared ref so the streaming preview hook can tell onFinish which
+  // toolCallIds already had their content inserted into the live editor.
+  const streamedToolCallIdRef = useRef<Set<string>>(new Set());
 
   const { onToolCall, onFinish: onToolFinish } = useChatToolHandlers({
     bookId,

@@ -27,6 +27,7 @@ import {
   upsertNotebook,
 } from "~/lib/database/annotation/notebook";
 import { runEditNotesInSandbox } from "~/lib/editor/notebook-sdk-server";
+import { markdownToTiptapJsonServer } from "~/lib/editor/markdown-to-tiptap-server";
 import type { JSONContent } from "@tiptap/react";
 import {
   getMessagesBySession,
@@ -208,8 +209,6 @@ export async function action({ request }: Route.ActionArgs) {
   }
   const chapters = chaptersRow.chapters as BookChapter[];
 
-  const notebookMarkdown = await getNotebookMarkdownForUser(userId, bookId);
-
   const priorRows = await getMessagesBySession(sessionId);
   const priorMessages: UIMessage[] = priorRows.map(rowToUIMessage);
 
@@ -259,7 +258,8 @@ export async function action({ request }: Route.ActionArgs) {
               "Read the reader's personal notes and annotations for this book. Returns their notebook content as markdown.",
             inputSchema: z.object({}),
             execute: async () => {
-              return { content: notebookMarkdown || "(No notes yet)" };
+              const content = await getNotebookMarkdownForUser(userId, bookId);
+              return { content: content || "(No notes yet)" };
             },
           }),
           append_to_notes: tool({
@@ -269,7 +269,35 @@ export async function action({ request }: Route.ActionArgs) {
               text: z.string().describe("The text to add (markdown format)"),
             }),
             execute: async ({ text }) => {
-              return { appended: true, text };
+              const parsed = markdownToTiptapJsonServer(text);
+              const appendedNodes = (parsed.content ?? []) as JSONContent[];
+
+              if (appendedNodes.length === 0) {
+                return { appended: false, text, appendedNodes: [] };
+              }
+
+              const existing = await getNotebookForUser(userId, bookId);
+              const existingDoc = (existing?.content as JSONContent | null | undefined) ?? null;
+              const existingNodes = existingDoc?.content ?? [];
+
+              const updatedContent: JSONContent = {
+                type: "doc",
+                content: [...existingNodes, ...appendedNodes],
+              };
+
+              try {
+                await upsertNotebook(userId, bookId, updatedContent, new Date());
+              } catch (err) {
+                console.error("append_to_notes: failed to persist notebook:", err);
+                return {
+                  appended: false,
+                  text,
+                  appendedNodes: [],
+                  error: err instanceof Error ? err.message : String(err),
+                };
+              }
+
+              return { appended: true, text, appendedNodes };
             },
           }),
           edit_notes: tool({

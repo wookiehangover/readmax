@@ -452,6 +452,63 @@ const ENTITY_MERGERS: Partial<
 };
 
 // ---------------------------------------------------------------------------
+// Per-book upload retry state with exponential backoff
+// ---------------------------------------------------------------------------
+
+/**
+ * Backoff schedule applied to failing blob uploads, keyed by attempt count.
+ * Attempts beyond the last slot stay capped at the final value (30 min).
+ */
+export const UPLOAD_BACKOFF_SCHEDULE_MS: readonly number[] = [
+  30_000, 60_000, 300_000, 900_000, 1_800_000,
+];
+
+export interface UploadRetryEntry {
+  readonly attempts: number;
+  readonly nextRetryAt: number;
+}
+
+export function uploadRetryKey(bookId: string, type: "file" | "cover"): string {
+  return `${bookId}:${type}`;
+}
+
+export function getUploadRetryDelayMs(attempts: number): number {
+  const idx = Math.min(Math.max(attempts, 1), UPLOAD_BACKOFF_SCHEDULE_MS.length) - 1;
+  return UPLOAD_BACKOFF_SCHEDULE_MS[idx];
+}
+
+export type UploadAttemptDecision = { attempt: true } | { attempt: false; retryInMs: number };
+
+export function shouldAttemptUpload(
+  state: Map<string, UploadRetryEntry>,
+  key: string,
+  now: number,
+): UploadAttemptDecision {
+  const entry = state.get(key);
+  if (!entry || now >= entry.nextRetryAt) return { attempt: true };
+  return { attempt: false, retryInMs: entry.nextRetryAt - now };
+}
+
+export function recordUploadFailure(
+  state: Map<string, UploadRetryEntry>,
+  key: string,
+  now: number,
+): UploadRetryEntry {
+  const prev = state.get(key);
+  const attempts = (prev?.attempts ?? 0) + 1;
+  const entry: UploadRetryEntry = {
+    attempts,
+    nextRetryAt: now + getUploadRetryDelayMs(attempts),
+  };
+  state.set(key, entry);
+  return entry;
+}
+
+export function clearUploadRetry(state: Map<string, UploadRetryEntry>, key: string): void {
+  state.delete(key);
+}
+
+// ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
 
@@ -471,6 +528,37 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
   let pushTimer: ReturnType<typeof setInterval> | null = null;
   let pullTimer: ReturnType<typeof setInterval> | null = null;
   let stopped = false;
+
+  // Per-book upload retry state. In-memory only: resets on reload / new engine
+  // instance. Prevents the sync loop from hammering the blob endpoint when a
+  // particular book's upload keeps failing (e.g. Vercel Blob returning 503).
+  const uploadRetryState = new Map<string, UploadRetryEntry>();
+
+  /**
+   * Wrapper around {@link uploadFile} that enforces the per-book exponential
+   * backoff. On success the retry state for this book+type is cleared; on
+   * failure (null return) the next-attempt timestamp is pushed forward along
+   * the {@link UPLOAD_BACKOFF_SCHEDULE_MS} schedule.
+   */
+  async function uploadFileWithBackoff(
+    bookId: string,
+    data: ArrayBuffer | Blob,
+    type: "file" | "cover",
+  ): Promise<string | null> {
+    const key = uploadRetryKey(bookId, type);
+    const decision = shouldAttemptUpload(uploadRetryState, key, Date.now());
+    if (!decision.attempt) {
+      console.log(`[sync] Skipping ${type} upload for ${bookId}, retry in ${decision.retryInMs}ms`);
+      return null;
+    }
+    const url = await uploadFile(bookId, data, type);
+    if (url) {
+      clearUploadRetry(uploadRetryState, key);
+    } else {
+      recordUploadFailure(uploadRetryState, key, Date.now());
+    }
+    return url;
+  }
 
   async function uploadFile(
     bookId: string,
@@ -527,7 +615,7 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
       if (!meta.remoteFileUrl) {
         const fileData = await get<ArrayBuffer>(bookId, dataStore);
         if (fileData) {
-          const url = await uploadFile(bookId, fileData, "file");
+          const url = await uploadFileWithBackoff(bookId, fileData, "file");
           if (url) {
             await set(bookId, { ...meta, remoteFileUrl: url, hasLocalFile: true }, bookStore);
           }
@@ -536,7 +624,7 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
 
       // Upload cover image if missing remoteCoverUrl
       if (!meta.remoteCoverUrl && meta.coverImage instanceof Blob) {
-        const url = await uploadFile(bookId, meta.coverImage, "cover");
+        const url = await uploadFileWithBackoff(bookId, meta.coverImage, "cover");
         if (url) {
           // Re-read in case the file upload above already updated meta
           const current = (await get<Record<string, unknown>>(bookId, bookStore)) ?? meta;

@@ -78,6 +78,22 @@ export async function upsertSession(
   return result.rows[0];
 }
 
+export async function getSessionByIdForUser(
+  sessionId: string,
+  userId: string,
+): Promise<ChatSessionRow | null> {
+  const pool = getPool();
+  const result = await pool.query<ChatSessionRow>(sql`
+    SELECT ${SESSION_COLUMNS}
+    FROM readmax.chat_session
+    WHERE id = ${sessionId}
+      AND user_id = ${userId}
+      AND deleted_at IS NULL
+  `);
+  if (result.rows.length === 0) return null;
+  return result.rows[0];
+}
+
 export async function getSessionsByUser(userId: string): Promise<ChatSessionRow[]> {
   const pool = getPool();
   const result = await pool.query<ChatSessionRow>(sql`

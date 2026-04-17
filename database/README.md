@@ -34,15 +34,15 @@ done
 | 001 | `001-book-id-to-text.sql`                      | Switch `readmax.book.id` from UUID to TEXT so client-generated book ids can be used directly.                                         | Required before 002.                |
 | 002 | `002-drop-book-fk-constraints.sql`             | Drop foreign-key constraints from entities that reference `readmax.book(id)` so books can be deleted locally without cascade errors.  | Safe to re-run.                     |
 | 003 | `003-highlight-updated-at.sql`                 | Add `updated_at` to `readmax.highlight` for LWW conflict resolution and set-union merge bookkeeping.                                  | Safe to re-run.                     |
-| 004 | `004-chat-active-stream-and-book-chapters.sql` | Add `chat_session.active_stream_id` for resumable SSE streams. Create `readmax.book_chapters` to cache parsed epub TOC per user/book. | Introduced on the chat-sync branch. |
-| 005 | `005-highlight-text-anchor-and-note.sql`       | Add `text_anchor` (JSONB) and `note` (TEXT) columns to `readmax.highlight`. Required by the server-side `create_highlight` AI tool.   | Introduced on the chat-sync branch. |
+| 005 | `005-chat-active-stream-and-book-chapters.sql` | Add `chat_session.active_stream_id` for resumable SSE streams. Create `readmax.book_chapters` to cache parsed epub TOC per user/book. | Introduced on the chat-sync branch. |
+| 006 | `006-highlight-text-anchor-and-note.sql`       | Add `text_anchor` (JSONB) and `note` (TEXT) columns to `readmax.highlight`. Required by the server-side `create_highlight` AI tool.   | Introduced on the chat-sync branch. |
 
 ### Deploy checklist (chat-sync branch → main)
 
 These migrations are new on this feature branch and must be applied before the corresponding server code is deployed:
 
-1. `004-chat-active-stream-and-book-chapters.sql` — must land **before** deploying the new `/api/chat` and `/api/chat/resume/:sessionId` routes; those routes write and read `chat_session.active_stream_id` and the `book_chapters` cache.
-2. `005-highlight-text-anchor-and-note.sql` — must land **before** deploying the server-side `create_highlight` AI tool; the tool inserts rows with `text_anchor` and `note` populated.
+1. `005-chat-active-stream-and-book-chapters.sql` — must land **before** deploying the new `/api/chat` and `/api/chat/resume/:sessionId` routes; those routes write and read `chat_session.active_stream_id` and the `book_chapters` cache.
+2. `006-highlight-text-anchor-and-note.sql` — must land **before** deploying the server-side `create_highlight` AI tool; the tool inserts rows with `text_anchor` and `note` populated.
 
 Migrations 001–003 are already live on `origin/main` and do not need to be re-applied for this deploy.
 

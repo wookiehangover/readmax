@@ -55,6 +55,7 @@ All environment variables are optional — the app works fully offline without t
 - `WEBAUTHN_RP_ID` — WebAuthn Relying Party ID (e.g. `localhost` for dev, your domain for prod)
 - `WEBAUTHN_RP_ORIGIN` — WebAuthn origin URL (e.g. `http://localhost:5173` for dev)
 - `BLOB_READ_WRITE_TOKEN` — Vercel Blob storage token
+- `REDIS_URL` — Redis connection string for resumable AI chat streaming (Vercel KV, Upstash, or any Redis-compatible service). Required in production; in development the chat panel works without it but mid-stream reconnect is disabled.
 
 ## Database Setup
 

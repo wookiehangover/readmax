@@ -59,16 +59,10 @@ function makeAppendOutputMessage(
 }
 
 describe("useChatToolHandlers – append_to_notes (server-authoritative)", () => {
-  let setNotebookMarkdown: React.Dispatch<React.SetStateAction<string>>;
-  let setNotebookMarkdownMock: ReturnType<typeof vi.fn>;
   let streamedToolCallIdRef: { current: Set<string> };
   let appendContentSpy: ReturnType<typeof vi.fn<(nodes: JSONContent[]) => void>>;
 
   beforeEach(() => {
-    setNotebookMarkdownMock = vi.fn();
-    setNotebookMarkdown = setNotebookMarkdownMock as unknown as React.Dispatch<
-      React.SetStateAction<string>
-    >;
     streamedToolCallIdRef = { current: new Set<string>() };
     appendContentSpy = vi.fn();
     mockNotebookEditorCallbackMap.current.clear();
@@ -80,14 +74,13 @@ describe("useChatToolHandlers – append_to_notes (server-authoritative)", () =>
       useChatToolHandlers({
         bookId: "book-1",
         bookDataRef: { current: null },
-        setNotebookMarkdown,
         streamedToolCallIdRef,
       }),
     );
     return onFinish;
   }
 
-  it("applies appendedNodes to the live editor and does NOT call setNotebookMarkdown", () => {
+  it("applies appendedNodes to the live editor", () => {
     mockNotebookEditorCallbackMap.current.set("book-1", {
       appendContent: appendContentSpy,
       setContent: vi.fn(),
@@ -104,7 +97,6 @@ describe("useChatToolHandlers – append_to_notes (server-authoritative)", () =>
 
     expect(appendContentSpy).toHaveBeenCalledTimes(1);
     expect(appendContentSpy).toHaveBeenCalledWith(appendedNodes);
-    expect(setNotebookMarkdownMock).not.toHaveBeenCalled();
   });
 
   it("skips appendContent when the streaming preview already inserted the nodes", () => {
@@ -125,19 +117,19 @@ describe("useChatToolHandlers – append_to_notes (server-authoritative)", () =>
     onFinish({ message: makeAppendOutputMessage("tc-1", "noted", appendedNodes) });
 
     expect(appendContentSpy).not.toHaveBeenCalled();
-    expect(setNotebookMarkdownMock).not.toHaveBeenCalled();
     // Entry is consumed so the set doesn't grow across messages.
     expect(streamedToolCallIdRef.current.has("tc-1")).toBe(false);
   });
 
-  it("calls setNotebookMarkdown with appended text when editor is NOT open", () => {
+  it("is a no-op when the editor is NOT open (notebook row arrives via sync pull)", () => {
     const appendedNodes: JSONContent[] = [
       { type: "paragraph", content: [{ type: "text", text: "jot" }] },
     ];
     const onFinish = getOnFinish();
-    onFinish({ message: makeAppendOutputMessage("tc-1", "jot", appendedNodes) });
-
-    expect(setNotebookMarkdownMock).toHaveBeenCalledTimes(1);
+    // No editor registered in notebookEditorCallbackMap.
+    expect(() =>
+      onFinish({ message: makeAppendOutputMessage("tc-1", "jot", appendedNodes) }),
+    ).not.toThrow();
     expect(appendContentSpy).not.toHaveBeenCalled();
   });
 
@@ -168,6 +160,5 @@ describe("useChatToolHandlers – append_to_notes (server-authoritative)", () =>
     onFinish({ message: msg });
 
     expect(appendContentSpy).not.toHaveBeenCalled();
-    expect(setNotebookMarkdownMock).not.toHaveBeenCalled();
   });
 });

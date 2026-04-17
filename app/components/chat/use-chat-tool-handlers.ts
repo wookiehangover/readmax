@@ -6,13 +6,11 @@ import { AnnotationService } from "~/lib/stores/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { getToolInfo } from "./chat-utils";
-import { tiptapJsonToMarkdown } from "~/lib/editor/tiptap-to-markdown";
 
 interface UseChatToolHandlersOptions {
   bookId: string;
   bookFormat?: string;
   bookDataRef: React.RefObject<ArrayBuffer | null>;
-  setNotebookMarkdown: React.Dispatch<React.SetStateAction<string>>;
   /**
    * Populated by useStreamingAppend with toolCallIds whose content was already
    * inserted into the live editor via the input-streaming preview. onFinish
@@ -25,7 +23,6 @@ export function useChatToolHandlers({
   bookId,
   bookFormat,
   bookDataRef,
-  setNotebookMarkdown,
   streamedToolCallIdRef,
 }: UseChatToolHandlersOptions) {
   const {
@@ -81,12 +78,9 @@ export function useChatToolHandlers({
         const editorCbs = notebookEditorCallbackMap.current.get(bookId);
         if (editorCbs) {
           editorCbs.appendContent(appendedNodes);
-        } else if (typeof output.text === "string") {
-          // Editor not open — keep the chat's markdown mirror in sync so a
-          // subsequent edit_notes or read_notes call against the cached state
-          // sees the appended content even before the next sync pull lands.
-          setNotebookMarkdown((prev) => (prev ? prev + "\n" + output.text : output.text!));
         }
+        // Editor not open → no-op. The server already persisted the notebook
+        // update and the row will arrive locally via the next sync pull.
       }
 
       // Handle edit_notes: server ran the SDK code and returned updatedContent.
@@ -119,8 +113,6 @@ export function useChatToolHandlers({
             });
           }),
         ).catch(console.error);
-
-        setNotebookMarkdown(tiptapJsonToMarkdown(updatedContent));
       }
 
       // Handle create_highlight tool calls
@@ -332,7 +324,6 @@ export function useChatToolHandlers({
       applyTempHighlightForBook,
       notebookCallbackMap,
       notebookEditorCallbackMap,
-      setNotebookMarkdown,
       streamedToolCallIdRef,
     ],
   );

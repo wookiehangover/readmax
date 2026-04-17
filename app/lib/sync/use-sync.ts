@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useAuth } from "~/lib/context/auth-context";
+import { runFileHashBackfillIfNeeded } from "./backfill-file-hash";
 import { runInitialSyncIfNeeded } from "./initial-sync";
 import { makeSyncEngine, type SyncEngine } from "./sync-engine";
 
@@ -114,6 +115,10 @@ export function useSync(): SyncState {
     runInitialSyncIfNeeded()
       .catch((err) => {
         console.error("[sync] Initial sync scan failed:", err);
+      })
+      .then(() => runFileHashBackfillIfNeeded())
+      .catch((err) => {
+        console.error("[sync] File hash backfill failed:", err);
       })
       .finally(() => {
         engine.startSync();

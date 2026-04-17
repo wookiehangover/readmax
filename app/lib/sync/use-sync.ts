@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useAuth } from "~/lib/context/auth-context";
+import { runBlobUrlBackfillIfNeeded } from "./backfill-blob-urls";
 import { runFileHashBackfillIfNeeded } from "./backfill-file-hash";
 import { runInitialSyncIfNeeded } from "./initial-sync";
 import { makeSyncEngine, type SyncEngine } from "./sync-engine";
@@ -119,6 +120,10 @@ export function useSync(): SyncState {
       .then(() => runFileHashBackfillIfNeeded())
       .catch((err) => {
         console.error("[sync] File hash backfill failed:", err);
+      })
+      .then(() => runBlobUrlBackfillIfNeeded())
+      .catch((err) => {
+        console.error("[sync] Blob URL backfill failed:", err);
       })
       .finally(() => {
         engine.startSync();

@@ -1,7 +1,7 @@
 import { upload } from "@vercel/blob/client";
 import { createStore, get, set, entries } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
-import { getUnsyncedChanges, markSynced, clearSyncedChanges } from "./change-log";
+import { getUnsyncedChanges, markSynced, clearSyncedChanges, recordChange } from "./change-log";
 import { lwwMerge, setUnionMerge } from "./merge";
 import { remapBookId } from "./remap";
 import { syncDebugLog } from "./sync-debug";
@@ -602,7 +602,23 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
         if (fileData) {
           const url = await uploadFileWithBackoff(bookId, fileData, "file");
           if (url) {
-            await set(bookId, { ...meta, remoteFileUrl: url, hasLocalFile: true }, bookStore);
+            const stamped = {
+              ...meta,
+              remoteFileUrl: url,
+              hasLocalFile: true,
+              updatedAt: Date.now(),
+            };
+            await set(bookId, stamped, bookStore);
+            // Enqueue a book change so the URL is carried to the server on
+            // the next push. The onUploadCompleted webhook also writes it,
+            // but is unreliable; this is the authoritative persistence path.
+            recordChange({
+              entity: "book",
+              entityId: bookId,
+              operation: "put",
+              data: stamped,
+              timestamp: stamped.updatedAt,
+            }).catch(console.error);
           }
         }
       }
@@ -613,7 +629,20 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
         if (url) {
           // Re-read in case the file upload above already updated meta
           const current = (await get<Record<string, unknown>>(bookId, bookStore)) ?? meta;
-          await set(bookId, { ...current, remoteCoverUrl: url, hasLocalFile: true }, bookStore);
+          const stamped = {
+            ...current,
+            remoteCoverUrl: url,
+            hasLocalFile: true,
+            updatedAt: Date.now(),
+          };
+          await set(bookId, stamped, bookStore);
+          recordChange({
+            entity: "book",
+            entityId: bookId,
+            operation: "put",
+            data: stamped,
+            timestamp: stamped.updatedAt,
+          }).catch(console.error);
         }
       }
     }

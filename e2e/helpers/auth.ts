@@ -1,4 +1,20 @@
-import { expect, type Page, type BrowserContext } from "@playwright/test";
+import {
+  test,
+  expect,
+  type Page,
+  type BrowserContext,
+  type APIRequestContext,
+} from "@playwright/test";
+
+/**
+ * Skip the current test when the auth/DB stack is not configured. CI runs
+ * without a Postgres service, in which case /api/auth/register-options
+ * responds 503 and the WebAuthn registration flow cannot complete.
+ */
+export async function skipIfAuthNotConfigured(request: APIRequestContext) {
+  const probe = await request.get("/api/auth/register-options");
+  test.skip(probe.status() === 503, "Auth/DB not configured for chat e2e");
+}
 
 /**
  * Register a CDP virtual authenticator so the WebAuthn ceremony succeeds

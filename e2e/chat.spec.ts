@@ -1,7 +1,11 @@
 import { test, expect, type Page } from "@playwright/test";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { installVirtualAuthenticator, registerAndSignIn } from "./helpers/auth";
+import {
+  installVirtualAuthenticator,
+  registerAndSignIn,
+  skipIfAuthNotConfigured,
+} from "./helpers/auth";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -122,8 +126,7 @@ test.describe("Chat (server-authoritative)", () => {
   test.beforeEach(async ({ page, context, request }) => {
     // Chat + auth require Postgres. When DATABASE_URL is unset (CI without a
     // DB service) the auth endpoints respond 503 — skip the whole suite.
-    const probe = await request.get("/api/auth/register-options");
-    test.skip(probe.status() === 503, "Auth/DB not configured for chat e2e");
+    await skipIfAuthNotConfigured(request);
 
     await installVirtualAuthenticator(context, page);
 

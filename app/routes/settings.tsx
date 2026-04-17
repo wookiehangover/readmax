@@ -133,7 +133,7 @@ function StepperControl({
 
 export default function SettingsPage() {
   const [settings, updateSettings] = useSettings();
-  const { isAuthenticated, logout } = useAuth()
+  const { isAuthenticated, logout } = useAuth();
 
   return (
     <div className="flex min-h-dvh flex-col bg-background">
@@ -306,12 +306,15 @@ export default function SettingsPage() {
             </div>
           </div>
         </section>
-        <footer className="mt-20 border-t text-xs pt-4">
+        <footer className="mt-20 border-t text-xs pt-4 flex items-center justify-between">
           {isAuthenticated ? (
-            <Button variant="link" onClick={() => logout()}>Logout</Button>
+            <Button variant="link" onClick={() => logout()}>
+              Logout
+            </Button>
           ) : (
             <Link to="/login">Login</Link>
           )}
+          <Link to="/about">About</Link>
         </footer>
       </main>
     </div>

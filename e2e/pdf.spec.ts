@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { installVirtualAuthenticator, registerAndSignIn } from "./helpers/auth";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -227,7 +228,9 @@ test.describe("PDF support", () => {
     await expect(overlay).toBeAttached({ timeout: 5_000 });
   });
 
-  test("chat panel opens for a PDF book in workspace", async ({ page }) => {
+  test("chat panel opens for a PDF book in workspace", async ({ page, context }) => {
+    await installVirtualAuthenticator(context, page);
+    await registerAndSignIn(page);
     await uploadTestPdf(page);
 
     // Open the PDF by clicking its title in the sidebar
@@ -253,7 +256,9 @@ test.describe("PDF support", () => {
     await expect(chatInput).toBeVisible({ timeout: 10_000 });
   });
 
-  test("chat input is functional for PDF books", async ({ page }) => {
+  test("chat input is functional for PDF books", async ({ page, context }) => {
+    await installVirtualAuthenticator(context, page);
+    await registerAndSignIn(page);
     await uploadTestPdf(page);
 
     // Open the PDF

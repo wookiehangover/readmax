@@ -3,6 +3,7 @@ import { createStore, get, set, entries } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
 import { getUnsyncedChanges, markSynced, clearSyncedChanges } from "./change-log";
 import { lwwMerge, setUnionMerge } from "./merge";
+import { remapBookId } from "./remap";
 import { getCursor, setCursor } from "./sync-cursors";
 import type { EntityType, SyncPushRequest, SyncPushResponse, SyncPullResponse } from "./types";
 
@@ -221,6 +222,37 @@ async function mergeBookRecord(record: Record<string, unknown>): Promise<void> {
   const store = getBookStore();
   const remoteRecord = serverBookToLocal(record);
   const id = remoteRecord.id as string;
+  const remoteHash = remoteRecord.fileHash as string | undefined;
+  const remoteDeletedAt = remoteRecord.deletedAt as number | undefined;
+
+  // Cross-device dedup on pull: if the incoming non-deleted book matches
+  // an existing local book by fileHash under a different id, remap local
+  // references to the incoming canonical id before applying the merge so
+  // the UI does not show a duplicate entry until the next push/pull.
+  if (!remoteDeletedAt && remoteHash) {
+    const allBooks = await entries<string, Record<string, unknown>>(store);
+    for (const [localId, localBook] of allBooks) {
+      if (!localBook || localId === id) continue;
+      if (localBook.deletedAt != null) continue;
+      if (localBook.fileHash !== remoteHash) continue;
+      await remapBookId(localId, id);
+      if (typeof window !== "undefined") {
+        queueMicrotask(() => {
+          for (const entity of [
+            "book",
+            "position",
+            "highlight",
+            "notebook",
+            "chat_session",
+          ] as const) {
+            window.dispatchEvent(new CustomEvent("sync:entity-updated", { detail: { entity } }));
+          }
+        });
+      }
+      break;
+    }
+  }
+
   const local = await get<Record<string, unknown>>(id, store);
 
   if (!local) {
@@ -545,8 +577,32 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
 
     const result: SyncPushResponse = await res.json();
     if (result.accepted.length > 0) {
-      await markSynced(result.accepted);
+      await markSynced(result.accepted.map((a) => a.id));
       await clearSyncedChanges();
+    }
+
+    // Apply cross-device dedup remaps for any accepted book entries that
+    // the server mapped to a canonical id.
+    const changesById = new Map(changes.map((c) => [c.id, c]));
+    const affectedEntities = new Set<EntityType>();
+    for (const entry of result.accepted) {
+      if (!entry.canonicalId) continue;
+      const change = changesById.get(entry.id);
+      if (!change || change.entity !== "book") continue;
+      if (change.entityId === entry.canonicalId) continue;
+      await remapBookId(change.entityId, entry.canonicalId);
+      affectedEntities.add("book");
+      affectedEntities.add("position");
+      affectedEntities.add("highlight");
+      affectedEntities.add("notebook");
+      affectedEntities.add("chat_session");
+    }
+    if (affectedEntities.size > 0 && typeof window !== "undefined") {
+      queueMicrotask(() => {
+        for (const entity of affectedEntities) {
+          window.dispatchEvent(new CustomEvent("sync:entity-updated", { detail: { entity } }));
+        }
+      });
     }
 
     // Fire-and-forget file uploads after metadata push succeeds

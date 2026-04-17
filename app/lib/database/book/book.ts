@@ -115,6 +115,55 @@ export async function softDeleteBook(userId: string, bookId: string): Promise<bo
   return (result.rowCount ?? 0) > 0;
 }
 
+/**
+ * Find the canonical (earliest-created, non-deleted) book for a given
+ * user + file_hash. Used by the push handler to dedup cross-device uploads
+ * of the same content.
+ */
+export async function findBookByUserAndHash(
+  userId: string,
+  fileHash: string,
+): Promise<BookRow | null> {
+  const pool = getPool();
+  const result = await pool.query<BookRow>(sql`
+    SELECT ${BOOK_COLUMNS}
+    FROM readmax.book
+    WHERE user_id = ${userId}
+      AND file_hash = ${fileHash}
+      AND deleted_at IS NULL
+    ORDER BY created_at ASC
+    LIMIT 1
+  `);
+  return result.rows[0] ?? null;
+}
+
+/**
+ * Insert or update a book row as a tombstone. Used when the push handler
+ * detects a duplicate fileHash and needs to propagate the soft-delete of
+ * the losing id to other devices via pull.
+ *
+ * If the row already exists non-deleted, it is soft-deleted in place. If
+ * it exists already deleted, this is a no-op. Safe to run repeatedly.
+ */
+export async function insertTombstonedBook(
+  userId: string,
+  data: { id: string; fileHash?: string | null; createdAt?: Date },
+): Promise<BookRow | null> {
+  const pool = getPool();
+  const nowIso = new Date().toISOString();
+  const createdIso = (data.createdAt ?? new Date()).toISOString();
+  const result = await pool.query<BookRow>(sql`
+    INSERT INTO readmax.book (id, user_id, file_hash, created_at, updated_at, deleted_at)
+    VALUES (${data.id}, ${userId}, ${data.fileHash ?? null}, ${createdIso}, ${nowIso}, ${nowIso})
+    ON CONFLICT (id) DO UPDATE
+      SET deleted_at = EXCLUDED.deleted_at,
+          updated_at = EXCLUDED.updated_at
+      WHERE readmax.book.deleted_at IS NULL
+    RETURNING ${BOOK_COLUMNS}
+  `);
+  return result.rows[0] ?? null;
+}
+
 export async function updateBookBlobUrls(
   bookId: string,
   urls: { fileBlobUrl?: string; coverBlobUrl?: string },

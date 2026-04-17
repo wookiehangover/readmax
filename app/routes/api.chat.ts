@@ -16,11 +16,18 @@ import { z } from "zod";
 import type { Route } from "./+types/api.chat";
 import { SE_BASE, parseSearchHtml } from "./api.standard-ebooks.search";
 import type { BookChapter } from "~/lib/epub/epub-text-extract";
-import { getOrBuildBookIndex, searchBook } from "~/lib/orama-book-search";
+import { getOrBuildBookIndex, locateTextAnchor, searchBook } from "~/lib/orama-book-search";
 import { requireAuth } from "~/lib/database/auth-middleware";
 import { getBookByIdForUser } from "~/lib/database/book/book";
 import { getBookChaptersForUser } from "~/lib/database/book/book-chapters";
-import { getNotebookMarkdownForUser } from "~/lib/database/annotation/notebook";
+import { upsertHighlight } from "~/lib/database/annotation/highlight";
+import {
+  getNotebookForUser,
+  getNotebookMarkdownForUser,
+  upsertNotebook,
+} from "~/lib/database/annotation/notebook";
+import { runEditNotesInSandbox } from "~/lib/editor/notebook-sdk-server";
+import type { JSONContent } from "@tiptap/react";
 import {
   getMessagesBySession,
   getSessionByIdForUser,
@@ -276,7 +283,33 @@ export async function action({ request }: Route.ActionArgs) {
                 ),
             }),
             execute: async ({ code }) => {
-              return { code };
+              const existing = await getNotebookForUser(userId, bookId);
+              const currentContent: JSONContent = (existing?.content as
+                | JSONContent
+                | null
+                | undefined) ?? {
+                type: "doc",
+                content: [],
+              };
+
+              const result = await runEditNotesInSandbox(currentContent, code, {
+                timeoutMs: 1500,
+              });
+              if (!result.ok) {
+                return { executed: false, error: result.error };
+              }
+
+              try {
+                await upsertNotebook(userId, bookId, result.updatedContent, new Date());
+              } catch (err) {
+                console.error("edit_notes: failed to persist updated notebook:", err);
+                return {
+                  executed: false,
+                  error: err instanceof Error ? err.message : String(err),
+                };
+              }
+
+              return { executed: true, updatedContent: result.updatedContent };
             },
           }),
           create_highlight: tool({
@@ -292,7 +325,48 @@ export async function action({ request }: Route.ActionArgs) {
                 .describe("A brief note explaining why this passage is significant"),
             }),
             execute: async ({ text, note }) => {
-              return { created: true, text, note };
+              // PDF is not supported server-side yet — client falls back to
+              // its own PDF search + persist path on unsupported responses.
+              if (book.format === "pdf") {
+                return { created: false, unsupported: "pdf", text, note: note ?? null };
+              }
+
+              const anchor = locateTextAnchor(chapters, bookIndex, text);
+              if (!anchor) {
+                return { created: false, error: "not_found", text, note: note ?? null };
+              }
+
+              const id = generateId();
+              const createdAt = new Date();
+              const color = "rgba(255, 213, 79, 0.4)";
+              try {
+                await upsertHighlight(userId, {
+                  id,
+                  bookId,
+                  cfiRange: null,
+                  text,
+                  color,
+                  textAnchor: anchor,
+                  note: note ?? null,
+                  createdAt,
+                });
+              } catch (err) {
+                console.error("create_highlight: failed to persist:", err);
+                return { created: false, error: "persist_failed", text, note: note ?? null };
+              }
+
+              return {
+                created: true,
+                highlight: {
+                  id,
+                  bookId,
+                  text,
+                  note: note ?? null,
+                  color,
+                  textAnchor: anchor,
+                  createdAt: createdAt.getTime(),
+                },
+              };
             },
           }),
           read_chapter: tool({

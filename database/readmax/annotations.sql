@@ -12,6 +12,8 @@ CREATE TABLE readmax.highlight (
     page_number INT,
     text_offset INT,
     text_length INT,
+    text_anchor JSONB,
+    note TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     deleted_at TIMESTAMPTZ

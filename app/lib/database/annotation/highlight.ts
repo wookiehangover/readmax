@@ -1,6 +1,12 @@
 import { sql } from "pg-sql";
 import { getPool } from "../pool";
 
+export interface HighlightTextAnchor {
+  chapterIndex: number;
+  snippet: string;
+  offset?: number;
+}
+
 export interface HighlightRow {
   id: string;
   userId: string;
@@ -11,6 +17,8 @@ export interface HighlightRow {
   pageNumber: number | null;
   textOffset: number | null;
   textLength: number | null;
+  textAnchor: HighlightTextAnchor | null;
+  note: string | null;
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
@@ -25,6 +33,8 @@ export interface UpsertHighlightData {
   pageNumber?: number | null;
   textOffset?: number | null;
   textLength?: number | null;
+  textAnchor?: HighlightTextAnchor | null;
+  note?: string | null;
   createdAt: Date;
   deletedAt?: Date | null;
 }
@@ -39,6 +49,8 @@ const HIGHLIGHT_COLUMNS = sql`
   page_number AS "pageNumber",
   text_offset AS "textOffset",
   text_length AS "textLength",
+  text_anchor AS "textAnchor",
+  note,
   created_at AS "createdAt",
   updated_at AS "updatedAt",
   deleted_at AS "deletedAt"
@@ -49,8 +61,10 @@ export async function upsertHighlight(
   highlight: UpsertHighlightData,
 ): Promise<HighlightRow | null> {
   const pool = getPool();
+  const textAnchorJson =
+    highlight.textAnchor != null ? JSON.stringify(highlight.textAnchor) : null;
   const result = await pool.query<HighlightRow>(sql`
-    INSERT INTO readmax.highlight (id, user_id, book_id, cfi_range, text, color, page_number, text_offset, text_length, created_at, updated_at, deleted_at)
+    INSERT INTO readmax.highlight (id, user_id, book_id, cfi_range, text, color, page_number, text_offset, text_length, text_anchor, note, created_at, updated_at, deleted_at)
     VALUES (
       ${highlight.id},
       ${userId},
@@ -61,6 +75,8 @@ export async function upsertHighlight(
       ${highlight.pageNumber ?? null},
       ${highlight.textOffset ?? null},
       ${highlight.textLength ?? null},
+      ${textAnchorJson}::jsonb,
+      ${highlight.note ?? null},
       ${highlight.createdAt.toISOString()},
       NOW(),
       ${highlight.deletedAt?.toISOString() ?? null}
@@ -68,12 +84,14 @@ export async function upsertHighlight(
     ON CONFLICT (id) DO UPDATE
       SET user_id = EXCLUDED.user_id,
           book_id = EXCLUDED.book_id,
-          cfi_range = EXCLUDED.cfi_range,
+          cfi_range = COALESCE(EXCLUDED.cfi_range, readmax.highlight.cfi_range),
           text = EXCLUDED.text,
           color = EXCLUDED.color,
           page_number = EXCLUDED.page_number,
           text_offset = EXCLUDED.text_offset,
           text_length = EXCLUDED.text_length,
+          text_anchor = COALESCE(EXCLUDED.text_anchor, readmax.highlight.text_anchor),
+          note = COALESCE(EXCLUDED.note, readmax.highlight.note),
           created_at = EXCLUDED.created_at,
           updated_at = NOW(),
           deleted_at = EXCLUDED.deleted_at

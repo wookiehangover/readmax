@@ -7,6 +7,17 @@ import { recordChange } from "~/lib/sync/change-log";
 
 // --- Schemas ---
 
+/**
+ * Text-anchor for AI-created highlights. Produced server-side when the AI
+ * calls `create_highlight`, before a CFI is known. The client resolves this
+ * to a CFI inside the epub iframe and updates the highlight via LWW sync.
+ */
+export const HighlightTextAnchorSchema = Schema.Struct({
+  chapterIndex: Schema.Number,
+  snippet: Schema.String,
+  offset: Schema.optional(Schema.Number),
+});
+
 export const HighlightSchema = Schema.Struct({
   id: Schema.String,
   bookId: Schema.String,
@@ -20,6 +31,10 @@ export const HighlightSchema = Schema.Struct({
   textOffset: Schema.optional(Schema.Number),
   /** PDF-only: length of highlighted text in characters */
   textLength: Schema.optional(Schema.Number),
+  /** Server-created AI highlights carry a text-anchor until the client resolves a CFI. */
+  textAnchor: Schema.optional(HighlightTextAnchorSchema),
+  /** Optional explanatory note (set by AI via create_highlight). */
+  note: Schema.optional(Schema.String),
   /** Timestamp of last mutation. Used for LWW sync. */
   updatedAt: Schema.optional(Schema.Number),
   /** Soft-delete timestamp. When set, the highlight is considered deleted. */

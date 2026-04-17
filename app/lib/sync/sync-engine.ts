@@ -150,6 +150,8 @@ function serverHighlightToLocal(record: Record<string, unknown>): Record<string,
     pageNumber: (record.pageNumber as number) ?? undefined,
     textOffset: (record.textOffset as number) ?? undefined,
     textLength: (record.textLength as number) ?? undefined,
+    textAnchor: (record.textAnchor as Record<string, unknown>) ?? undefined,
+    note: (record.note as string) ?? undefined,
     deletedAt: toOptionalTimestamp(record.deletedAt),
   };
 }

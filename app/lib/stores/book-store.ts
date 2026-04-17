@@ -100,6 +100,9 @@ export class BookService extends Context.Tag("BookService")<
       id: string,
     ) => Effect.Effect<ArrayBuffer, BookNotFoundError | StorageError | DecodeError>;
     readonly deleteBook: (id: string) => Effect.Effect<void, StorageError | DecodeError>;
+    readonly findByFileHash: (
+      hash: string,
+    ) => Effect.Effect<BookMeta | null, StorageError | DecodeError>;
   }
 >() {}
 
@@ -277,6 +280,26 @@ export function makeBookService(stores: BookServiceStores): BookService["Type"] 
         }
 
         return yield* Effect.fail(new BookNotFoundError({ bookId: id }));
+      }),
+
+    findByFileHash: (hash: string) =>
+      Effect.gen(function* () {
+        const allEntries = yield* Effect.tryPromise({
+          try: () => entries<string, unknown>(bookStore),
+          catch: (cause) => new StorageError({ operation: "findByFileHash", cause }),
+        });
+        return yield* Effect.try({
+          try: () => {
+            for (const [, raw] of allEntries) {
+              if (!raw) continue;
+              const meta = decodeBookMeta(raw);
+              if (meta.deletedAt !== undefined) continue;
+              if (meta.fileHash === hash) return meta;
+            }
+            return null;
+          },
+          catch: (cause) => new DecodeError({ operation: "findByFileHash", cause }),
+        });
       }),
 
     deleteBook: (id: string) =>

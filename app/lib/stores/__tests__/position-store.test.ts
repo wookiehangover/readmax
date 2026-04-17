@@ -135,4 +135,32 @@ describe("savePosition", () => {
     // But no sync changelog entry, so no doubled push per page turn.
     expect(recordChange).not.toHaveBeenCalled();
   });
+
+  it("skips IDB write and recordChange when saving the same CFI twice", async () => {
+    const { service } = createTestStore();
+
+    await Effect.runPromise(service.savePosition("book-9", "epubcfi(/6/90)"));
+    const first = await Effect.runPromise(service.getPositionRecord("book-9"));
+    expect(recordChange).toHaveBeenCalledTimes(1);
+
+    // Second save with identical CFI should be a no-op: no new changelog
+    // entry, and the stored updatedAt must not change (otherwise a stuck
+    // relocated-event source can drive a 1Hz sync-push loop).
+    await Effect.runPromise(service.savePosition("book-9", "epubcfi(/6/90)"));
+    const second = await Effect.runPromise(service.getPositionRecord("book-9"));
+
+    expect(recordChange).toHaveBeenCalledTimes(1);
+    expect(second?.updatedAt).toBe(first?.updatedAt);
+  });
+
+  it("still records a change when CFI changes to a new value", async () => {
+    const { service } = createTestStore();
+
+    await Effect.runPromise(service.savePosition("book-10", "epubcfi(/6/10)"));
+    await Effect.runPromise(service.savePosition("book-10", "epubcfi(/6/11)"));
+
+    expect(recordChange).toHaveBeenCalledTimes(2);
+    const cfi = await Effect.runPromise(service.getPosition("book-10"));
+    expect(cfi).toBe("epubcfi(/6/11)");
+  });
 });

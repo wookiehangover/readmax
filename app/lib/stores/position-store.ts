@@ -78,6 +78,14 @@ export function makePositionService(stores: PositionServiceStores): ReadingPosit
     savePosition: (bookId: string, cfi: string, options?: SavePositionOptions) =>
       Effect.tryPromise({
         try: async () => {
+          // Short-circuit no-op writes: if the stored CFI matches exactly,
+          // skip both the IDB write and the sync changelog entry. Without
+          // this, a stuck `relocated` event source (e.g. a visibility /
+          // dimensions cycle) can enqueue one identical position change per
+          // debounce interval and drive /api/sync/push in a loop.
+          const existing = migratePosition(await get<unknown>(bookId, positionStore));
+          if (existing && existing.cfi === cfi) return;
+
           const record: PositionRecord = { cfi, updatedAt: Date.now() };
           await set(bookId, record, positionStore);
           if (options?.recordChange !== false) {

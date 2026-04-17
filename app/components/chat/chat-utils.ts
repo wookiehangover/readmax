@@ -87,6 +87,12 @@ export function stripSuggestedPrompts(text: string): string {
  *   loads prior history from Postgres, so we don't ship the full message list.
  * - `reconnectToStream` is redirected to the custom resume endpoint
  *   `/api/chat/resume/:sessionId`, which replays an in-flight Redis stream.
+ * - The custom `fetch` wrapper retries once on a 404 from `/api/chat`, which
+ *   handles the brand-new-session race: `ChatService.createSession` writes
+ *   to IDB and enqueues a change for sync-push, but the first `POST /api/chat`
+ *   may arrive before sync-push lands the session in Postgres. On 404 we
+ *   dispatch `sync:push-needed` (a no-op if already firing), wait briefly,
+ *   and retry exactly once.
  */
 export function createChatTransport(opts: {
   sessionId: string;
@@ -94,8 +100,24 @@ export function createChatTransport(opts: {
   visibleTextRef: React.MutableRefObject<string>;
   currentChapterRef: React.MutableRefObject<number | undefined>;
 }) {
+  const fetchWithSessionRetry: typeof fetch = async (input, init) => {
+    const res = await fetch(input, init);
+    // Only retry the POST /api/chat path — resume/messages endpoints have
+    // their own ownership checks and shouldn't race on creation.
+    const isChatPost = typeof input === "string" && input === "/api/chat";
+    if (res.status !== 404 || !isChatPost) return res;
+
+    // Trigger an immediate push and give it time to complete.
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("sync:push-needed"));
+    }
+    await new Promise((r) => setTimeout(r, 800));
+    return fetch(input, init);
+  };
+
   return new DefaultChatTransport<UIMessage>({
     api: "/api/chat",
+    fetch: fetchWithSessionRetry,
     prepareSendMessagesRequest: ({ messages }) => ({
       body: {
         sessionId: opts.sessionId,

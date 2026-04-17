@@ -83,6 +83,9 @@
       "core-js",
       "es5-ext",
       "esbuild"
-    ]
+    ],
+    "overrides": {
+      "@tiptap/core": "3.20.1"
+    }
   }
 }

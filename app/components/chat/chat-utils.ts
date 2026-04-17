@@ -1,7 +1,7 @@
 import type React from "react";
 import type { UIMessage } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import type { ChatMessage, SerializedPart } from "~/lib/stores/chat-store";
+import type { ChatMessage } from "~/lib/stores/chat-store";
 
 /** Extract a normalized tool info object from an AI SDK tool part (static or dynamic). */
 export function getToolInfo(part: any): {
@@ -21,28 +21,6 @@ export function getToolInfo(part: any): {
   return null;
 }
 
-/** Serialize a UIMessage part for IndexedDB storage (strip non-serializable fields). */
-export function serializePart(p: any): SerializedPart {
-  if (p.type === "text") {
-    return { type: "text", text: p.text };
-  }
-  if (p.type === "step-start") {
-    return { type: "step-start" };
-  }
-  // Tool parts have type "tool-{name}" — preserve key fields for display on reload
-  if (typeof p.type === "string" && p.type.startsWith("tool-")) {
-    return {
-      type: p.type,
-      toolCallId: p.toolCallId,
-      state: p.state,
-      input: p.input,
-      output: p.output,
-    };
-  }
-  // Fallback: store type only
-  return { type: p.type };
-}
-
 /** Convert our persisted ChatMessage[] to UIMessage[] for useChat */
 export function toUIMessages(messages: ChatMessage[]): UIMessage[] {
   return messages.map((m) => ({
@@ -55,8 +33,11 @@ export function toUIMessages(messages: ChatMessage[]): UIMessage[] {
   }));
 }
 
-/** Convert UIMessage[] from useChat back to our ChatMessage[] for persistence */
-export function toChatMessages(messages: UIMessage[]): ChatMessage[] {
+/** Convert UIMessage[] from useChat back to our ChatMessage[] for the local
+ *  warm-start cache (IDB). The server is the source of truth for chat
+ *  messages; this is only used when reconciling server history into IDB so a
+ *  subsequent cold reload renders the right thing immediately. */
+export function uiMessagesToChatMessages(messages: UIMessage[]): ChatMessage[] {
   return messages.map((m) => ({
     id: m.id,
     role: m.role as "user" | "assistant",
@@ -66,7 +47,20 @@ export function toChatMessages(messages: UIMessage[]): ChatMessage[] {
         .map((p) => p.text)
         .join("") ?? "",
     createdAt: Date.now(),
-    parts: m.parts?.map(serializePart),
+    parts: m.parts?.map((p: any) => {
+      if (p.type === "text") return { type: "text", text: p.text };
+      if (p.type === "step-start") return { type: "step-start" };
+      if (typeof p.type === "string" && p.type.startsWith("tool-")) {
+        return {
+          type: p.type,
+          toolCallId: p.toolCallId,
+          state: p.state,
+          input: p.input,
+          output: p.output,
+        };
+      }
+      return { type: p.type };
+    }),
   }));
 }
 

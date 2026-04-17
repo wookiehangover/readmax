@@ -6,9 +6,7 @@ import { Button } from "~/components/ui/button";
 import { Plus } from "lucide-react";
 import { ChatService } from "~/lib/stores/chat-store";
 import { BookService } from "~/lib/stores/book-store";
-import { AnnotationService } from "~/lib/stores/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
-import { tiptapJsonToMarkdown } from "~/lib/editor/tiptap-to-markdown";
 import { extractBookChapters, type BookChapter } from "~/lib/epub/epub-text-extract";
 import { extractPdfChapters } from "~/lib/pdf/pdf-text-extract";
 import { isChaptersUploaded, markChaptersUploaded } from "~/lib/stores/chapter-upload-cache-store";
@@ -16,7 +14,12 @@ import { cn } from "~/lib/utils";
 import { useSyncListener } from "~/hooks/use-sync-listener";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { useAuth } from "~/lib/context/auth-context";
-import { toUIMessages, parseSuggestedPrompts, createChatTransport } from "./chat-utils";
+import {
+  toUIMessages,
+  uiMessagesToChatMessages,
+  parseSuggestedPrompts,
+  createChatTransport,
+} from "./chat-utils";
 import { ChatMessage } from "./chat-message";
 import { ChatEmptyState, SuggestedPrompts } from "./chat-empty-state";
 import { useChatToolHandlers } from "./use-chat-tool-handlers";
@@ -71,8 +74,13 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   // messages in-place on sync without remounting (which loses scroll position).
   const setChatMessagesRef = useRef<((msgs: UIMessage[]) => void) | null>(null);
 
-  // Load chat history and book context on mount
+  // Load chat history and book context on mount.
+  //
+  // Gated on `isAuthenticated` so signed-out users never create orphaned local
+  // chat sessions (these would otherwise linger in IDB until the next manual
+  // clear) and never fire the subsequent messages fetch that would 401.
   useEffect(() => {
+    if (!isAuthenticated) return;
     let cancelled = false;
 
     const load = async () => {
@@ -136,7 +144,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
     return () => {
       cancelled = true;
     };
-  }, [bookId]);
+  }, [bookId, isAuthenticated]);
 
   // Track current messages for sync comparison without re-registering the listener
   const initialMessagesRef = useRef(initialMessages);
@@ -144,10 +152,14 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
 
   // Reconcile with the server-authoritative message history whenever the
   // active session changes. IDB is rendered first as a warm-start cache; the
-  // fetched messages then replace it via the registered setMessages callback.
+  // fetched messages then replace it via the registered setMessages callback
+  // AND are written back to IDB so the next cold reload renders the correct
+  // thread immediately (instead of the stale pre-server IDB copy).
+  //
   // If the server is unavailable (401/503), we silently keep the IDB copy.
+  // Gated on `isAuthenticated` — signed-out users never hit the endpoint.
   useEffect(() => {
-    if (!activeSessionId) return;
+    if (!isAuthenticated || !activeSessionId) return;
     let cancelled = false;
     fetch(`/api/chat/messages/${encodeURIComponent(activeSessionId)}`)
       .then(async (res) => {
@@ -164,12 +176,25 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
           setInitialMessages(serverMessages);
           initialMessagesRef.current = serverMessages;
         }
+        // Cache the server result locally so a subsequent cold reload sees
+        // the authoritative thread even before the fetch completes.
+        AppRuntime.runPromise(
+          ChatService.pipe(
+            Effect.andThen((s) =>
+              s.cacheServerMessages(
+                bookId,
+                activeSessionId,
+                uiMessagesToChatMessages(serverMessages),
+              ),
+            ),
+          ),
+        ).catch(console.error);
       })
       .catch(console.error);
     return () => {
       cancelled = true;
     };
-  }, [activeSessionId]);
+  }, [bookId, activeSessionId, isAuthenticated]);
 
   // Reload chat messages when sync pulls chat data from server
   const chatSyncVersion = useSyncListener(["chat_session", "chat_message"]);
@@ -318,35 +343,8 @@ function ChatPanelInner({
   onSessionTitleChange: (title: string) => void;
   onRegisterSetMessages?: (fn: (msgs: UIMessage[]) => void) => void;
 }) {
-  const { chatContextMap, notebookContentChangeMap, notebookEditorCallbackMap } = useWorkspace();
+  const { chatContextMap, notebookEditorCallbackMap } = useWorkspace();
   const [showSessionList, setShowSessionList] = useState(false);
-
-  // Tool handlers keep a local copy of the notebook markdown in sync so the
-  // append_to_notes fallback path (editor closed) can work. The value itself
-  // is no longer shipped to the server — `read_notes` runs server-side.
-  const [, setNotebookMarkdown] = useState<string>("");
-
-  useEffect(() => {
-    if (!bookId) return;
-    AppRuntime.runPromise(AnnotationService.pipe(Effect.andThen((svc) => svc.getNotebook(bookId))))
-      .then((notebook) => {
-        if (notebook?.content) {
-          setNotebookMarkdown(tiptapJsonToMarkdown(notebook.content));
-        }
-      })
-      .catch(console.error);
-  }, [bookId]);
-
-  // Listen for notebook content changes from the editor (user edits, programmatic updates)
-  useEffect(() => {
-    if (!bookId) return;
-    notebookContentChangeMap.current.set(bookId, (markdown: string) => {
-      setNotebookMarkdown(markdown);
-    });
-    return () => {
-      notebookContentChangeMap.current.delete(bookId);
-    };
-  }, [bookId, notebookContentChangeMap]);
 
   // Refs that stay up-to-date with the reader's current chapter index and visible text
   const currentChapterRef = useRef<number | undefined>(undefined);
@@ -392,7 +390,6 @@ function ChatPanelInner({
     bookId,
     bookFormat,
     bookDataRef,
-    setNotebookMarkdown,
     streamedToolCallIdRef,
   });
 
@@ -461,8 +458,9 @@ function ChatPanelInner({
     // endpoint (`/api/chat/resume/:sessionId`) returns a no-op stream when
     // nothing is active, so this is safe to always enable.
     resume: true,
-    // Cast needed: onToolCall returns result objects for edit_notes (success/failure),
-    // which AI SDK uses as tool output. The SDK type is overly strict (void).
+    // `onToolCall` is a documented no-op placeholder (no client-side tools
+    // today). All notebook/highlight tools run on the server; their outputs
+    // are consumed in `onFinish`. The cast preserves the SDK callback shape.
     onToolCall: onToolCall as any,
     onFinish,
     onError: (err) => {

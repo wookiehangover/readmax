@@ -61,8 +61,17 @@ export interface SyncPushRequest {
 
 /** Server response after processing a push batch. */
 export interface SyncPushResponse {
-  /** IDs of changes the server accepted and persisted. */
-  accepted: string[];
+  /**
+   * Per-change result for changes the server accepted and persisted.
+   * `canonicalId` is set when the server deduped an incoming entity
+   * against an existing canonical record (e.g. book with the same
+   * fileHash). The client should remap local references from the
+   * change's entityId to `canonicalId` when present.
+   */
+  accepted: Array<{
+    id: string;
+    canonicalId?: string;
+  }>;
   /** IDs of changes the server rejected (e.g. conflict). */
   rejected: Array<{
     id: string;

@@ -97,6 +97,56 @@ describe("BookService", () => {
     });
   });
 
+  describe("findByFileHash", () => {
+    it("returns the book when a matching non-deleted fileHash exists", async () => {
+      const { bookLayer } = makeTestLayer();
+      const run = <A, E>(e: Effect.Effect<A, E, BookService>) =>
+        Effect.runPromise(Effect.provide(e, bookLayer));
+      const book = { ...makeBook({ id: "book-hashed" }), fileHash: "abc123" };
+      await run(BookService.pipe(Effect.andThen((s) => s.saveBook(book, book.data))));
+      const found = await run(BookService.pipe(Effect.andThen((s) => s.findByFileHash("abc123"))));
+      expect(found?.id).toBe("book-hashed");
+      expect(found?.fileHash).toBe("abc123");
+    });
+
+    it("returns null when no book matches", async () => {
+      const { bookLayer } = makeTestLayer();
+      const run = <A, E>(e: Effect.Effect<A, E, BookService>) =>
+        Effect.runPromise(Effect.provide(e, bookLayer));
+      const book = { ...makeBook({ id: "book-a" }), fileHash: "hash-a" };
+      await run(BookService.pipe(Effect.andThen((s) => s.saveBook(book, book.data))));
+      const found = await run(
+        BookService.pipe(Effect.andThen((s) => s.findByFileHash("missing-hash"))),
+      );
+      expect(found).toBeNull();
+    });
+
+    it("ignores tombstoned (soft-deleted) books", async () => {
+      const { bookLayer } = makeTestLayer();
+      const run = <A, E>(e: Effect.Effect<A, E, BookService>) =>
+        Effect.runPromise(Effect.provide(e, bookLayer));
+      const book = { ...makeBook({ id: "book-gone" }), fileHash: "hash-gone" };
+      await run(BookService.pipe(Effect.andThen((s) => s.saveBook(book, book.data))));
+      await run(BookService.pipe(Effect.andThen((s) => s.deleteBook("book-gone"))));
+      const found = await run(
+        BookService.pipe(Effect.andThen((s) => s.findByFileHash("hash-gone"))),
+      );
+      expect(found).toBeNull();
+    });
+
+    it("returns null when no books have a fileHash set", async () => {
+      const { bookLayer } = makeTestLayer();
+      const run = <A, E>(e: Effect.Effect<A, E, BookService>) =>
+        Effect.runPromise(Effect.provide(e, bookLayer));
+      const book = makeBook({ id: "legacy-book" });
+      await run(BookService.pipe(Effect.andThen((s) => s.saveBook(book, book.data))));
+      const found = await run(
+        BookService.pipe(Effect.andThen((s) => s.findByFileHash("any-hash"))),
+      );
+      expect(found).toBeNull();
+    });
+  });
+
   describe("lazy migration from old-format records", () => {
     it("migrates inline data from bookStore to bookDataStore on getBookData", async () => {
       const suffix = `test-${++testCounter}-${Date.now()}`;

@@ -1,17 +1,23 @@
 import { requireAuth } from "~/lib/database/auth-middleware";
 import { upsertHighlight, softDeleteHighlight } from "~/lib/database/annotation/highlight";
 import { upsertNotebook } from "~/lib/database/annotation/notebook";
-import { upsertBook, softDeleteBook } from "~/lib/database/book/book";
+import {
+  upsertBook,
+  softDeleteBook,
+  findBookByUserAndHash,
+  insertTombstonedBook,
+  getBookByIdForUser,
+} from "~/lib/database/book/book";
 import { upsertPosition } from "~/lib/database/book/reading-position";
 import { upsertSession, softDeleteSession, upsertMessage } from "~/lib/database/chat/chat-session";
 import { upsertSettings } from "~/lib/database/settings/user-settings";
 import { upsertUser } from "~/lib/database/user/user";
 import type { SyncPushRequest, SyncPushResponse, ChangeEntry } from "~/lib/sync/types";
 
-async function processEntry(
+export async function processEntry(
   userId: string,
   entry: ChangeEntry,
-): Promise<{ accepted: boolean; reason?: string }> {
+): Promise<{ accepted: boolean; reason?: string; canonicalId?: string }> {
   switch (entry.entity) {
     case "book": {
       if (entry.operation === "put") {
@@ -23,6 +29,27 @@ async function processEntry(
           fileHash?: string | null;
           updatedAt?: number | null;
         };
+
+        // Cross-device dedup: if another non-deleted book for this user
+        // already has the same file_hash, converge to that canonical id.
+        if (data.fileHash) {
+          const canonical = await findBookByUserAndHash(userId, data.fileHash);
+          if (canonical && canonical.id !== entry.entityId) {
+            // Only tombstone the incoming id if it is not already the
+            // canonical (or already tombstoned) — keeps the operation
+            // idempotent across retries.
+            const existing = await getBookByIdForUser(entry.entityId, userId);
+            if (!existing || existing.deletedAt == null) {
+              await insertTombstonedBook(userId, {
+                id: entry.entityId,
+                fileHash: data.fileHash,
+                createdAt: data.updatedAt ? new Date(data.updatedAt) : new Date(entry.timestamp),
+              });
+            }
+            return { accepted: true, canonicalId: canonical.id };
+          }
+        }
+
         await upsertBook(userId, {
           id: entry.entityId,
           title: data.title,
@@ -200,14 +227,16 @@ export async function action({ request }: { request: Request }) {
     (a, b) => (entityOrder[a.entity] ?? 99) - (entityOrder[b.entity] ?? 99),
   );
 
-  const accepted: string[] = [];
+  const accepted: SyncPushResponse["accepted"] = [];
   const rejected: SyncPushResponse["rejected"] = [];
 
   for (const entry of sortedChanges) {
     try {
       const result = await processEntry(userId, entry);
       if (result.accepted) {
-        accepted.push(entry.id);
+        accepted.push(
+          result.canonicalId ? { id: entry.id, canonicalId: result.canonicalId } : { id: entry.id },
+        );
       } else {
         rejected.push({ id: entry.id, reason: result.reason ?? "Unknown error" });
       }

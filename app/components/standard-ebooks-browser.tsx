@@ -8,6 +8,7 @@ import { StandardEbooksService, type SEBook } from "~/lib/standard-ebooks";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { parseEpubEffect } from "~/lib/epub/epub-service";
 import { AppRuntime } from "~/lib/effect-runtime";
+import { computeFileHash } from "~/lib/book-hash";
 import { useEffectQuery } from "~/hooks/use-effect-query";
 
 interface StandardEbooksBrowserProps {
@@ -64,6 +65,11 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
       const program = Effect.gen(function* () {
         const seSvc = yield* StandardEbooksService;
         const arrayBuffer = yield* seSvc.downloadEpub(seBook.urlPath);
+        const fileHash = yield* Effect.promise(() => computeFileHash(arrayBuffer));
+
+        const existing = yield* BookService.pipe(Effect.andThen((s) => s.findByFileHash(fileHash)));
+        if (existing) return existing;
+
         const metadata = yield* parseEpubEffect(arrayBuffer);
         const book: BookMeta = {
           id: crypto.randomUUID(),
@@ -71,6 +77,7 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
           author: metadata.author,
           coverImage: metadata.coverImage,
           format: "epub" as const,
+          fileHash,
         };
         yield* BookService.pipe(Effect.andThen((s) => s.saveBook(book, arrayBuffer)));
         return book;

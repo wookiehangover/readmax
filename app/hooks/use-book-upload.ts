@@ -6,6 +6,7 @@ import type { BookFormat } from "~/lib/stores/book-store";
 import { parseEpubEffect } from "~/lib/epub/epub-service";
 import { parsePdfEffect } from "~/lib/pdf/pdf-service";
 import { AppRuntime } from "~/lib/effect-runtime";
+import { computeFileHash } from "~/lib/book-hash";
 
 interface UseBookUploadOptions {
   /** Called after each book is saved to IndexedDB. */
@@ -31,6 +32,16 @@ export function useBookUpload({ onBookAdded }: UseBookUploadOptions) {
       const program = Effect.forEach(bookFiles, (file) =>
         Effect.gen(function* () {
           const arrayBuffer = yield* Effect.promise(() => file.arrayBuffer());
+          const fileHash = yield* Effect.promise(() => computeFileHash(arrayBuffer));
+
+          const existing = yield* BookService.pipe(
+            Effect.andThen((s) => s.findByFileHash(fileHash)),
+          );
+          if (existing) {
+            onBookAdded(existing);
+            return;
+          }
+
           const isPdf = file.name.toLowerCase().endsWith(".pdf");
           const format: BookFormat = isPdf ? "pdf" : "epub";
 
@@ -44,6 +55,7 @@ export function useBookUpload({ onBookAdded }: UseBookUploadOptions) {
             author: metadata.author,
             coverImage: metadata.coverImage,
             format,
+            fileHash,
           };
           yield* BookService.pipe(Effect.andThen((s) => s.saveBook(book, arrayBuffer)));
           onBookAdded(book);

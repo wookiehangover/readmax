@@ -15,6 +15,7 @@ import { isChaptersUploaded, markChaptersUploaded } from "~/lib/stores/chapter-u
 import { cn } from "~/lib/utils";
 import { useSyncListener } from "~/hooks/use-sync-listener";
 import { useWorkspace } from "~/lib/context/workspace-context";
+import { useAuth } from "~/lib/context/auth-context";
 import { toUIMessages, parseSuggestedPrompts, createChatTransport } from "./chat-utils";
 import { ChatMessage } from "./chat-message";
 import { ChatEmptyState, SuggestedPrompts } from "./chat-empty-state";
@@ -50,6 +51,7 @@ async function uploadChaptersOnce(
 }
 
 export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [initialMessages, setInitialMessages] = useState<UIMessage[] | null>(null);
   const [bookContext, setBookContext] = useState<{
     title: string;
@@ -225,6 +227,29 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
     setInitialMessages([]);
     setSessionKey((k) => k + 1);
   }, [bookId]);
+
+  // Show loading state while checking auth
+  if (authLoading) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <p className="text-muted-foreground">Loading…</p>
+      </div>
+    );
+  }
+
+  // Show sign-in CTA if not authenticated
+  if (!isAuthenticated) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-4 px-4">
+        <p className="text-center text-muted-foreground">
+          Sign in to chat with <span className="italic">{bookTitle}</span>
+        </p>
+        <Button render={<a href="/login" />} nativeButton={false} variant="default">
+          Sign in
+        </Button>
+      </div>
+    );
+  }
 
   if (loadError) {
     return (

@@ -163,7 +163,12 @@ export async function action({ request }: Route.ActionArgs) {
     return Response.json({ error: "Sync not configured" }, { status: 503 });
   }
 
-  const { userId } = await requireAuth(request);
+  // Require authentication before processing chat requests
+  const authSession = await requireAuth(request).catch(() => null);
+  if (!authSession) {
+    return Response.json({ error: "auth_required" }, { status: 401 });
+  }
+  const { userId } = authSession;
 
   let body: ChatRequestBody;
   try {

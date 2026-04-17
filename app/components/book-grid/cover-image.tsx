@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useBlobObjectUrl } from "~/hooks/use-blob-object-url";
 import { cn } from "~/lib/utils";
 
 export function CoverImage({
@@ -14,18 +14,12 @@ export function CoverImage({
   bookId?: string;
   needsDownload?: boolean;
 }) {
-  const [url, setUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (coverImage) {
-      const objectUrl = URL.createObjectURL(coverImage);
-      setUrl(objectUrl);
-      return () => URL.revokeObjectURL(objectUrl);
-    }
-    if (remoteCoverUrl && bookId) {
-      setUrl(`/api/sync/files/download?bookId=${encodeURIComponent(bookId)}&type=cover`);
-    }
-  }, [coverImage, remoteCoverUrl, bookId]);
+  const objectUrl = useBlobObjectUrl(coverImage, bookId ?? null);
+  const url =
+    objectUrl ??
+    (remoteCoverUrl && bookId
+      ? `/api/sync/files/download?bookId=${encodeURIComponent(bookId)}&type=cover`
+      : null);
 
   if (!url) return null;
 

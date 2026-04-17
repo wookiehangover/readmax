@@ -7,6 +7,7 @@ import type { JSONContent } from "@tiptap/react";
 import { BookService, type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
 import { AnnotationService } from "~/lib/stores/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
+import { useBlobObjectUrl } from "~/hooks/use-blob-object-url";
 import { useEffectQuery } from "~/hooks/use-effect-query";
 import { TiptapEditor } from "~/components/tiptap-editor";
 import { Input } from "~/components/ui/input";
@@ -54,18 +55,12 @@ function CoverImage({
   bookId?: string;
   needsDownload?: boolean;
 }) {
-  const [url, setUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (coverImage) {
-      const objectUrl = URL.createObjectURL(coverImage);
-      setUrl(objectUrl);
-      return () => URL.revokeObjectURL(objectUrl);
-    }
-    if (remoteCoverUrl && bookId) {
-      setUrl(`/api/sync/files/download?bookId=${encodeURIComponent(bookId)}&type=cover`);
-    }
-  }, [coverImage, remoteCoverUrl, bookId]);
+  const objectUrl = useBlobObjectUrl(coverImage, bookId ?? null);
+  const url =
+    objectUrl ??
+    (remoteCoverUrl && bookId
+      ? `/api/sync/files/download?bookId=${encodeURIComponent(bookId)}&type=cover`
+      : null);
 
   if (!url) return null;
 

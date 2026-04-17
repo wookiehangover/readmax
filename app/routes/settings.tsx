@@ -306,7 +306,7 @@ export default function SettingsPage() {
             </div>
           </div>
         </section>
-        <footer className="mt-20 border-t text-xs pt-4">
+        <footer className="mt-20 border-t text-xs pt-4 flex items-center justify-between">
           {isAuthenticated ? (
             <Button variant="link" onClick={() => logout()}>
               Logout
@@ -314,6 +314,7 @@ export default function SettingsPage() {
           ) : (
             <Link to="/login">Login</Link>
           )}
+          <Link to="/about">About</Link>
         </footer>
       </main>
     </div>

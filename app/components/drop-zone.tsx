@@ -5,6 +5,7 @@ import { parsePdfEffect } from "~/lib/pdf/pdf-service";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import type { BookFormat } from "~/lib/stores/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
+import { computeFileHash } from "~/lib/book-hash";
 import { cn } from "~/lib/utils";
 
 interface DropZoneProps {
@@ -66,6 +67,16 @@ export function DropZone({ onBookAdded, children }: DropZoneProps) {
       const processFiles = Effect.gen(function* () {
         for (const file of files) {
           const arrayBuffer = yield* Effect.promise(() => file.arrayBuffer());
+          const fileHash = yield* Effect.promise(() => computeFileHash(arrayBuffer));
+
+          const existing = yield* BookService.pipe(
+            Effect.andThen((s) => s.findByFileHash(fileHash)),
+          );
+          if (existing) {
+            onBookAdded?.(existing);
+            continue;
+          }
+
           const isPdf = file.name.toLowerCase().endsWith(".pdf");
           const format: BookFormat = isPdf ? "pdf" : "epub";
 
@@ -79,6 +90,7 @@ export function DropZone({ onBookAdded, children }: DropZoneProps) {
             author: metadata.author,
             coverImage: metadata.coverImage,
             format,
+            fileHash,
           };
 
           yield* BookService.pipe(Effect.andThen((s) => s.saveBook(book, arrayBuffer)));

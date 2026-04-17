@@ -79,3 +79,13 @@ CREATE TABLE readmax.reading_position (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (user_id, book_id)
 );
+
+-- Cached chapter extraction per book (used by chat / summarization pipelines)
+
+CREATE TABLE readmax.book_chapters (
+    user_id UUID NOT NULL REFERENCES readmax.user(id),
+    book_id TEXT NOT NULL,
+    chapters JSONB NOT NULL,
+    extracted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, book_id)
+);

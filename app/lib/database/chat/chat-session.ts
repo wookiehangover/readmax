@@ -6,6 +6,7 @@ export interface ChatSessionRow {
   userId: string;
   bookId: string | null;
   title: string | null;
+  activeStreamId: string | null;
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
@@ -25,6 +26,7 @@ const SESSION_COLUMNS = sql`
   user_id AS "userId",
   book_id AS "bookId",
   title,
+  active_stream_id AS "activeStreamId",
   created_at AS "createdAt",
   updated_at AS "updatedAt",
   deleted_at AS "deletedAt"
@@ -112,6 +114,21 @@ export async function softDeleteSession(userId: string, sessionId: string): Prom
     WHERE id = ${sessionId}
       AND user_id = ${userId}
       AND deleted_at IS NULL
+  `);
+  return (result.rowCount ?? 0) > 0;
+}
+
+export async function updateActiveStreamId(
+  userId: string,
+  sessionId: string,
+  activeStreamId: string | null,
+): Promise<boolean> {
+  const pool = getPool();
+  const result = await pool.query(sql`
+    UPDATE readmax.chat_session
+    SET active_stream_id = ${activeStreamId}
+    WHERE id = ${sessionId}
+      AND user_id = ${userId}
   `);
   return (result.rowCount ?? 0) > 0;
 }

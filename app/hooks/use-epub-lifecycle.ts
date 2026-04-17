@@ -119,9 +119,9 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
         panelId,
         bookId,
         cfi,
-        savePosition: (key, val) =>
+        savePosition: (key, val, options) =>
           AppRuntime.runPromise(
-            ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition(key, val))),
+            ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition(key, val, options))),
           ),
       }).catch((err) => console.error("Failed to flush reading position:", err));
     }
@@ -372,9 +372,11 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
               panelId: configRef.current.panelId,
               bookId,
               cfi: location.start.cfi,
-              savePosition: (key, val) =>
+              savePosition: (key, val, options) =>
                 AppRuntime.runPromise(
-                  ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition(key, val))),
+                  ReadingPositionService.pipe(
+                    Effect.andThen((s) => s.savePosition(key, val, options)),
+                  ),
                 ),
             }).catch((err) => console.error("Failed to save reading position:", err));
           }, POSITION_SAVE_DEBOUNCE_MS);

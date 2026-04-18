@@ -88,5 +88,14 @@ export async function getNotebookForUser(
 export async function getNotebookMarkdownForUser(userId: string, bookId: string): Promise<string> {
   const row = await getNotebookForUser(userId, bookId);
   if (!row || !row.content) return "";
-  return tiptapJsonToMarkdown(row.content as JSONContent);
+  try {
+    return tiptapJsonToMarkdown(row.content as JSONContent);
+  } catch (err) {
+    console.error("getNotebookMarkdownForUser: failed to convert notebook content", {
+      userId,
+      bookId,
+      error: err,
+    });
+    return "";
+  }
 }

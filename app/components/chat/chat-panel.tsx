@@ -460,8 +460,8 @@ function ChatPanelInner({
     transport,
     messages: initialMessages,
     // Reconnect to any in-flight stream for this session on mount. The resume
-    // endpoint (`/api/chat/resume/:sessionId`) returns a no-op stream when
-    // nothing is active, so this is safe to always enable.
+    // endpoint returns 204 No Content when nothing is active; `useChat`
+    // treats that as a no-op, so this is safe to always enable.
     resume: true,
     // `onToolCall` is a documented no-op placeholder (no client-side tools
     // today). All notebook/highlight tools run on the server; their outputs

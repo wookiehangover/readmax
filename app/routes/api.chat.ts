@@ -185,8 +185,8 @@ export async function action({ request }: Route.ActionArgs) {
   if (!bookId || typeof bookId !== "string") {
     return Response.json({ error: "bookId is required" }, { status: 400 });
   }
-  if (!message || typeof message !== "object" || !message.id || !message.role) {
-    return Response.json({ error: "message is required" }, { status: 400 });
+  if (!message || typeof message !== "object" || !message.id || message.role !== "user") {
+    return Response.json({ error: "message with role='user' is required" }, { status: 400 });
   }
 
   const book = await getBookByIdForUser(bookId, userId);

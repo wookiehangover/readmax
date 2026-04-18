@@ -34,6 +34,9 @@ export async function loader({
   }
 
   if (session.activeStreamId == null) {
+    // 204 No Content — the AI SDK's DefaultChatTransport with `resume: true`
+    // ignores an empty 204 body and leaves `useChat` in its idle state, so no
+    // extra stream wrapping is required here.
     return new Response(null, { status: 204 });
   }
 

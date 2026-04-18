@@ -61,19 +61,22 @@ export function useChatToolHandlers({
         const output = info?.output as
           | { appended?: boolean; text?: string; appendedNodes?: JSONContent[] }
           | undefined;
+        const toolCallId = (part as any).toolCallId as string | undefined;
+
+        // Always consume the streaming-preview marker for this toolCallId so
+        // the Set doesn't grow unbounded across messages — even when the
+        // server output indicates nothing was appended.
+        const streamingPreviewed =
+          !!toolCallId && !!streamedToolCallIdRef?.current.delete(toolCallId);
+
         if (!output?.appended || !bookId) continue;
         const appendedNodes = Array.isArray(output.appendedNodes) ? output.appendedNodes : [];
         if (appendedNodes.length === 0) continue;
 
-        const toolCallId = (part as any).toolCallId as string | undefined;
         // If the streaming preview already inserted these nodes during
         // input-streaming, skip the append — the editor already has them and
-        // re-applying would duplicate. We still consume the entry from the set
-        // so it doesn't grow unbounded across messages.
-        if (toolCallId && streamedToolCallIdRef?.current.has(toolCallId)) {
-          streamedToolCallIdRef.current.delete(toolCallId);
-          continue;
-        }
+        // re-applying would duplicate.
+        if (streamingPreviewed) continue;
 
         const editorCbs = notebookEditorCallbackMap.current.get(bookId);
         if (editorCbs) {
@@ -103,10 +106,13 @@ export function useChatToolHandlers({
           editorCbs.setContent(updatedContent);
         }
 
+        // Use cacheNotebook (not saveNotebook) because the server has already
+        // persisted this notebook state. saveNotebook would recordChange and
+        // echo the same value back to the server on the next sync push.
         AppRuntime.runPromise(
           Effect.gen(function* () {
             const svc = yield* AnnotationService;
-            yield* svc.saveNotebook({
+            yield* svc.cacheNotebook({
               bookId,
               content: updatedContent,
               updatedAt: Date.now(),

@@ -107,9 +107,13 @@ export function createChatTransport(opts: {
     const isChatPost = typeof input === "string" && input === "/api/chat";
     if (res.status !== 404 || !isChatPost) return res;
 
-    // Trigger an immediate push and give it time to complete.
+    // Trigger an immediate push and give it time to complete. Defer the
+    // dispatch via queueMicrotask so we never emit a sync event from inside
+    // a React render path (avoids flushSync warnings).
     if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("sync:push-needed"));
+      queueMicrotask(() => {
+        window.dispatchEvent(new CustomEvent("sync:push-needed"));
+      });
     }
     await new Promise((r) => setTimeout(r, 800));
     return fetch(input, init);

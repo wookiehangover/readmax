@@ -82,6 +82,13 @@ export class AnnotationService extends Context.Tag("AnnotationService")<
     ) => Effect.Effect<void, HighlightError | DecodeError>;
     readonly deleteHighlight: (id: string) => Effect.Effect<void, HighlightError | DecodeError>;
     readonly saveNotebook: (notebook: Notebook) => Effect.Effect<void, NotebookError>;
+    /**
+     * Writes a notebook row to IndexedDB without recording a sync change.
+     * Used when applying server-authoritative notebook state (e.g. edit_notes
+     * tool output) where the server has already persisted the canonical value
+     * and re-recording a local change would echo it back on the next push.
+     */
+    readonly cacheNotebook: (notebook: Notebook) => Effect.Effect<void, NotebookError>;
     readonly getNotebook: (
       bookId: string,
     ) => Effect.Effect<Notebook | null, NotebookError | DecodeError>;
@@ -227,6 +234,13 @@ export function makeAnnotationService(stores: AnnotationServiceStores): Annotati
         },
         catch: (cause) =>
           new NotebookError({ operation: "saveNotebook", bookId: notebook.bookId, cause }),
+      }),
+
+    cacheNotebook: (notebook) =>
+      Effect.tryPromise({
+        try: () => set(notebook.bookId, notebook, notebookStore),
+        catch: (cause) =>
+          new NotebookError({ operation: "cacheNotebook", bookId: notebook.bookId, cause }),
       }),
 
     getNotebook: (bookId) =>

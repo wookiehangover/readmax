@@ -684,15 +684,14 @@ describe("replace edge cases", () => {
     expect(texts).toEqual(["X", "B", "Y", "D", "Z"]);
   });
 
-  it("replace with empty string produces an empty paragraph", () => {
+  it("replace with empty string is rejected (guard against silent content loss)", () => {
     const { sdk } = setup(doc(p("Before"), p("Target"), p("After")));
     const target = sdk.find("Target")[0];
-    sdk.replace(target, "");
-    const blocks = sdk.getBlocks();
-    // Should still have 3 blocks (empty paragraph replaces Target)
-    expect(blocks.map((b) => b.text)).not.toContain("Target");
-    expect(blocks.map((b) => b.text)).toContain("Before");
-    expect(blocks.map((b) => b.text)).toContain("After");
+    // The guard throws so the AI's script fails loudly rather than silently
+    // leaving a block with no text. The notebook is untouched.
+    expect(() => sdk.replace(target, "")).toThrow(/parsed to empty content/);
+    const texts = sdk.getBlocks().map((b) => b.text);
+    expect(texts).toEqual(["Before", "Target", "After"]);
   });
 
   it("replace a block when same text appears in multiple blocks", () => {

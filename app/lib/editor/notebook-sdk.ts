@@ -247,6 +247,40 @@ function parseMarkdownNodes(_editor: Editor, markdown: string): JSONContent[] {
   return nodes;
 }
 
+/**
+ * Determine whether a parsed node represents meaningful content.
+ * Text-bearing types (heading, paragraph, blockquote, listItem, codeBlock)
+ * must contain non-whitespace text. Structural types (horizontalRule, image)
+ * are considered meaningful on their own. Containers recurse.
+ */
+function isMeaningfulNode(node: JSONContent): boolean {
+  if (node.type === "text") return (node.text ?? "").trim().length > 0;
+  if (node.type === "horizontalRule" || node.type === "image") return true;
+  if (node.content && node.content.length > 0) {
+    return node.content.some((c) => isMeaningfulNode(c));
+  }
+  return false;
+}
+
+function hasMeaningfulContent(nodes: JSONContent[]): boolean {
+  return nodes.some((n) => isMeaningfulNode(n));
+}
+
+/**
+ * Throw a descriptive error when the AI passes markdown that parses to empty
+ * content. This prevents silent content loss (e.g. `replace(heading, "## ")`
+ * leaving an empty heading) and nudges the AI toward a correct call.
+ */
+function assertMeaningfulMarkdown(method: string, markdown: string, parsed: JSONContent[]): void {
+  if (hasMeaningfulContent(parsed)) return;
+  const preview = markdown.length > 40 ? `${markdown.slice(0, 40)}...` : markdown;
+  throw new Error(
+    `notebook.${method}(): markdown "${preview}" parsed to empty content. ` +
+      `Provide valid markdown with actual text (e.g. "## New Heading"). ` +
+      `To delete a block, use notebook.remove(block) instead.`,
+  );
+}
+
 export function createNotebookSDK(content: JSONContent): {
   sdk: NotebookSDK;
   getResult: () => JSONContent;
@@ -326,6 +360,7 @@ export function createNotebookSDK(content: JSONContent): {
 
     append(markdown: string): void {
       const nodes = parseMarkdownNodes(editor, markdown);
+      assertMeaningfulMarkdown("append", markdown, nodes);
       const endPos = editor.state.doc.content.size;
       editor.commands.insertContentAt(endPos, nodes);
       mutationGeneration++;
@@ -333,6 +368,7 @@ export function createNotebookSDK(content: JSONContent): {
 
     prepend(markdown: string): void {
       const nodes = parseMarkdownNodes(editor, markdown);
+      assertMeaningfulMarkdown("prepend", markdown, nodes);
       editor.commands.insertContentAt(1, nodes);
       mutationGeneration++;
     },
@@ -356,12 +392,14 @@ export function createNotebookSDK(content: JSONContent): {
         if (!parentList.content || childIdx < 0 || childIdx >= parentList.content.length)
           return false;
 
-        // Parse replacement and wrap in listItem
+        // Parse replacement and wrap in listItem. If the input has no markdown
+        // structure, treat it as plain inline text for the list item.
         const parsed = parseMarkdownNodes(editor, markdown);
         const listItemContent =
           parsed.length > 0
             ? parsed
             : [{ type: "paragraph", content: [{ type: "text", text: markdown }] }];
+        assertMeaningfulMarkdown("replace", markdown, listItemContent);
         const listItemNode: JSONContent = { type: "listItem", content: listItemContent };
 
         parentList.content.splice(childIdx, 1, listItemNode);
@@ -374,6 +412,7 @@ export function createNotebookSDK(content: JSONContent): {
       const idx = resolved._topLevelIndex;
       if (idx === undefined || idx < 0 || idx >= docJson.content.length) return false;
       const parsed = parseMarkdownNodes(editor, markdown);
+      assertMeaningfulMarkdown("replace", markdown, parsed);
       const newContent: JSONContent[] = [...docJson.content];
       newContent.splice(idx, 1, ...parsed);
       editor.commands.setContent({ type: "doc", content: newContent } as JSONContent);
@@ -428,6 +467,7 @@ export function createNotebookSDK(content: JSONContent): {
       const docJson = editor.getJSON();
       if (!docJson.content) return;
       const parsed = parseMarkdownNodes(editor, markdown);
+      assertMeaningfulMarkdown("insertAfter", markdown, parsed);
 
       if (resolved.type === "listItem") {
         // Insert after this listItem within the parent list (supports nesting)
@@ -466,6 +506,7 @@ export function createNotebookSDK(content: JSONContent): {
       const docJson = editor.getJSON();
       if (!docJson.content) return;
       const parsed = parseMarkdownNodes(editor, markdown);
+      assertMeaningfulMarkdown("insertBefore", markdown, parsed);
 
       if (resolved.type === "listItem") {
         // Insert before this listItem within the parent list (supports nesting)

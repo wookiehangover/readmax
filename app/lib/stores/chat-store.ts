@@ -78,36 +78,13 @@ function trackSessionChange(session: ChatSession, operation: "put" | "delete" = 
   }).catch(console.error);
 }
 
-/** Fire-and-forget: record new messages in the sync change log.
- *  `previousMessageCount` is the number of messages before the update —
- *  only messages after that index are recorded. When omitted (e.g. during
- *  migration or first save) all messages are tracked. */
-function trackMessages(session: ChatSession, previousMessageCount?: number): void {
-  const start = previousMessageCount ?? 0;
-  const newMessages = session.messages.slice(start);
-  for (const msg of newMessages) {
-    recordChange({
-      entity: "chat_message",
-      entityId: msg.id,
-      operation: "put",
-      data: { ...msg, sessionId: session.id },
-      timestamp: msg.createdAt,
-    }).catch(console.error);
-  }
-}
-
 // --- Service interface ---
 
 export class ChatService extends Context.Tag("ChatService")<
   ChatService,
   {
-    // Legacy methods (delegate to active session)
+    // Warm-start read path (delegates to the active session)
     readonly getMessages: (bookId: string) => Effect.Effect<ChatMessage[], ChatError>;
-    readonly saveMessages: (
-      bookId: string,
-      messages: ChatMessage[],
-    ) => Effect.Effect<void, ChatError>;
-    readonly clearMessages: (bookId: string) => Effect.Effect<void, ChatError>;
 
     // Session CRUD
     readonly createSession: (
@@ -119,7 +96,6 @@ export class ChatService extends Context.Tag("ChatService")<
       bookId: string,
     ) => Effect.Effect<ChatSession | null, ChatError>;
     readonly getSessionsByBook: (bookId: string) => Effect.Effect<ChatSession[], ChatError>;
-    readonly saveSession: (session: ChatSession) => Effect.Effect<void, ChatError>;
     readonly deleteSession: (sessionId: string, bookId: string) => Effect.Effect<void, ChatError>;
 
     // Active session tracking per book
@@ -129,11 +105,20 @@ export class ChatService extends Context.Tag("ChatService")<
       sessionId: string,
     ) => Effect.Effect<void, ChatError>;
 
-    // Surgical field updates (avoids race conditions with concurrent saveSession calls)
+    // Title edits (LWW via recordChange)
     readonly updateSessionTitle: (
       sessionId: string,
       bookId: string,
       title: string,
+    ) => Effect.Effect<void, ChatError>;
+
+    // Server-reconciliation cache write. Replaces the active session's
+    // messages in IDB with the authoritative server list. Does NOT enqueue
+    // sync changes — the server is already the source of truth for chat.
+    readonly cacheServerMessages: (
+      bookId: string,
+      sessionId: string,
+      messages: ChatMessage[],
     ) => Effect.Effect<void, ChatError>;
   }
 >() {}
@@ -174,7 +159,7 @@ async function migrateOldMessages(bookId: string): Promise<ChatSession[]> {
 // --- Live implementation ---
 
 export const ChatServiceLive = Layer.succeed(ChatService, {
-  // --- Legacy methods (delegate to active session) ---
+  // --- Warm-start read path ---
 
   getMessages: (bookId) =>
     Effect.tryPromise({
@@ -192,64 +177,6 @@ export const ChatServiceLive = Layer.succeed(ChatService, {
         return active?.messages ?? [];
       },
       catch: (cause) => new ChatError({ operation: "getMessages", cause }),
-    }),
-
-  saveMessages: (bookId, messages) =>
-    Effect.tryPromise({
-      try: async () => {
-        let sessions = await get<ChatSession[]>(bookId, getSessionStore());
-        if (!sessions || sessions.length === 0) {
-          sessions = await migrateOldMessages(bookId);
-        }
-
-        const activeId = await get<string>(bookId, getActiveSessionStore());
-        const now = Date.now();
-
-        if (!sessions || sessions.length === 0) {
-          // No sessions at all — create one
-          const session: ChatSession = {
-            id: generateSessionId(),
-            bookId,
-            title: "",
-            messages,
-            createdAt: now,
-            updatedAt: now,
-          };
-          await set(bookId, [session], getSessionStore());
-          await set(bookId, session.id, getActiveSessionStore());
-          trackSessionChange(session);
-          trackMessages(session);
-          return;
-        }
-
-        const idx = activeId ? sessions.findIndex((s) => s.id === activeId) : sessions.length - 1;
-        if (idx >= 0) {
-          const previousCount = sessions[idx].messages.length;
-          sessions[idx] = { ...sessions[idx], messages, updatedAt: now };
-          await set(bookId, sessions, getSessionStore());
-          trackSessionChange(sessions[idx]);
-          trackMessages(sessions[idx], previousCount);
-        }
-      },
-      catch: (cause) => new ChatError({ operation: "saveMessages", cause }),
-    }),
-
-  clearMessages: (bookId) =>
-    Effect.tryPromise({
-      try: async () => {
-        const sessions = await get<ChatSession[]>(bookId, getSessionStore());
-        const activeId = await get<string>(bookId, getActiveSessionStore());
-
-        if (sessions && activeId) {
-          const idx = sessions.findIndex((s) => s.id === activeId);
-          if (idx >= 0) {
-            sessions[idx] = { ...sessions[idx], messages: [], updatedAt: Date.now() };
-            await set(bookId, sessions, getSessionStore());
-            trackSessionChange(sessions[idx]);
-          }
-        }
-      },
-      catch: (cause) => new ChatError({ operation: "clearMessages", cause }),
     }),
 
   // --- Session CRUD ---
@@ -297,23 +224,19 @@ export const ChatServiceLive = Layer.succeed(ChatService, {
       catch: (cause) => new ChatError({ operation: "getSessionsByBook", cause }),
     }),
 
-  saveSession: (session) =>
+  cacheServerMessages: (bookId, sessionId, messages) =>
     Effect.tryPromise({
       try: async () => {
-        const sessions = (await get<ChatSession[]>(session.bookId, getSessionStore())) ?? [];
-        const idx = sessions.findIndex((s) => s.id === session.id);
-        const previousCount = idx >= 0 ? sessions[idx].messages.length : 0;
-        if (idx >= 0) {
-          sessions[idx] = { ...session, updatedAt: Date.now() };
-        } else {
-          sessions.push({ ...session, updatedAt: Date.now() });
-        }
-        await set(session.bookId, sessions, getSessionStore());
-        const saved = sessions.find((s) => s.id === session.id)!;
-        trackSessionChange(saved);
-        trackMessages(saved, previousCount);
+        const sessions = (await get<ChatSession[]>(bookId, getSessionStore())) ?? [];
+        const idx = sessions.findIndex((s) => s.id === sessionId);
+        if (idx < 0) return;
+        // Do NOT call recordChange here — the server is authoritative for
+        // chat messages, so writing back to IDB is a warm-start cache update
+        // only. Bumping updatedAt stays local; no sync enqueue.
+        sessions[idx] = { ...sessions[idx], messages, updatedAt: Date.now() };
+        await set(bookId, sessions, getSessionStore());
       },
-      catch: (cause) => new ChatError({ operation: "saveSession", cause }),
+      catch: (cause) => new ChatError({ operation: "cacheServerMessages", cause }),
     }),
 
   deleteSession: (sessionId, bookId) =>

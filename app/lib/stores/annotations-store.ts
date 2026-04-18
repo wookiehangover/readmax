@@ -7,6 +7,17 @@ import { recordChange } from "~/lib/sync/change-log";
 
 // --- Schemas ---
 
+/**
+ * Text-anchor for AI-created highlights. Produced server-side when the AI
+ * calls `create_highlight`, before a CFI is known. The client resolves this
+ * to a CFI inside the epub iframe and updates the highlight via LWW sync.
+ */
+export const HighlightTextAnchorSchema = Schema.Struct({
+  chapterIndex: Schema.Number,
+  snippet: Schema.String,
+  offset: Schema.optional(Schema.Number),
+});
+
 export const HighlightSchema = Schema.Struct({
   id: Schema.String,
   bookId: Schema.String,
@@ -20,6 +31,10 @@ export const HighlightSchema = Schema.Struct({
   textOffset: Schema.optional(Schema.Number),
   /** PDF-only: length of highlighted text in characters */
   textLength: Schema.optional(Schema.Number),
+  /** Server-created AI highlights carry a text-anchor until the client resolves a CFI. */
+  textAnchor: Schema.optional(HighlightTextAnchorSchema),
+  /** Optional explanatory note (set by AI via create_highlight). */
+  note: Schema.optional(Schema.String),
   /** Timestamp of last mutation. Used for LWW sync. */
   updatedAt: Schema.optional(Schema.Number),
   /** Soft-delete timestamp. When set, the highlight is considered deleted. */
@@ -67,6 +82,13 @@ export class AnnotationService extends Context.Tag("AnnotationService")<
     ) => Effect.Effect<void, HighlightError | DecodeError>;
     readonly deleteHighlight: (id: string) => Effect.Effect<void, HighlightError | DecodeError>;
     readonly saveNotebook: (notebook: Notebook) => Effect.Effect<void, NotebookError>;
+    /**
+     * Writes a notebook row to IndexedDB without recording a sync change.
+     * Used when applying server-authoritative notebook state (e.g. edit_notes
+     * tool output) where the server has already persisted the canonical value
+     * and re-recording a local change would echo it back on the next push.
+     */
+    readonly cacheNotebook: (notebook: Notebook) => Effect.Effect<void, NotebookError>;
     readonly getNotebook: (
       bookId: string,
     ) => Effect.Effect<Notebook | null, NotebookError | DecodeError>;
@@ -212,6 +234,13 @@ export function makeAnnotationService(stores: AnnotationServiceStores): Annotati
         },
         catch: (cause) =>
           new NotebookError({ operation: "saveNotebook", bookId: notebook.bookId, cause }),
+      }),
+
+    cacheNotebook: (notebook) =>
+      Effect.tryPromise({
+        try: () => set(notebook.bookId, notebook, notebookStore),
+        catch: (cause) =>
+          new NotebookError({ operation: "cacheNotebook", bookId: notebook.bookId, cause }),
       }),
 
     getNotebook: (bookId) =>

@@ -1,4 +1,6 @@
+import type { JSONContent } from "@tiptap/react";
 import { sql } from "pg-sql";
+import { tiptapJsonToMarkdown } from "~/lib/editor/tiptap-to-markdown";
 import { getPool } from "../pool";
 
 export interface NotebookRow {
@@ -62,4 +64,38 @@ export async function getNotebooksByUserSince(
     ORDER BY updated_at ASC
   `);
   return result.rows;
+}
+
+export async function getNotebookForUser(
+  userId: string,
+  bookId: string,
+): Promise<NotebookRow | null> {
+  const pool = getPool();
+  const result = await pool.query<NotebookRow>(sql`
+    SELECT ${NOTEBOOK_COLUMNS}
+    FROM readmax.notebook
+    WHERE user_id = ${userId} AND book_id = ${bookId}
+    LIMIT 1
+  `);
+  return result.rows[0] ?? null;
+}
+
+/**
+ * Loads the notebook for a given user/book and returns it as a markdown string.
+ * Returns an empty string if no notebook exists or the stored content is not a
+ * valid TipTap document.
+ */
+export async function getNotebookMarkdownForUser(userId: string, bookId: string): Promise<string> {
+  const row = await getNotebookForUser(userId, bookId);
+  if (!row || !row.content) return "";
+  try {
+    return tiptapJsonToMarkdown(row.content as JSONContent);
+  } catch (err) {
+    console.error("getNotebookMarkdownForUser: failed to convert notebook content", {
+      userId,
+      bookId,
+      error: err,
+    });
+    return "";
+  }
 }

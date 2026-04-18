@@ -1,25 +1,59 @@
-import { streamText, convertToModelMessages, type UIMessage, tool, stepCountIs } from "ai";
+import {
+  streamText,
+  convertToModelMessages,
+  type UIMessage,
+  tool,
+  stepCountIs,
+  createUIMessageStream,
+  createUIMessageStreamResponse,
+  generateId,
+} from "ai";
 import { gateway } from "@ai-sdk/gateway";
 import { anthropic } from "@ai-sdk/anthropic";
+import { createResumableStreamContext } from "resumable-stream";
+import { waitUntil } from "@vercel/functions";
 import { z } from "zod";
 import type { Route } from "./+types/api.chat";
 import { SE_BASE, parseSearchHtml } from "./api.standard-ebooks.search";
 import type { BookChapter } from "~/lib/epub/epub-text-extract";
-import { getOrBuildBookIndex, searchBook } from "~/lib/orama-book-search";
+import { getOrBuildBookIndex, locateTextAnchor, searchBook } from "~/lib/orama-book-search";
+import { getSessionFromRequest } from "~/lib/database/auth-middleware";
+import { getBookByIdForUser } from "~/lib/database/book/book";
+import { getBookChaptersForUser } from "~/lib/database/book/book-chapters";
+import { upsertHighlight } from "~/lib/database/annotation/highlight";
+import {
+  getNotebookForUser,
+  getNotebookMarkdownForUser,
+  upsertNotebook,
+} from "~/lib/database/annotation/notebook";
+import { runEditNotesInSandbox } from "~/lib/editor/notebook-sdk-server";
+import { markdownToTiptapJsonServer } from "~/lib/editor/markdown-to-tiptap-server";
+import type { JSONContent } from "@tiptap/react";
+import {
+  getMessagesBySession,
+  getSessionByIdForUser,
+  upsertMessage,
+  updateActiveStreamId,
+  type ChatMessageRow,
+} from "~/lib/database/chat/chat-session";
 
 interface ChatRequestBody {
-  messages: UIMessage[];
-  bookContext: {
-    title: string;
-    author: string;
-    chapters: BookChapter[];
-    currentChapterIndex?: number;
-    visibleText?: string;
-    notebookMarkdown?: string;
-  };
+  sessionId?: string;
+  bookId?: string;
+  message?: UIMessage;
+  visibleText?: string;
+  currentChapterIndex?: number;
 }
 
-function buildSystemPrompt(bookContext: ChatRequestBody["bookContext"]): string {
+interface SystemPromptContext {
+  title: string;
+  author: string;
+  chapters: BookChapter[];
+  currentChapterIndex?: number;
+  visibleText?: string;
+}
+
+function buildSystemPrompt(bookContext: SystemPromptContext): string {
   const toc = bookContext.chapters.map((c) => `  ${c.index}. ${c.title}`).join("\n");
 
   let currentChapterSection = "";
@@ -99,152 +133,380 @@ ${toc}
 ${currentChapterSection}`;
 }
 
+function rowToUIMessage(row: ChatMessageRow): UIMessage {
+  const parts = row.parts as UIMessage["parts"] | null;
+  if (parts && Array.isArray(parts) && parts.length > 0) {
+    return {
+      id: row.id,
+      role: row.role as UIMessage["role"],
+      parts,
+    };
+  }
+  return {
+    id: row.id,
+    role: row.role as UIMessage["role"],
+    parts: [{ type: "text", text: row.content ?? "" }],
+  };
+}
+
+function extractTextContent(message: UIMessage): string {
+  return (
+    message.parts
+      ?.filter((p): p is { type: "text"; text: string } => p.type === "text")
+      .map((p) => p.text)
+      .join("") ?? ""
+  );
+}
+
 export async function action({ request }: Route.ActionArgs) {
-  const body = (await request.json()) as ChatRequestBody;
-  const { messages, bookContext } = body;
-
-  if (!messages || !Array.isArray(messages)) {
-    return new Response("Missing or invalid messages", { status: 400 });
+  if (!process.env.DATABASE_URL) {
+    return Response.json({ error: "Sync not configured" }, { status: 503 });
   }
 
-  if (!bookContext?.title || !bookContext?.author || !Array.isArray(bookContext?.chapters)) {
-    return new Response("Missing required bookContext fields", { status: 400 });
+  // Require authentication before processing chat requests
+  const authSession = await getSessionFromRequest(request);
+  if (!authSession) {
+    return Response.json({ error: "auth_required" }, { status: 401 });
+  }
+  const { userId } = authSession;
+
+  let body: ChatRequestBody;
+  try {
+    body = (await request.json()) as ChatRequestBody;
+  } catch {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const bookIndex = getOrBuildBookIndex(bookContext.chapters);
+  const { sessionId, bookId, message, visibleText, currentChapterIndex } = body;
 
-  const result = streamText({
-    model: gateway("anthropic/claude-sonnet-4.6"),
-    system: buildSystemPrompt(bookContext),
-    messages: await convertToModelMessages(messages),
-    tools: {
-      web_search: anthropic.tools.webSearch_20250305(),
-      search_book: tool({
-        description:
-          "Search the book for passages matching a query. Uses fuzzy, typo-tolerant full-text search to find relevant excerpts across all chapters. Use this to find specific quotes, topics, characters, or themes — even with approximate or misspelled terms.",
-        inputSchema: z.object({
-          query: z.string().describe("Text, keywords, or phrase to search for in the book"),
-        }),
-        execute: async ({ query }) => {
-          return searchBook(bookIndex, query);
-        },
-      }),
-      read_notes: tool({
-        description:
-          "Read the reader's personal notes and annotations for this book. Returns their notebook content as markdown.",
-        inputSchema: z.object({}),
-        execute: async () => {
-          return { content: bookContext.notebookMarkdown || "(No notes yet)" };
-        },
-      }),
-      append_to_notes: tool({
-        description:
-          "Add a note to the reader's notebook for this book. Use when they ask to save something, bookmark a passage, or jot down a thought. The text is appended to their existing notes.",
-        inputSchema: z.object({
-          text: z.string().describe("The text to add (markdown format)"),
-        }),
-        execute: async ({ text }) => {
-          return { appended: true, text };
-        },
-      }),
-      edit_notes: tool({
-        description:
-          "Edit the reader's notebook using JavaScript code. Use this for complex edits: reorganizing sections, replacing content, deleting blocks, or restructuring notes. The code runs against a `notebook` object. Always call read_notes first to see the current content before editing.",
-        inputSchema: z.object({
-          code: z
-            .string()
-            .describe(
-              "JavaScript code that uses the `notebook` object to edit notes. Available methods: notebook.getMarkdown(), notebook.getBlocks(), notebook.find(query), notebook.append(markdown), notebook.prepend(markdown), notebook.replace(block, markdown) → boolean, notebook.remove(block) → boolean, notebook.insertAfter(block, markdown), notebook.insertBefore(block, markdown), notebook.setContent(markdown). The `find` method accepts a string (plain text search — links show as their display text, not markdown syntax) or an object { type?: 'heading'|'paragraph'|'bulletList'|'orderedList'|'blockquote'|'codeBlock'|'listItem', text?: string }. It returns Block objects with { type, text, level?, index, parentIndex?, depth? }. Use type 'listItem' to target individual list items — this works at ALL nesting levels. Each listItem has a `depth` field (0 = top-level, 1 = first sub-level, etc.) and `text` contains only the item's direct content (not nested sub-items). You can target nested items directly: notebook.find({ type: 'listItem', text: 'sub-item' }). replace() and remove() return true if the block was found and modified, false otherwise. Example — edit a nested list item: const item = notebook.find({ type: 'listItem', text: 'old text' })[0]; if (item) notebook.replace(item, 'new text');",
-            ),
-        }),
-        execute: async ({ code }) => {
-          // Actual execution happens client-side in onToolCall.
-          // The client returns { executed: true } or { executed: false, error } after running the code.
-          return { code };
-        },
-      }),
-      create_highlight: tool({
-        description:
-          "Highlight a passage in the book. Use this proactively when you find text that is particularly important, beautiful, or relevant to the reader's question. The highlight will appear in the epub reader and be saved to the reader's notebook.",
-        inputSchema: z.object({
-          text: z
-            .string()
-            .describe("The exact text from the book to highlight. Must be a verbatim quote."),
-          note: z
-            .string()
-            .optional()
-            .describe("A brief note explaining why this passage is significant"),
-        }),
-        execute: async ({ text, note }) => {
-          return { created: true, text, note };
-        },
-      }),
-      read_chapter: tool({
-        description:
-          "Read the full text of a specific chapter. Use this to understand a chapter's full argument before answering detailed questions about it.",
-        inputSchema: z.object({
-          chapterIndex: z.number().optional().describe("The 0-based chapter index"),
-          chapterTitle: z
-            .string()
-            .optional()
-            .describe("The chapter title to look up (partial match OK)"),
-        }),
-        execute: async ({ chapterIndex, chapterTitle }) => {
-          let chapter: BookChapter | undefined;
-          if (chapterIndex != null) {
-            chapter = bookContext.chapters.find((c) => c.index === chapterIndex);
-          } else if (chapterTitle) {
-            const lower = chapterTitle.toLowerCase();
-            chapter = bookContext.chapters.find((c) => c.title.toLowerCase().includes(lower));
-          }
-          if (!chapter) return { error: "Chapter not found" };
-          const text =
-            chapter.text.length > 15000
-              ? chapter.text.slice(0, 15000) + "\n[truncated — chapter continues]"
-              : chapter.text;
-          return { chapterIndex: chapter.index, title: chapter.title, text };
-        },
-      }),
-      search_standard_ebooks: tool({
-        description:
-          "Search Standard Ebooks for free, beautifully formatted public domain books. Use this when the reader asks for similar books, recommendations, or wants to find other works by the same author or in a similar genre. Returns structured results the reader can browse and import.",
-        inputSchema: z.object({
-          query: z
-            .string()
-            .describe(
-              "Search query — author name, book title, genre, or keywords (e.g. 'Jane Austen', 'science fiction', 'philosophy')",
-            ),
-        }),
-        execute: async ({ query }) => {
-          const params = new URLSearchParams({
-            query,
-            "per-page": "6",
-            page: "1",
-          });
-          const res = await fetch(`${SE_BASE}/ebooks?${params.toString()}`);
-          if (!res.ok) {
-            return { error: `Standard Ebooks returned ${res.status}` };
-          }
-          const html = await res.text();
-          const data = parseSearchHtml(html, 1);
-          // Filter out unreleased/in-production books (missing urlPath or title)
-          const books = data.books
-            .filter((b) => b.urlPath && b.title && b.urlPath.startsWith("/ebooks/"))
-            .filter((b) => b.title.toLowerCase() !== bookContext.title.toLowerCase())
-            .slice(0, 4)
-            .map((b) => ({
-              title: b.title,
-              author: b.author,
-              coverUrl: b.coverUrl,
-              urlPath: b.urlPath,
-              url: `${SE_BASE}${b.urlPath}`,
-            }));
-          return { books, totalResults: data.totalPages * 12 };
-        },
-      }),
-    },
-    stopWhen: stepCountIs(5),
+  if (!sessionId || typeof sessionId !== "string") {
+    return Response.json({ error: "sessionId is required" }, { status: 400 });
+  }
+  if (!bookId || typeof bookId !== "string") {
+    return Response.json({ error: "bookId is required" }, { status: 400 });
+  }
+  if (!message || typeof message !== "object" || !message.id || message.role !== "user") {
+    return Response.json({ error: "message with role='user' is required" }, { status: 400 });
+  }
+
+  const book = await getBookByIdForUser(bookId, userId);
+  if (!book) {
+    return Response.json({ error: "Book not found" }, { status: 404 });
+  }
+
+  // Verify the session belongs to this user before loading its history or
+  // persisting new messages to it — otherwise an authed user could leak/inject
+  // into another user's session by passing its id.
+  const session = await getSessionByIdForUser(sessionId, userId);
+  if (!session) {
+    return Response.json({ error: "Session not found" }, { status: 404 });
+  }
+
+  const chaptersRow = await getBookChaptersForUser(userId, bookId);
+  if (!chaptersRow) {
+    return Response.json(
+      {
+        error:
+          "Book chapters not uploaded. Upload via POST /api/books/:bookId/chapters before starting a chat.",
+      },
+      { status: 400 },
+    );
+  }
+  const chapters = chaptersRow.chapters as BookChapter[];
+
+  const priorRows = await getMessagesBySession(sessionId);
+  const priorMessages: UIMessage[] = priorRows.map(rowToUIMessage);
+
+  const originalMessages: UIMessage[] = [...priorMessages, message];
+
+  // Persist the user message before streaming so it survives if the stream crashes.
+  await upsertMessage({
+    id: message.id,
+    sessionId,
+    role: message.role,
+    content: extractTextContent(message),
+    parts: message.parts ?? null,
+    createdAt: new Date(),
   });
 
-  return result.toUIMessageStreamResponse();
+  const bookIndex = getOrBuildBookIndex(chapters);
+
+  const systemPromptContext: SystemPromptContext = {
+    title: book.title ?? "Untitled",
+    author: book.author ?? "Unknown",
+    chapters,
+    currentChapterIndex,
+    visibleText,
+  };
+
+  const uiStream = createUIMessageStream<UIMessage>({
+    originalMessages,
+    execute: async ({ writer }) => {
+      const result = streamText({
+        model: gateway("anthropic/claude-sonnet-4.6"),
+        system: buildSystemPrompt(systemPromptContext),
+        messages: await convertToModelMessages(originalMessages),
+        tools: {
+          web_search: anthropic.tools.webSearch_20250305(),
+          search_book: tool({
+            description:
+              "Search the book for passages matching a query. Uses fuzzy, typo-tolerant full-text search to find relevant excerpts across all chapters. Use this to find specific quotes, topics, characters, or themes — even with approximate or misspelled terms.",
+            inputSchema: z.object({
+              query: z.string().describe("Text, keywords, or phrase to search for in the book"),
+            }),
+            execute: async ({ query }) => {
+              return searchBook(bookIndex, query);
+            },
+          }),
+          read_notes: tool({
+            description:
+              "Read the reader's personal notes and annotations for this book. Returns their notebook content as markdown.",
+            inputSchema: z.object({}),
+            execute: async () => {
+              const content = await getNotebookMarkdownForUser(userId, bookId);
+              return { content: content || "(No notes yet)" };
+            },
+          }),
+          append_to_notes: tool({
+            description:
+              "Add a note to the reader's notebook for this book. Use when they ask to save something, bookmark a passage, or jot down a thought. The text is appended to their existing notes.",
+            inputSchema: z.object({
+              text: z.string().describe("The text to add (markdown format)"),
+            }),
+            execute: async ({ text }) => {
+              const parsed = markdownToTiptapJsonServer(text);
+              const appendedNodes = (parsed.content ?? []) as JSONContent[];
+
+              if (appendedNodes.length === 0) {
+                return { appended: false, text, appendedNodes: [] };
+              }
+
+              const existing = await getNotebookForUser(userId, bookId);
+              const existingDoc = (existing?.content as JSONContent | null | undefined) ?? null;
+              const existingNodes = existingDoc?.content ?? [];
+
+              const updatedContent: JSONContent = {
+                type: "doc",
+                content: [...existingNodes, ...appendedNodes],
+              };
+
+              try {
+                await upsertNotebook(userId, bookId, updatedContent, new Date());
+              } catch (err) {
+                console.error("append_to_notes: failed to persist notebook:", err);
+                return {
+                  appended: false,
+                  text,
+                  appendedNodes: [],
+                  error: err instanceof Error ? err.message : String(err),
+                };
+              }
+
+              return { appended: true, text, appendedNodes };
+            },
+          }),
+          edit_notes: tool({
+            description:
+              "Edit the reader's notebook using JavaScript code. Use this for complex edits: reorganizing sections, replacing content, deleting blocks, or restructuring notes. The code runs against a `notebook` object. Always call read_notes first to see the current content before editing.",
+            inputSchema: z.object({
+              code: z
+                .string()
+                .describe(
+                  "JavaScript code that uses the `notebook` object to edit notes. Available methods: notebook.getMarkdown(), notebook.getBlocks(), notebook.find(query), notebook.append(markdown), notebook.prepend(markdown), notebook.replace(block, markdown) → boolean, notebook.remove(block) → boolean, notebook.insertAfter(block, markdown), notebook.insertBefore(block, markdown), notebook.setContent(markdown). The `find` method accepts a string (plain text search — links show as their display text, not markdown syntax) or an object { type?: 'heading'|'paragraph'|'bulletList'|'orderedList'|'blockquote'|'codeBlock'|'listItem', text?: string }. It returns Block objects with { type, text, level?, index, parentIndex?, depth? }. Use type 'listItem' to target individual list items — this works at ALL nesting levels. Each listItem has a `depth` field (0 = top-level, 1 = first sub-level, etc.) and `text` contains only the item's direct content (not nested sub-items). You can target nested items directly: notebook.find({ type: 'listItem', text: 'sub-item' }). replace() and remove() return true if the block was found and modified, false otherwise. Example — edit a nested list item: const item = notebook.find({ type: 'listItem', text: 'old text' })[0]; if (item) notebook.replace(item, 'new text');",
+                ),
+            }),
+            execute: async ({ code }) => {
+              const existing = await getNotebookForUser(userId, bookId);
+              const currentContent: JSONContent = (existing?.content as
+                | JSONContent
+                | null
+                | undefined) ?? {
+                type: "doc",
+                content: [],
+              };
+
+              const result = await runEditNotesInSandbox(currentContent, code, {
+                timeoutMs: 1500,
+              });
+              if (!result.ok) {
+                return { executed: false, error: result.error };
+              }
+
+              try {
+                await upsertNotebook(userId, bookId, result.updatedContent, new Date());
+              } catch (err) {
+                console.error("edit_notes: failed to persist updated notebook:", err);
+                return {
+                  executed: false,
+                  error: err instanceof Error ? err.message : String(err),
+                };
+              }
+
+              return { executed: true, updatedContent: result.updatedContent };
+            },
+          }),
+          create_highlight: tool({
+            description:
+              "Highlight a passage in the book. Use this proactively when you find text that is particularly important, beautiful, or relevant to the reader's question. The highlight will appear in the epub reader and be saved to the reader's notebook.",
+            inputSchema: z.object({
+              text: z
+                .string()
+                .describe("The exact text from the book to highlight. Must be a verbatim quote."),
+              note: z
+                .string()
+                .optional()
+                .describe("A brief note explaining why this passage is significant"),
+            }),
+            execute: async ({ text, note }) => {
+              // PDF is not supported server-side yet — client falls back to
+              // its own PDF search + persist path on unsupported responses.
+              if (book.format === "pdf") {
+                return { created: false, unsupported: "pdf", text, note: note ?? null };
+              }
+
+              const anchor = locateTextAnchor(chapters, bookIndex, text);
+              if (!anchor) {
+                return { created: false, error: "not_found", text, note: note ?? null };
+              }
+
+              const id = generateId();
+              const createdAt = new Date();
+              const color = "rgba(255, 213, 79, 0.4)";
+              try {
+                await upsertHighlight(userId, {
+                  id,
+                  bookId,
+                  cfiRange: null,
+                  text,
+                  color,
+                  textAnchor: anchor,
+                  note: note ?? null,
+                  createdAt,
+                });
+              } catch (err) {
+                console.error("create_highlight: failed to persist:", err);
+                return { created: false, error: "persist_failed", text, note: note ?? null };
+              }
+
+              return {
+                created: true,
+                highlight: {
+                  id,
+                  bookId,
+                  text,
+                  note: note ?? null,
+                  color,
+                  textAnchor: anchor,
+                  createdAt: createdAt.getTime(),
+                },
+              };
+            },
+          }),
+          read_chapter: tool({
+            description:
+              "Read the full text of a specific chapter. Use this to understand a chapter's full argument before answering detailed questions about it.",
+            inputSchema: z.object({
+              chapterIndex: z.number().optional().describe("The 0-based chapter index"),
+              chapterTitle: z
+                .string()
+                .optional()
+                .describe("The chapter title to look up (partial match OK)"),
+            }),
+            execute: async ({ chapterIndex, chapterTitle }) => {
+              let chapter: BookChapter | undefined;
+              if (chapterIndex != null) {
+                chapter = chapters.find((c) => c.index === chapterIndex);
+              } else if (chapterTitle) {
+                const lower = chapterTitle.toLowerCase();
+                chapter = chapters.find((c) => c.title.toLowerCase().includes(lower));
+              }
+              if (!chapter) return { error: "Chapter not found" };
+              const text =
+                chapter.text.length > 15000
+                  ? chapter.text.slice(0, 15000) + "\n[truncated — chapter continues]"
+                  : chapter.text;
+              return { chapterIndex: chapter.index, title: chapter.title, text };
+            },
+          }),
+          search_standard_ebooks: tool({
+            description:
+              "Search Standard Ebooks for free, beautifully formatted public domain books. Use this when the reader asks for similar books, recommendations, or wants to find other works by the same author or in a similar genre. Returns structured results the reader can browse and import.",
+            inputSchema: z.object({
+              query: z
+                .string()
+                .describe(
+                  "Search query — author name, book title, genre, or keywords (e.g. 'Jane Austen', 'science fiction', 'philosophy')",
+                ),
+            }),
+            execute: async ({ query }) => {
+              const params = new URLSearchParams({
+                query,
+                "per-page": "6",
+                page: "1",
+              });
+              const res = await fetch(`${SE_BASE}/ebooks?${params.toString()}`);
+              if (!res.ok) {
+                return { error: `Standard Ebooks returned ${res.status}` };
+              }
+              const html = await res.text();
+              const data = parseSearchHtml(html, 1);
+              const books = data.books
+                .filter((b) => b.urlPath && b.title && b.urlPath.startsWith("/ebooks/"))
+                .filter((b) => b.title.toLowerCase() !== systemPromptContext.title.toLowerCase())
+                .slice(0, 4)
+                .map((b) => ({
+                  title: b.title,
+                  author: b.author,
+                  coverUrl: b.coverUrl,
+                  urlPath: b.urlPath,
+                  url: `${SE_BASE}${b.urlPath}`,
+                }));
+              return { books, totalResults: data.totalPages * 12 };
+            },
+          }),
+        },
+        stopWhen: stepCountIs(5),
+      });
+
+      writer.merge(
+        result.toUIMessageStream<UIMessage>({
+          generateMessageId: generateId,
+          onFinish: async ({ responseMessage }) => {
+            try {
+              await upsertMessage({
+                id: responseMessage.id,
+                sessionId,
+                role: responseMessage.role,
+                content: extractTextContent(responseMessage),
+                parts: responseMessage.parts ?? null,
+                createdAt: new Date(),
+              });
+            } catch (err) {
+              console.error("Failed to persist assistant message:", err);
+            }
+            try {
+              await updateActiveStreamId(userId, sessionId, null);
+            } catch (err) {
+              console.error("Failed to clear active_stream_id:", err);
+            }
+          },
+        }),
+      );
+    },
+  });
+
+  const streamContext = createResumableStreamContext({ waitUntil });
+
+  return createUIMessageStreamResponse({
+    stream: uiStream,
+    async consumeSseStream({ stream }) {
+      const streamId = generateId();
+      try {
+        await streamContext.createNewResumableStream(streamId, () => stream);
+        await updateActiveStreamId(userId, sessionId, streamId);
+      } catch (err) {
+        console.error("Failed to create resumable stream:", err);
+      }
+    },
+  });
 }

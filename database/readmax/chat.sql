@@ -7,6 +7,7 @@ CREATE TABLE readmax.chat_session (
     user_id UUID NOT NULL REFERENCES readmax.user(id),
     book_id TEXT,
     title TEXT,
+    active_stream_id TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     deleted_at TIMESTAMPTZ

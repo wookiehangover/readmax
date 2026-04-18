@@ -3,6 +3,7 @@ import { Effect, Layer } from "effect";
 import { createStore } from "idb-keyval";
 import { AnnotationService, makeAnnotationService } from "~/lib/stores/annotations-store";
 import type { Highlight, Notebook } from "~/lib/stores/annotations-store";
+import { getUnsyncedChanges, markSynced, clearSyncedChanges } from "~/lib/sync/change-log";
 
 function makeHighlight(overrides: Partial<Highlight> = {}): Highlight {
   return {
@@ -263,6 +264,44 @@ describe("AnnotationService", () => {
       expect((result!.content as any).content[0].content[0].text).toBe("prior notes");
       expect((result!.content as any).content[1].content[0].text).toBe("New Section");
       expect((result!.content as any).content[2].content[0].text).toBe("Appended during load");
+    });
+
+    it("cacheNotebook writes to IndexedDB without recording a sync change", async () => {
+      // When the server is authoritative (e.g. edit_notes tool output), the
+      // client should seed its warm-start cache without emitting a sync
+      // change that would echo the same value back on the next push.
+      const layer = makeTestLayer();
+      const run = <A, E>(e: Effect.Effect<A, E, AnnotationService>) =>
+        Effect.runPromise(Effect.provide(e, layer));
+
+      // Flush any pre-existing unsynced changes from other tests so we can
+      // assert on the delta produced by cacheNotebook alone.
+      const pre = await getUnsyncedChanges();
+      if (pre.length > 0) {
+        await markSynced(pre.map((c) => c.id));
+        await clearSyncedChanges();
+      }
+
+      const nb = makeNotebook({
+        content: {
+          type: "doc",
+          content: [{ type: "paragraph", content: [{ type: "text", text: "server truth" }] }],
+        },
+      });
+      await run(AnnotationService.pipe(Effect.andThen((s) => s.cacheNotebook(nb))));
+
+      // IDB should have the notebook row so warm-start matches server state.
+      const stored = await run(
+        AnnotationService.pipe(Effect.andThen((s) => s.getNotebook("book-1"))),
+      );
+      expect(stored).not.toBeNull();
+      expect((stored!.content as any).content[0].content[0].text).toBe("server truth");
+
+      // Crucially, the change log must NOT have a new notebook entry for this
+      // bookId — otherwise the sync engine would echo it back to the server.
+      const unsynced = await getUnsyncedChanges();
+      const echoed = unsynced.filter((c) => c.entity === "notebook" && c.entityId === "book-1");
+      expect(echoed).toHaveLength(0);
     });
 
     it("edit_notes reads real content from IndexedDB when editor is not ready", async () => {

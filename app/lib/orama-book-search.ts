@@ -145,6 +145,71 @@ const CONTEXT_CHARS = 250;
  *
  * Uses Orama's `tolerance` option for typo-tolerant fuzzy matching.
  */
+export interface TextAnchor {
+  chapterIndex: number;
+  snippet: string;
+  offset?: number;
+}
+
+/**
+ * Normalize text for substring matching across quote styles, dashes, and
+ * whitespace differences that AI-generated quotes often have vs the source.
+ */
+function normalizeForMatch(text: string): string {
+  return text
+    .replace(/[\u2018\u2019\u201A]/g, "'")
+    .replace(/[\u201C\u201D\u201E]/g, '"')
+    .replace(/\u2014/g, "--")
+    .replace(/\u2013/g, "-")
+    .replace(/\u2026/g, "...")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Locate a text passage inside the book and return a text-anchor describing
+ * its chapter, a snippet suitable for client-side CFI resolution, and an
+ * optional character offset within the chapter text.
+ *
+ * Runs the Orama index to pick the most likely chapter, then tries to pin
+ * down an exact character offset in that chapter's text.
+ */
+export function locateTextAnchor(
+  chapters: BookChapter[],
+  db: AnyOrama,
+  text: string,
+): TextAnchor | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+
+  const hits = searchBook(db, trimmed, 1);
+  if (hits.length === 0) return null;
+
+  const chapterIndex = hits[0].chapterIndex;
+  const chapter = chapters.find((c) => c.index === chapterIndex);
+
+  const snippetSource = trimmed.length > 160 ? trimmed.slice(0, 160) : trimmed;
+
+  let offset: number | undefined;
+  if (chapter) {
+    const norm = normalizeForMatch(chapter.text);
+    const needle = normalizeForMatch(trimmed);
+    let idx = norm.indexOf(needle);
+    if (idx < 0 && needle.length > 40) {
+      idx = norm.indexOf(needle.slice(0, 40));
+    }
+    if (idx >= 0) {
+      offset = idx;
+    }
+  }
+
+  return {
+    chapterIndex,
+    snippet: snippetSource,
+    ...(offset != null ? { offset } : {}),
+  };
+}
+
 export function searchBook(db: AnyOrama, query: string, limit: number = 10): BookSearchResult[] {
   const raw = search(db, {
     term: query,

@@ -104,6 +104,12 @@ export async function processEntry(
           pageNumber?: number | null;
           textOffset?: number | null;
           textLength?: number | null;
+          textAnchor?: {
+            chapterIndex: number;
+            snippet: string;
+            offset?: number;
+          } | null;
+          note?: string | null;
           createdAt?: number | null;
           deletedAt?: number | null;
         };
@@ -116,6 +122,8 @@ export async function processEntry(
           pageNumber: data.pageNumber,
           textOffset: data.textOffset,
           textLength: data.textLength,
+          textAnchor: data.textAnchor ?? null,
+          note: data.note ?? null,
           createdAt: data.createdAt ? new Date(data.createdAt) : new Date(entry.timestamp),
           deletedAt: data.deletedAt ? new Date(data.deletedAt) : null,
         });

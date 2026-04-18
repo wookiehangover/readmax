@@ -24,11 +24,13 @@
     "@simplewebauthn/browser": "^13.3.0",
     "@simplewebauthn/server": "^13.3.0",
     "@tailwindcss/typography": "^0.5.19",
+    "@tiptap/core": "^3.20.1",
     "@tiptap/pm": "^3.20.1",
     "@tiptap/react": "^3.20.1",
     "@tiptap/starter-kit": "^3.20.1",
     "@types/pg": "^8.20.0",
     "@vercel/blob": "^2.3.3",
+    "@vercel/functions": "^3.4.3",
     "ai": "^6.0.141",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -39,12 +41,15 @@
     "isbot": "^5.1.31",
     "linkedom": "^0.18.12",
     "lucide-react": "^0.577.0",
+    "markdown-it": "^14.1.1",
     "pdfjs-dist": "^5.6.205",
     "pg": "^8.20.0",
     "pg-sql": "^1.1.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-router": "7.12.0",
+    "redis": "^5.12.1",
+    "resumable-stream": "^2.2.12",
     "shadcn": "^4.0.0",
     "streamdown": "^2.5.0",
     "tailwind-merge": "^3.5.0",
@@ -58,6 +63,7 @@
     "@playwright/test": "^1.58.2",
     "@react-router/dev": "7.12.0",
     "@tailwindcss/vite": "^4.1.13",
+    "@types/markdown-it": "^14.1.2",
     "@types/node": "^22",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
@@ -77,6 +83,9 @@
       "core-js",
       "es5-ext",
       "esbuild"
-    ]
+    ],
+    "overrides": {
+      "@tiptap/core": "3.20.1"
+    }
   }
 }

@@ -8,8 +8,9 @@ import { getToolInfo } from "./chat-utils";
  * Watches chat messages for `append_to_notes` tool invocations in `input-streaming`
  * state and pushes partial content to the notebook editor in real-time.
  *
- * Returns a ref that is set to `true` when streaming has inserted content,
- * so the `onToolCall` handler can skip the duplicate final insert.
+ * Each toolCallId that this hook has finalized into the editor is added to
+ * `streamedToolCallIdRef` so the onFinish handler can skip re-applying the
+ * authoritative server output for the same tool call.
  */
 export function useStreamingAppend({
   messages,
@@ -22,8 +23,8 @@ export function useStreamingAppend({
   bookId: string;
   status: string;
   notebookEditorCallbackMap: React.MutableRefObject<Map<string, NotebookEditorCallbacks>>;
-  /** Shared ref — set to the toolCallId when streaming inserted the final content */
-  streamedToolCallIdRef: React.MutableRefObject<string | null>;
+  /** Shared ref — toolCallIds whose streaming preview has been finalized. */
+  streamedToolCallIdRef: React.MutableRefObject<Set<string>>;
 }) {
   // Track whether we are currently streaming and the baseline node count
   const streamingRef = useRef<{
@@ -79,7 +80,7 @@ export function useStreamingAppend({
       const newNodes = parsed.content ?? [];
       editorCallbacks.replaceContentFrom(streamingRef.current.baseNodeCount, newNodes);
 
-      streamedToolCallIdRef.current = completedPart.toolCallId;
+      streamedToolCallIdRef.current.add(completedPart.toolCallId);
       streamingRef.current = null;
       return;
     }

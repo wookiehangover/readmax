@@ -3,7 +3,6 @@ import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "tiptap-markdown";
 import { HighlightReference } from "./tiptap-highlight-node";
 import { tiptapJsonToMarkdown } from "./tiptap-to-markdown";
-import { markdownToTiptapJson } from "./markdown-to-tiptap";
 
 export type BlockType =
   | "heading"
@@ -52,8 +51,6 @@ export interface NotebookSDK {
   remove(block: Block): boolean;
   insertAfter(block: Block, markdown: string): void;
   insertBefore(block: Block, markdown: string): void;
-
-  setContent(markdown: string): void;
 }
 
 function getTextFromNode(node: any): string {
@@ -496,12 +493,6 @@ export function createNotebookSDK(content: JSONContent): {
       const newContent: JSONContent[] = [...docJson.content];
       newContent.splice(idx, 0, ...parsed);
       editor.commands.setContent({ type: "doc", content: newContent } as JSONContent);
-      mutationGeneration++;
-    },
-
-    setContent(markdown: string): void {
-      const parsed = markdownToTiptapJson(markdown);
-      editor.commands.setContent(parsed);
       mutationGeneration++;
     },
   };

@@ -316,12 +316,25 @@ export async function action({ request }: Route.ActionArgs) {
           }),
           edit_notes: tool({
             description:
-              "Edit the reader's notebook using JavaScript code. Use this for complex edits: reorganizing sections, replacing content, deleting blocks, or restructuring notes. The code runs against a `notebook` object. Always call read_notes first to see the current content before editing.",
+              "Edit the reader's notebook using JavaScript code. Use this for block-targeted edits: changing a specific paragraph or list item, removing a block, inserting around a block, or restructuring a section. The code runs against a `notebook` object. ALWAYS call read_notes first to see the current content. PREFER block-targeted operations (find → replace/remove/insertAfter/insertBefore). DO NOT reassemble the whole notebook from scratch — there is no whole-document replace method, and the server rejects scripts that reduce the notebook to near-empty. If the user explicitly asks to reset their notebook, call remove() on each block in a loop.",
             inputSchema: z.object({
               code: z
                 .string()
                 .describe(
-                  "JavaScript code that uses the `notebook` object to edit notes. Available methods: notebook.getMarkdown(), notebook.getBlocks(), notebook.find(query), notebook.append(markdown), notebook.prepend(markdown), notebook.replace(block, markdown) → boolean, notebook.remove(block) → boolean, notebook.insertAfter(block, markdown), notebook.insertBefore(block, markdown), notebook.setContent(markdown). The `find` method accepts a string (plain text search — links show as their display text, not markdown syntax) or an object { type?: 'heading'|'paragraph'|'bulletList'|'orderedList'|'blockquote'|'codeBlock'|'listItem', text?: string }. It returns Block objects with { type, text, level?, index, parentIndex?, depth? }. Use type 'listItem' to target individual list items — this works at ALL nesting levels. Each listItem has a `depth` field (0 = top-level, 1 = first sub-level, etc.) and `text` contains only the item's direct content (not nested sub-items). You can target nested items directly: notebook.find({ type: 'listItem', text: 'sub-item' }). replace() and remove() return true if the block was found and modified, false otherwise. Example — edit a nested list item: const item = notebook.find({ type: 'listItem', text: 'old text' })[0]; if (item) notebook.replace(item, 'new text');",
+                  "JavaScript code that uses the `notebook` object to edit notes. Available methods: " +
+                    "notebook.getMarkdown() — current notes as markdown; " +
+                    "notebook.getBlocks() — all blocks as structured objects; " +
+                    "notebook.find(query) — locate blocks to edit (accepts a string for plain-text search — links show as their display text, not markdown syntax — or an object { type?: 'heading'|'paragraph'|'bulletList'|'orderedList'|'blockquote'|'codeBlock'|'listItem', text?: string }); " +
+                    "notebook.replace(block, markdown) → boolean — replace a single block in place; USE THIS for most edits; " +
+                    "notebook.remove(block) → boolean — delete a single block; " +
+                    "notebook.insertAfter(block, markdown) — insert new content after a block; " +
+                    "notebook.insertBefore(block, markdown) — insert new content before a block; " +
+                    "notebook.append(markdown) — add new content at the END of the notebook; does NOT touch existing content; " +
+                    "notebook.prepend(markdown) — add new content at the START of the notebook; does NOT touch existing content. " +
+                    "`find` returns Block objects with { type, text, level?, index, parentIndex?, depth? }. Use type 'listItem' to target individual list items at ANY nesting level. Each listItem has a `depth` field (0 = top-level, 1 = first sub-level, etc.) and `text` contains only the item's direct content (not nested sub-items). replace() and remove() return true if the block was found and modified, false otherwise. " +
+                    "Example — rewrite a word in one paragraph: const b = notebook.find('old word')[0]; if (b) notebook.replace(b, b.text.replace('old word', 'new word')); " +
+                    "Example — edit a nested list item: const item = notebook.find({ type: 'listItem', text: 'old text' })[0]; if (item) notebook.replace(item, 'new text'); " +
+                    "There is NO whole-document replace method. Do NOT rebuild the entire notebook in a single call — the server will reject scripts that reduce the notebook to near-empty.",
                 ),
             }),
             execute: async ({ code }) => {

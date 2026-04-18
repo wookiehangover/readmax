@@ -200,23 +200,10 @@ describe("createNotebookSDK", () => {
     });
   });
 
-  describe("setContent", () => {
-    it("replaces all content", () => {
-      const { sdk } = setup(doc(p("Old content")));
-      sdk.setContent("# Fresh Start\n\nBrand new");
-      const blocks = sdk.getBlocks();
-      expect(blocks[0]).toMatchObject({ type: "heading", text: "Fresh Start" });
-      expect(blocks.some((b) => b.text === "Old content")).toBe(false);
-    });
-
-    it("correctly parses markdown with lists", () => {
-      const { sdk } = setup(doc(p("Old")));
-      sdk.setContent("- alpha\n- beta\n- gamma");
-      const blocks = sdk.getBlocks();
-      expect(blocks.some((b) => b.type === "bulletList")).toBe(true);
-      const list = blocks.find((b) => b.type === "bulletList")!;
-      expect(list.text).toContain("alpha");
-      expect(list.text).toContain("beta");
+  describe("public surface", () => {
+    it("does not expose setContent to AI-facing callers", () => {
+      const { sdk } = setup(doc(p("Hello")));
+      expect((sdk as unknown as { setContent?: unknown }).setContent).toBeUndefined();
     });
   });
 
@@ -999,19 +986,6 @@ describe("find edge cases", () => {
 });
 
 describe("markdown round-trip", () => {
-  it("setContent with complex markdown preserves structure", () => {
-    const { sdk } = setup(doc(p("Old")));
-    sdk.setContent(
-      "# Title\n\n## Section 1\n\nA paragraph.\n\n- item 1\n- item 2\n\n## Section 2\n\nAnother paragraph.",
-    );
-    const blocks = sdk.getBlocks();
-    const types = blocks.map((b) => b.type);
-    expect(types).toContain("heading");
-    expect(types).toContain("paragraph");
-    expect(types).toContain("bulletList");
-    expect(blocks.find((b) => b.text === "Title")).toBeDefined();
-  });
-
   it("getMarkdown after mutations preserves structure", () => {
     const { sdk } = setup(doc(heading(1, "Title"), p("Original")));
     sdk.append("## Added Section\n\nAdded text");
@@ -1020,40 +994,6 @@ describe("markdown round-trip", () => {
     expect(md).toContain("Original");
     expect(md).toContain("## Added Section");
     expect(md).toContain("Added text");
-  });
-
-  it("setContent with ordered list", () => {
-    const { sdk } = setup(doc(p("Old")));
-    sdk.setContent("1. First\n2. Second\n3. Third");
-    const blocks = sdk.getBlocks();
-    expect(blocks.some((b) => b.type === "orderedList")).toBe(true);
-    const items = blocks.filter((b) => b.type === "listItem");
-    expect(items).toHaveLength(3);
-  });
-
-  it("setContent then getMarkdown round-trips correctly", () => {
-    const { sdk } = setup(doc(p("Old")));
-    const input = "# Heading\n\nParagraph text\n\n- bullet 1\n- bullet 2";
-    sdk.setContent(input);
-    const md = sdk.getMarkdown();
-    expect(md).toContain("# Heading");
-    expect(md).toContain("Paragraph text");
-    expect(md).toContain("bullet 1");
-    expect(md).toContain("bullet 2");
-  });
-
-  it("setContent with code block", () => {
-    const { sdk } = setup(doc(p("Old")));
-    sdk.setContent("```\nconst x = 1;\n```");
-    const blocks = sdk.getBlocks();
-    expect(blocks.some((b) => b.type === "codeBlock")).toBe(true);
-  });
-
-  it("setContent with blockquote", () => {
-    const { sdk } = setup(doc(p("Old")));
-    sdk.setContent("> This is quoted");
-    const blocks = sdk.getBlocks();
-    expect(blocks.some((b) => b.type === "blockquote")).toBe(true);
   });
 
   it("append preserves existing content", () => {
@@ -1134,17 +1074,21 @@ describe("sequential mutation scenarios (simulating AI usage)", () => {
     expect(insertedIdx).toBe(existingIdx + 1);
   });
 
-  it("setContent with full markdown → surgical edits → verify", () => {
-    const { sdk } = setup(doc(p("placeholder")));
+  it("seeded doc → surgical edits → verify", () => {
+    const { sdk } = setup(
+      doc(
+        heading(1, "Project"),
+        heading(2, "Status"),
+        p("All good"),
+        heading(2, "TODO"),
+        bulletList("task 1", "task 2"),
+      ),
+    );
 
-    // First: set entire content
-    sdk.setContent("# Project\n\n## Status\n\nAll good\n\n## TODO\n\n- task 1\n- task 2");
-
-    // Then: surgical edit - replace status
+    // Surgical edit - replace status
     const status = sdk.find("All good")[0];
     sdk.replace(status, "Needs review");
 
-    // Verify both the setContent and surgical edit worked
     const blocks = sdk.getBlocks();
     expect(blocks.map((b) => b.text)).toContain("Project");
     expect(blocks.map((b) => b.text)).toContain("Needs review");
@@ -1191,10 +1135,10 @@ describe("sequential mutation scenarios (simulating AI usage)", () => {
     expect(texts).toEqual(["A", "B-replaced", "B-inserted", "C"]);
   });
 
-  it("complex workflow: setContent → find → remove → append → verify", () => {
-    const { sdk } = setup(doc(p("placeholder")));
-
-    sdk.setContent("# Doc\n\n- keep\n- remove-me\n- also-keep\n\nFooter");
+  it("complex workflow: seeded doc → find → remove → append → verify", () => {
+    const { sdk } = setup(
+      doc(heading(1, "Doc"), bulletList("keep", "remove-me", "also-keep"), p("Footer")),
+    );
 
     // Remove a list item
     const removeTarget = sdk.find({ type: "listItem", text: "remove-me" })[0];

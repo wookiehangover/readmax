@@ -290,8 +290,11 @@ export async function action({ request }: Route.ActionArgs) {
                 content: [...existingNodes, ...appendedNodes],
               };
 
+              const now = new Date();
+              let updatedAtMs = now.getTime();
               try {
-                await upsertNotebook(userId, bookId, updatedContent, new Date());
+                const row = await upsertNotebook(userId, bookId, updatedContent, now);
+                if (row) updatedAtMs = row.updatedAt.getTime();
               } catch (err) {
                 console.error("append_to_notes: failed to persist notebook:", err);
                 return {
@@ -302,7 +305,13 @@ export async function action({ request }: Route.ActionArgs) {
                 };
               }
 
-              return { appended: true, text, appendedNodes };
+              return {
+                appended: true,
+                text,
+                appendedNodes,
+                updatedContent,
+                updatedAt: updatedAtMs,
+              };
             },
           }),
           edit_notes: tool({

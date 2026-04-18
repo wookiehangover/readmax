@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import {
   isRouteErrorResponse,
   Links,
@@ -5,6 +6,8 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
+  useLocation,
+  useNavigate,
 } from "react-router";
 
 import type { Route } from "./+types/root";
@@ -127,10 +130,31 @@ function SyncProvider({ children }: { children: React.ReactNode }) {
   return <SyncContext.Provider value={syncState}>{children}</SyncContext.Provider>;
 }
 
+function SettingsShortcut() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === ",") {
+        e.preventDefault();
+        if (location.pathname !== "/settings") {
+          navigate("/settings");
+        }
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [navigate, location.pathname]);
+
+  return null;
+}
+
 export default function App() {
   return (
     <AuthProvider>
       <SyncProvider>
+        <SettingsShortcut />
         <Outlet />
       </SyncProvider>
     </AuthProvider>

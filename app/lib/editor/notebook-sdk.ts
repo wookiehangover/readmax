@@ -48,6 +48,7 @@ export interface NotebookSDK {
   append(markdown: string): void;
   prepend(markdown: string): void;
   replace(block: Block, markdown: string): boolean;
+  setText(block: Block, text: string): boolean;
   remove(block: Block): boolean;
   insertAfter(block: Block, markdown: string): void;
   insertBefore(block: Block, markdown: string): void;
@@ -248,34 +249,16 @@ function parseMarkdownNodes(_editor: Editor, markdown: string): JSONContent[] {
 }
 
 /**
- * Determine whether a parsed node represents meaningful content.
- * Text-bearing types (heading, paragraph, blockquote, listItem, codeBlock)
- * must contain non-whitespace text. Structural types (horizontalRule, image)
- * are considered meaningful on their own. Containers recurse.
+ * Reject calls that pass an empty or whitespace-only markdown string. This
+ * catches the obvious error case (`replace(block, "")`) without inspecting
+ * parsed AST shape — traversal-based checks have proven flaky across tiptap
+ * extension combinations, so we only guard against the one case we know is
+ * always wrong.
  */
-function isMeaningfulNode(node: JSONContent): boolean {
-  if (node.type === "text") return (node.text ?? "").trim().length > 0;
-  if (node.type === "horizontalRule" || node.type === "image") return true;
-  if (node.content && node.content.length > 0) {
-    return node.content.some((c) => isMeaningfulNode(c));
-  }
-  return false;
-}
-
-function hasMeaningfulContent(nodes: JSONContent[]): boolean {
-  return nodes.some((n) => isMeaningfulNode(n));
-}
-
-/**
- * Throw a descriptive error when the AI passes markdown that parses to empty
- * content. This prevents silent content loss (e.g. `replace(heading, "## ")`
- * leaving an empty heading) and nudges the AI toward a correct call.
- */
-function assertMeaningfulMarkdown(method: string, markdown: string, parsed: JSONContent[]): void {
-  if (hasMeaningfulContent(parsed)) return;
-  const preview = markdown.length > 40 ? `${markdown.slice(0, 40)}...` : markdown;
+function assertNonEmptyMarkdown(method: string, markdown: string): void {
+  if (markdown.trim().length > 0) return;
   throw new Error(
-    `notebook.${method}(): markdown "${preview}" parsed to empty content. ` +
+    `notebook.${method}(): markdown is empty or whitespace-only. ` +
       `Provide valid markdown with actual text (e.g. "## New Heading"). ` +
       `To delete a block, use notebook.remove(block) instead.`,
   );
@@ -359,21 +342,22 @@ export function createNotebookSDK(content: JSONContent): {
     },
 
     append(markdown: string): void {
+      assertNonEmptyMarkdown("append", markdown);
       const nodes = parseMarkdownNodes(editor, markdown);
-      assertMeaningfulMarkdown("append", markdown, nodes);
       const endPos = editor.state.doc.content.size;
       editor.commands.insertContentAt(endPos, nodes);
       mutationGeneration++;
     },
 
     prepend(markdown: string): void {
+      assertNonEmptyMarkdown("prepend", markdown);
       const nodes = parseMarkdownNodes(editor, markdown);
-      assertMeaningfulMarkdown("prepend", markdown, nodes);
       editor.commands.insertContentAt(1, nodes);
       mutationGeneration++;
     },
 
     replace(block: Block, markdown: string): boolean {
+      assertNonEmptyMarkdown("replace", markdown);
       const resolved = resolveBlock(block);
       if (!resolved) return false;
 
@@ -399,7 +383,6 @@ export function createNotebookSDK(content: JSONContent): {
           parsed.length > 0
             ? parsed
             : [{ type: "paragraph", content: [{ type: "text", text: markdown }] }];
-        assertMeaningfulMarkdown("replace", markdown, listItemContent);
         const listItemNode: JSONContent = { type: "listItem", content: listItemContent };
 
         parentList.content.splice(childIdx, 1, listItemNode);
@@ -412,9 +395,80 @@ export function createNotebookSDK(content: JSONContent): {
       const idx = resolved._topLevelIndex;
       if (idx === undefined || idx < 0 || idx >= docJson.content.length) return false;
       const parsed = parseMarkdownNodes(editor, markdown);
-      assertMeaningfulMarkdown("replace", markdown, parsed);
       const newContent: JSONContent[] = [...docJson.content];
       newContent.splice(idx, 1, ...parsed);
+      editor.commands.setContent({ type: "doc", content: newContent } as JSONContent);
+      mutationGeneration++;
+      return true;
+    },
+
+    setText(block: Block, text: string): boolean {
+      const resolved = resolveBlock(block);
+      if (!resolved) return false;
+
+      // bulletList / orderedList have no inline text of their own.
+      if (resolved.type === "bulletList" || resolved.type === "orderedList") {
+        console.warn(
+          `notebook.setText(): cannot set text on a ${resolved.type}. ` +
+            `Target an individual listItem instead.`,
+        );
+        return false;
+      }
+
+      const docJson = editor.getJSON();
+      if (!docJson.content) return false;
+
+      const textChild: JSONContent = { type: "text", text };
+
+      if (resolved.type === "listItem") {
+        // JSON-splice: replace just the inline text of this listItem, preserving
+        // any nested lists and other structure the item may contain.
+        const childIdx = resolved._listItemChildIndex;
+        if (childIdx === undefined) return false;
+
+        const nav = navigateToListItem(docJson, resolved);
+        if (!nav) return false;
+        const { newContent, parentList } = nav;
+
+        if (!parentList.content || childIdx < 0 || childIdx >= parentList.content.length)
+          return false;
+
+        const existingItem = parentList.content[childIdx];
+        const existingChildren = existingItem.content ?? [];
+        // Keep any nested lists; replace the first paragraph's text, or prepend
+        // a fresh paragraph if the item had no inline content.
+        const newChildren: JSONContent[] = [];
+        let replacedParagraph = false;
+        for (const child of existingChildren) {
+          if (!replacedParagraph && child.type === "paragraph") {
+            newChildren.push({ type: "paragraph", content: [textChild] });
+            replacedParagraph = true;
+          } else {
+            newChildren.push(child);
+          }
+        }
+        if (!replacedParagraph) {
+          newChildren.unshift({ type: "paragraph", content: [textChild] });
+        }
+        parentList.content[childIdx] = { ...existingItem, content: newChildren };
+        editor.commands.setContent({ type: "doc", content: newContent } as JSONContent);
+        mutationGeneration++;
+        return true;
+      }
+
+      // Top-level block: build a fresh node of the same type preserving attrs.
+      const idx = resolved._topLevelIndex;
+      if (idx === undefined || idx < 0 || idx >= docJson.content.length) return false;
+
+      const existing = docJson.content[idx];
+      const newNode: JSONContent = {
+        type: existing.type,
+        ...(existing.attrs ? { attrs: { ...existing.attrs } } : {}),
+        content: [textChild],
+      };
+
+      const newContent: JSONContent[] = [...docJson.content];
+      newContent.splice(idx, 1, newNode);
       editor.commands.setContent({ type: "doc", content: newContent } as JSONContent);
       mutationGeneration++;
       return true;
@@ -461,13 +515,13 @@ export function createNotebookSDK(content: JSONContent): {
     },
 
     insertAfter(block: Block, markdown: string): void {
+      assertNonEmptyMarkdown("insertAfter", markdown);
       const resolved = resolveBlock(block);
       if (!resolved) return;
 
       const docJson = editor.getJSON();
       if (!docJson.content) return;
       const parsed = parseMarkdownNodes(editor, markdown);
-      assertMeaningfulMarkdown("insertAfter", markdown, parsed);
 
       if (resolved.type === "listItem") {
         // Insert after this listItem within the parent list (supports nesting)
@@ -500,13 +554,13 @@ export function createNotebookSDK(content: JSONContent): {
     },
 
     insertBefore(block: Block, markdown: string): void {
+      assertNonEmptyMarkdown("insertBefore", markdown);
       const resolved = resolveBlock(block);
       if (!resolved) return;
 
       const docJson = editor.getJSON();
       if (!docJson.content) return;
       const parsed = parseMarkdownNodes(editor, markdown);
-      assertMeaningfulMarkdown("insertBefore", markdown, parsed);
 
       if (resolved.type === "listItem") {
         // Insert before this listItem within the parent list (supports nesting)

@@ -180,6 +180,109 @@ describe("createNotebookSDK", () => {
     });
   });
 
+  describe("setText", () => {
+    it("setText on heading preserves level and only swaps text", () => {
+      const { sdk } = setup(doc(p("Before"), heading(2, "Old Heading"), p("After")));
+      const target = sdk.find({ type: "heading", text: "Old Heading" })[0];
+      const result = sdk.setText(target, "New Heading");
+      expect(result).toBe(true);
+      const blocks = sdk.getBlocks();
+      const h = blocks.find((b) => b.type === "heading")!;
+      expect(h).toBeDefined();
+      expect(h.text).toBe("New Heading");
+      expect(h.level).toBe(2);
+      const texts = blocks.map((b) => b.text);
+      expect(texts).toContain("Before");
+      expect(texts).toContain("After");
+      expect(texts).not.toContain("Old Heading");
+    });
+
+    it("setText on paragraph keeps paragraph type", () => {
+      const { sdk } = setup(doc(p("Keep"), p("Change me"), p("Also keep")));
+      const target = sdk.find("Change me")[0];
+      const result = sdk.setText(target, "Changed");
+      expect(result).toBe(true);
+      const blocks = sdk.getBlocks();
+      const changed = blocks.find((b) => b.text === "Changed")!;
+      expect(changed).toBeDefined();
+      expect(changed.type).toBe("paragraph");
+      const texts = blocks.map((b) => b.text);
+      expect(texts).toContain("Keep");
+      expect(texts).toContain("Also keep");
+      expect(texts).not.toContain("Change me");
+    });
+
+    it("setText on blockquote keeps blockquote type", () => {
+      const { sdk } = setup(doc(blockquote(p("Quoted")), p("After")));
+      const target = sdk.find({ type: "blockquote" })[0];
+      const result = sdk.setText(target, "Requoted");
+      expect(result).toBe(true);
+      const blocks = sdk.getBlocks();
+      const bq = blocks.find((b) => b.type === "blockquote")!;
+      expect(bq).toBeDefined();
+      expect(bq.text).toContain("Requoted");
+      expect(blocks.map((b) => b.text)).toContain("After");
+    });
+
+    it("setText on codeBlock preserves language attr", () => {
+      const { sdk } = setup(
+        doc({
+          type: "codeBlock",
+          attrs: { language: "typescript" },
+          content: [{ type: "text", text: "const x = 1;" }],
+        }),
+      );
+      const target = sdk.find({ type: "codeBlock" })[0];
+      const result = sdk.setText(target, "const y = 2;");
+      expect(result).toBe(true);
+      const blocks = sdk.getBlocks();
+      const cb = blocks.find((b) => b.type === "codeBlock")!;
+      expect(cb).toBeDefined();
+      expect(cb.text).toBe("const y = 2;");
+      expect(cb.attrs?.language).toBe("typescript");
+    });
+
+    it("setText on listItem preserves list and siblings", () => {
+      const { sdk } = setup(doc(p("Before"), bulletList("one", "two", "three"), p("After")));
+      const target = sdk.find({ type: "listItem", text: "two" })[0];
+      const result = sdk.setText(target, "TWO");
+      expect(result).toBe(true);
+      const blocks = sdk.getBlocks();
+      const list = blocks.find((b) => b.type === "bulletList");
+      expect(list).toBeDefined();
+      const items = blocks.filter((b) => b.type === "listItem").map((b) => b.text);
+      expect(items).toEqual(["one", "TWO", "three"]);
+      const texts = blocks.map((b) => b.text);
+      expect(texts).toContain("Before");
+      expect(texts).toContain("After");
+    });
+
+    it("setText on bulletList returns false and does not mutate", () => {
+      const { sdk } = setup(doc(bulletList("a", "b")));
+      const list = sdk.find({ type: "bulletList" })[0];
+      const result = sdk.setText(list, "nope");
+      expect(result).toBe(false);
+      const items = sdk.find({ type: "listItem" }).map((b) => b.text);
+      expect(items).toEqual(["a", "b"]);
+    });
+
+    it("setText inserts text verbatim (no markdown parsing)", () => {
+      const { sdk } = setup(doc(heading(1, "Title")));
+      const target = sdk.find({ type: "heading" })[0];
+      sdk.setText(target, "# not a heading marker");
+      const blocks = sdk.getBlocks();
+      const h = blocks.find((b) => b.type === "heading")!;
+      expect(h.text).toBe("# not a heading marker");
+      expect(h.level).toBe(1);
+    });
+
+    it("setText returns false for unknown block", () => {
+      const { sdk } = setup(doc(p("Hello")));
+      const fake = { type: "paragraph" as const, text: "Nope", index: 99, _pos: 999 };
+      expect(sdk.setText(fake, "never")).toBe(false);
+    });
+  });
+
   describe("insertAfter", () => {
     it("inserts after a specific block", () => {
       const { sdk } = setup(doc(p("First"), p("Second")));
@@ -689,7 +792,7 @@ describe("replace edge cases", () => {
     const target = sdk.find("Target")[0];
     // The guard throws so the AI's script fails loudly rather than silently
     // leaving a block with no text. The notebook is untouched.
-    expect(() => sdk.replace(target, "")).toThrow(/parsed to empty content/);
+    expect(() => sdk.replace(target, "")).toThrow(/empty or whitespace-only/);
     const texts = sdk.getBlocks().map((b) => b.text);
     expect(texts).toEqual(["Before", "Target", "After"]);
   });

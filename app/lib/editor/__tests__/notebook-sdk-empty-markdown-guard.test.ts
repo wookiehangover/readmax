@@ -13,24 +13,26 @@ function heading(level: number, text: string): JSONContent {
 }
 
 /**
- * Regression coverage for the empty-content guard on the AI-facing SDK.
+ * Regression coverage for the empty-markdown guard on the AI-facing SDK.
  *
- * Repro of the reported bug: the AI wrote `notebook.replace(heading, "## ")`
- * (hashes with no text after), which previously parsed into a heading node
- * with no text content and silently produced an empty heading. The guard
- * now throws so the tool call fails and the notebook is preserved.
+ * The guard rejects calls where the markdown argument is empty or
+ * whitespace-only. It is intentionally conservative — it does NOT inspect
+ * parsed AST shape. A traversal-based "is the parsed content meaningful"
+ * check produced false positives in production against legitimate headings
+ * such as `"## Test Note \u2605"`, so we only reject inputs that are always
+ * wrong (empty / whitespace-only).
  */
-describe("notebook SDK — empty content guard", () => {
-  it("valid heading replacement still works", () => {
-    const { sdk, destroy } = createNotebookSDK(doc(heading(2, "Test Note 2"), p("quack")));
+describe("notebook SDK — empty-markdown guard", () => {
+  it("valid heading replacement works (including emoji)", () => {
+    const { sdk, destroy } = createNotebookSDK(doc(heading(2, "Test Note"), p("quack")));
     try {
-      const h = sdk.find({ type: "heading", text: "Test Note 2" })[0];
-      sdk.replace(h, "## Test Note 2 \u{1F986}");
+      const h = sdk.find({ type: "heading", text: "Test Note" })[0];
+      sdk.replace(h, "## Test Note \u{1F986}");
       const blocks = sdk.getBlocks();
       expect(blocks[0]).toMatchObject({
         type: "heading",
         level: 2,
-        text: "Test Note 2 \u{1F986}",
+        text: "Test Note \u{1F986}",
       });
       expect(blocks[1]).toMatchObject({ type: "paragraph", text: "quack" });
     } finally {
@@ -38,15 +40,11 @@ describe("notebook SDK — empty content guard", () => {
     }
   });
 
-  it("replace rejects '## ' (hashes with no text, previously produced empty heading)", () => {
-    const { sdk, getResult, destroy } = createNotebookSDK(
-      doc(heading(2, "Test Note 2"), p("quack")),
-    );
+  it("valid heading replacement with star / non-ASCII passes the guard", () => {
+    const { sdk, destroy } = createNotebookSDK(doc(heading(2, "Test Note"), p("quack")));
     try {
-      const h = sdk.find({ type: "heading", text: "Test Note 2" })[0];
-      expect(() => sdk.replace(h, "## ")).toThrow(/parsed to empty content/);
-      // Notebook is untouched.
-      expect(getResult()).toEqual(doc(heading(2, "Test Note 2"), p("quack")));
+      const h = sdk.find({ type: "heading", text: "Test Note" })[0];
+      expect(() => sdk.replace(h, "## Test Note \u2605")).not.toThrow();
     } finally {
       destroy();
     }
@@ -56,7 +54,7 @@ describe("notebook SDK — empty content guard", () => {
     const { sdk, getResult, destroy } = createNotebookSDK(doc(p("before"), p("after")));
     try {
       const b = sdk.find({ type: "paragraph", text: "before" })[0];
-      expect(() => sdk.replace(b, "")).toThrow(/parsed to empty content/);
+      expect(() => sdk.replace(b, "")).toThrow(/empty or whitespace-only/);
       expect(getResult()).toEqual(doc(p("before"), p("after")));
     } finally {
       destroy();
@@ -67,27 +65,19 @@ describe("notebook SDK — empty content guard", () => {
     const { sdk, getResult, destroy } = createNotebookSDK(doc(p("before"), p("after")));
     try {
       const b = sdk.find({ type: "paragraph", text: "before" })[0];
-      expect(() => sdk.replace(b, "   \n  ")).toThrow(/parsed to empty content/);
+      expect(() => sdk.replace(b, "   \n  ")).toThrow(/empty or whitespace-only/);
       expect(getResult()).toEqual(doc(p("before"), p("after")));
     } finally {
       destroy();
     }
   });
 
-  it("append rejects empty input", () => {
+  it("append / prepend reject empty input", () => {
     const { sdk, destroy } = createNotebookSDK(doc(p("existing")));
     try {
-      expect(() => sdk.append("")).toThrow(/notebook\.append\(\): markdown/);
-      expect(() => sdk.append("   ")).toThrow(/parsed to empty content/);
-    } finally {
-      destroy();
-    }
-  });
-
-  it("prepend rejects empty input", () => {
-    const { sdk, destroy } = createNotebookSDK(doc(p("existing")));
-    try {
-      expect(() => sdk.prepend("")).toThrow(/notebook\.prepend\(\): markdown/);
+      expect(() => sdk.append("")).toThrow(/notebook\.append\(\)/);
+      expect(() => sdk.append("   ")).toThrow(/empty or whitespace-only/);
+      expect(() => sdk.prepend("")).toThrow(/notebook\.prepend\(\)/);
     } finally {
       destroy();
     }
@@ -97,18 +87,17 @@ describe("notebook SDK — empty content guard", () => {
     const { sdk, destroy } = createNotebookSDK(doc(p("first"), p("second")));
     try {
       const b = sdk.find({ type: "paragraph", text: "first" })[0];
-      expect(() => sdk.insertAfter(b, "## ")).toThrow(/notebook\.insertAfter\(\)/);
-      expect(() => sdk.insertBefore(b, "")).toThrow(/notebook\.insertBefore\(\)/);
+      expect(() => sdk.insertAfter(b, "")).toThrow(/notebook\.insertAfter\(\)/);
+      expect(() => sdk.insertBefore(b, "   ")).toThrow(/notebook\.insertBefore\(\)/);
     } finally {
       destroy();
     }
   });
 
-  it("structural nodes (horizontalRule) are considered meaningful", () => {
+  it("structural nodes (horizontalRule) pass the guard", () => {
     const { sdk, destroy } = createNotebookSDK(doc(p("before"), p("after")));
     try {
       const b = sdk.find({ type: "paragraph", text: "before" })[0];
-      // `---` parses to a horizontalRule — should succeed.
       expect(() => sdk.replace(b, "---")).not.toThrow();
       const blocks = sdk.getBlocks();
       expect(blocks[0]).toMatchObject({ type: "horizontalRule" });
@@ -117,17 +106,17 @@ describe("notebook SDK — empty content guard", () => {
     }
   });
 
-  it("replace heading preserving level via template literal still works", () => {
-    const { sdk, destroy } = createNotebookSDK(doc(heading(2, "Test Note 2"), p("quack")));
+  it("replace heading preserving level via template literal works", () => {
+    const { sdk, destroy } = createNotebookSDK(doc(heading(2, "Test Note"), p("quack")));
     try {
-      const h = sdk.find({ type: "heading", text: "Test Note 2" })[0];
+      const h = sdk.find({ type: "heading", text: "Test Note" })[0];
       const hashes = "#".repeat(h.level ?? 1);
       sdk.replace(h, `${hashes} ${h.text} \u{1F986}`);
       const blocks = sdk.getBlocks();
       expect(blocks[0]).toMatchObject({
         type: "heading",
         level: 2,
-        text: "Test Note 2 \u{1F986}",
+        text: "Test Note \u{1F986}",
       });
     } finally {
       destroy();

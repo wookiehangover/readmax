@@ -88,14 +88,6 @@ export async function runEditNotesInSandbox(
 ): Promise<RunEditNotesResult> {
   const timeoutMs = opts.timeoutMs ?? 1500;
 
-  // Opt-in script logging for debugging. Scripts frequently contain literal
-  // note text (find({ text: '...' }), setText(block, '...'), etc.); do not
-  // log by default. Set DEBUG_EDIT_NOTES=1 to enable.
-  if (process.env.DEBUG_EDIT_NOTES === "1") {
-    console.log("[edit_notes] code:", code.length, "chars");
-    console.log(code.slice(0, 400));
-  }
-
   ensureServerDom();
 
   // Dynamic import so the TipTap / DOM work only runs when a tool call hits us.

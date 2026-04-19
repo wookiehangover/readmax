@@ -7,7 +7,7 @@ const SE_BASE = "https://standardebooks.org";
  * Must start with /ebooks/ and contain only safe characters
  * (alphanumeric, hyphens, forward slashes, underscores, periods).
  */
-function isValidEbookPath(path: string): boolean {
+export function isValidEbookPath(path: string): boolean {
   return /^\/ebooks\/[a-zA-Z0-9/_-]+[a-zA-Z0-9]$/.test(path);
 }
 

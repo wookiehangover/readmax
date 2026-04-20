@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, CloudOff, CloudUpload, Loader2, AlertTriangle } from "lucide-react";
+import { Check, CloudOff, CloudCheck, CloudUpload, Loader2, AlertTriangle } from "lucide-react";
 import { useSyncState } from "~/lib/sync/use-sync";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
@@ -92,7 +92,7 @@ export function SyncStatus({ collapsed }: { collapsed: boolean }) {
     label = "Pending — local changes not yet synced";
     shortLabel = "Pending";
   } else {
-    icon = <Check className="size-3.5" />;
+    icon = <CloudCheck className="size-3.5" />;
     label = `Synced ${formatLastSynced(lastSyncedAt)}`;
     shortLabel = "Synced";
   }

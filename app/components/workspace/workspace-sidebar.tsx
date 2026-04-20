@@ -191,7 +191,7 @@ export function WorkspaceSidebar({
           </div>
         </div>
       )}
-      <ScrollArea className="min-h-0 flex-1" hideScrollbar>
+      <ScrollArea className="min-h-0 flex-1 scroll-fog-container" hideScrollbar>
         {openBooks.length === 0 && otherBooks.length === 0 ? (
           !collapsed && (
             <div className="p-4 text-xs text-muted-foreground space-y-4">
@@ -304,7 +304,7 @@ export function WorkspaceSidebar({
         )}
       </ScrollArea>
       <div
-        className={cn("border-t flex  @container items-center ", {
+        className={cn("flex  @container items-center ", {
           "px-1 justify-between h-10": !collapsed,
           "flex-col py-1.5 gap-1": collapsed,
         })}

@@ -167,7 +167,7 @@ export function PdfReader({ book }: PdfReaderProps) {
             </div>
           )}
         </div>
-        <div className="flex items-center justify-between border-t px-2 min-h-14 md:min-h-10 pb-[env(safe-area-inset-bottom)]">
+        <div className="flex items-center justify-between border-t px-2 min-h-14 md:min-h-10">
           <div className="flex items-center gap-1.5">
             {totalPages > 0 ? (
               <span className="text-muted-foreground text-[10px] tabular-nums md:text-xs">

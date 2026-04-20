@@ -258,11 +258,6 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Update document title with panel count
-  useEffect(() => {
-    document.title = panelCount > 0 ? `Reader \u2056 ${panelCount}` : "Reader";
-  }, [panelCount]);
-
   // Cmd+B / Ctrl+B to toggle sidebar
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {

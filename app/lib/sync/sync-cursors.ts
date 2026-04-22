@@ -39,3 +39,20 @@ export async function setCursor(entityType: EntityType, cursor: string): Promise
 export async function clearAllCursors(): Promise<void> {
   await clear(getCursorStore());
 }
+
+/**
+ * Rewind an ISO 8601 cursor by 1ms so the next pull overlaps the last one
+ * by a single millisecond. This prevents silent data loss when two rows
+ * share the same `updated_at` millisecond: the server query is `> since`,
+ * so advancing the cursor to exactly `lastRow.updatedAt` would skip any
+ * sibling row that happened to land on the same tick.
+ *
+ * Relies on the per-entity mergers being idempotent (re-delivering a row
+ * that was already applied is a no-op). Returns the input unchanged when
+ * it does not parse as a valid date.
+ */
+export function rewindCursor(cursor: string): string {
+  const ms = Date.parse(cursor);
+  if (isNaN(ms)) return cursor;
+  return new Date(ms - 1).toISOString();
+}

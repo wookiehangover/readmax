@@ -6,7 +6,7 @@ import { getUnsyncedChanges, markSynced, clearSyncedChanges, recordChange } from
 import { lwwMerge, setUnionMerge } from "./merge";
 import { remapBookId } from "./remap";
 import { syncDebugLog } from "./sync-debug";
-import { getCursor, setCursor } from "./sync-cursors";
+import { getCursor, rewindCursor, setCursor } from "./sync-cursors";
 import type { EntityType, SyncPushRequest, SyncPushResponse, SyncPullResponse } from "./types";
 import {
   clearUploadRetry,
@@ -977,7 +977,12 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
         await merger(record as Record<string, unknown>);
       }
 
-      await setCursor(group.entity, group.cursor);
+      // Rewind the server cursor by 1ms before persisting. The server uses
+      // strict `>` when filtering by `since`, so advancing to the exact
+      // `updatedAt` of the last row would skip any sibling row that shares
+      // the same millisecond (common on burst writes). Idempotent mergers
+      // make the 1ms overlap safe.
+      await setCursor(group.entity, rewindCursor(group.cursor));
 
       // Dispatch granular per-entity event so only relevant components re-render
       if (group.records.length > 0) {

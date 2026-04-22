@@ -1,7 +1,12 @@
-import { createStore, get, set, del } from "idb-keyval";
+import { get, set, del } from "idb-keyval";
 import { Context, Effect, Layer } from "effect";
 import { ChatError } from "~/lib/errors";
 import { recordChange } from "~/lib/sync/change-log";
+import {
+  getActiveSessionStore,
+  getChatMessagesStore,
+  getChatSessionStore,
+} from "~/lib/sync/stores";
 
 // --- Types ---
 
@@ -36,29 +41,15 @@ export interface ChatSession {
   updatedAt: number;
 }
 
-// --- idb-keyval stores (lazy-initialized for SSR safety) ---
+// --- idb-keyval stores imported from ~/lib/sync/stores ---
+//
+// Legacy migration reads go through `getChatMessagesStore()`
+// (ebook-reader-chats/chats). Session metadata uses `getChatSessionStore()`
+// and active-session pointers use `getActiveSessionStore()`.
 
-/** Original messages store — kept for backward-compat migration reads. */
-let _chatStore: ReturnType<typeof createStore> | null = null;
-function getChatStore() {
-  if (!_chatStore) _chatStore = createStore("ebook-reader-chats", "chats");
-  return _chatStore;
-}
-
-/** Session metadata store: key = bookId, value = ChatSession[] */
-let _sessionStore: ReturnType<typeof createStore> | null = null;
-function getSessionStore() {
-  if (!_sessionStore) _sessionStore = createStore("ebook-reader-chat-sessions", "sessions");
-  return _sessionStore;
-}
-
-/** Active session ID store: key = bookId, value = sessionId string */
-let _activeSessionStore: ReturnType<typeof createStore> | null = null;
-function getActiveSessionStore() {
-  if (!_activeSessionStore)
-    _activeSessionStore = createStore("ebook-reader-active-session", "active-session");
-  return _activeSessionStore;
-}
+// Local alias used internally; the central module exposes `getChatMessagesStore`.
+const getChatStore = getChatMessagesStore;
+const getSessionStore = getChatSessionStore;
 
 // --- Helpers ---
 

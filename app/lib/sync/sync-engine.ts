@@ -1,13 +1,26 @@
 import { upload } from "@vercel/blob/client";
-import { createStore, get, set, entries } from "idb-keyval";
-import type { UseStore } from "idb-keyval";
+import { get, set, entries } from "idb-keyval";
 import { removeSessionLocally } from "~/lib/stores/chat-store";
 import { getUnsyncedChanges, markSynced, clearSyncedChanges, recordChange } from "./change-log";
 import { lwwMerge, setUnionMerge } from "./merge";
 import { remapBookId } from "./remap";
+import {
+  getBookStore,
+  getBookDataStore,
+  getPositionStore,
+  getHighlightStore,
+  getNotebookStore,
+  getChatSessionStore,
+} from "./stores";
 import { syncDebugLog } from "./sync-debug";
 import { getCursor, rewindCursor, setCursor } from "./sync-cursors";
-import type { EntityType, SyncPushRequest, SyncPushResponse, SyncPullResponse } from "./types";
+import type {
+  EntityType,
+  SyncCursor,
+  SyncPullResponse,
+  SyncPushRequest,
+  SyncPushResponse,
+} from "./types";
 import {
   clearUploadRetry,
   recordUploadFailure,
@@ -16,48 +29,6 @@ import {
   uploadRetryKey,
   type UploadRetryEntry,
 } from "./upload-retry";
-
-// ---------------------------------------------------------------------------
-// IDB store accessors (same db/store names as book-store & position-store,
-// accessed directly to avoid circular Effect service dependencies)
-// ---------------------------------------------------------------------------
-
-let _bookStore: ReturnType<typeof createStore> | null = null;
-let _bookDataStore: ReturnType<typeof createStore> | null = null;
-let _positionStore: ReturnType<typeof createStore> | null = null;
-let _highlightStore: ReturnType<typeof createStore> | null = null;
-let _notebookStore: ReturnType<typeof createStore> | null = null;
-let _chatSessionStore: ReturnType<typeof createStore> | null = null;
-
-function getBookStore(): UseStore {
-  if (!_bookStore) _bookStore = createStore("ebook-reader-db", "books");
-  return _bookStore;
-}
-
-function getBookDataStore(): UseStore {
-  if (!_bookDataStore) _bookDataStore = createStore("ebook-reader-book-data", "book-data");
-  return _bookDataStore;
-}
-
-function getPositionStore(): UseStore {
-  if (!_positionStore) _positionStore = createStore("ebook-reader-positions", "positions");
-  return _positionStore;
-}
-
-function getHighlightStore(): UseStore {
-  if (!_highlightStore) _highlightStore = createStore("ebook-reader-highlights", "highlights");
-  return _highlightStore;
-}
-
-function getNotebookStore(): UseStore {
-  if (!_notebookStore) _notebookStore = createStore("ebook-reader-notebooks", "notebooks");
-  return _notebookStore;
-}
-
-function getChatSessionStore(): UseStore {
-  if (!_chatSessionStore) _chatSessionStore = createStore("ebook-reader-chat-sessions", "sessions");
-  return _chatSessionStore;
-}
 
 // ---------------------------------------------------------------------------
 // SyncEngine interface
@@ -933,24 +904,24 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
   async function pullChanges(): Promise<void> {
     if (stopped) return;
 
-    // The pull route expects `since` (ISO date) and `entityType` (comma-separated).
-    // Use the minimum per-entity cursor so we don't miss any changes.
-    // Merge is idempotent so re-fetching already-seen records is safe.
-    let minCursor: string | null = null;
+    // Send a per-entity cursor map so one entity's lag does not force the
+    // others to re-scan. Wire format: `cursors` is a URL-encoded JSON array
+    // of SyncCursor (see SyncPullRequest in types.ts). Entities without a
+    // stored cursor are omitted; the server defaults them to epoch
+    // ("pull from the beginning").
+    const cursors: SyncCursor[] = [];
     for (const entity of SYNCABLE_ENTITIES) {
       const cursor = await getCursor(entity);
-      if (cursor && (!minCursor || cursor < minCursor)) {
-        minCursor = cursor;
-      }
+      if (cursor) cursors.push({ entityType: entity, cursor });
     }
 
     const params = new URLSearchParams();
-    if (minCursor) {
-      params.set("since", minCursor);
+    if (cursors.length > 0) {
+      params.set("cursors", JSON.stringify(cursors));
     }
     params.set("entityType", SYNCABLE_ENTITIES.join(","));
 
-    syncDebugLog("pull-start", { since: minCursor });
+    syncDebugLog("pull-start", { cursors });
 
     const res = await fetch(`/api/sync/pull?${params.toString()}`);
 

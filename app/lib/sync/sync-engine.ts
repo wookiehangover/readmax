@@ -796,6 +796,7 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
         meta = {
           ...meta,
           remoteCoverUrl: url,
+          hasLocalFile: true,
           updatedAt: Date.now(),
         };
         metaChanged = true;

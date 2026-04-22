@@ -497,6 +497,14 @@ const PUSH_INTERVAL_MS = 30_000;
 const PULL_INTERVAL_MS = 60_000;
 
 /**
+ * Maximum number of change log entries to send in a single `/api/sync/push`
+ * request. The server processes entries serially with ~1-3 DB trips each,
+ * so large batches can hit function timeouts on Vercel. Oversized backlogs
+ * are drained across multiple requests scheduled back-to-back.
+ */
+export const PUSH_BATCH_SIZE = 50;
+
+/**
  * Normalize any caught value from a sync cycle into a real {@link Error}
  * with a non-empty message. Prevents the UI from rendering literals like
  * `"null"` or `"undefined"` when something somewhere rejects with a nullish
@@ -824,10 +832,19 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
 
   async function pushChanges(): Promise<void> {
     if (stopped) return;
-    const changes = await getUnsyncedChanges();
-    if (changes.length === 0) return;
+    const pending = await getUnsyncedChanges();
+    if (pending.length === 0) return;
 
-    syncDebugLog("push-start", { changeCount: changes.length });
+    // Cap each request at PUSH_BATCH_SIZE so the server handler stays well
+    // under Vercel's function timeout. Remaining entries drain on follow-up
+    // pushes scheduled below.
+    const changes = pending.slice(0, PUSH_BATCH_SIZE);
+    const hadFullBatch = changes.length >= PUSH_BATCH_SIZE;
+
+    syncDebugLog("push-start", {
+      changeCount: changes.length,
+      pendingTotal: pending.length,
+    });
 
     const body: SyncPushRequest = { changes };
     const res = await fetch("/api/sync/push", {
@@ -880,6 +897,15 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
 
     // Fire-and-forget file uploads after metadata push succeeds
     uploadPendingFiles().catch((err) => console.error("[sync] File upload pass failed:", err));
+
+    // If the batch was full there are (likely) more pending changes. Schedule
+    // an immediate follow-up push so a backlog drains quickly without waiting
+    // for the interval timer.
+    if (hadFullBatch && !stopped) {
+      queueMicrotask(() => {
+        runCycle(pushChanges);
+      });
+    }
   }
 
   async function pullChanges(): Promise<void> {

@@ -1,11 +1,11 @@
-import { mergeBookRecord, mergeChatSessionRecord } from "./entity-mergers";
+import { mergeBookRecord, mergeChatMessageRecord, mergeChatSessionRecord } from "./entity-mergers";
 import { reloadBookFiles as reloadBookFilesImpl, type FileUploadContext } from "./file-uploads";
 import { PUSH_BATCH_SIZE, pushChanges as pushChangesImpl } from "./push";
 import { pullChanges as pullChangesImpl } from "./pull";
 import type { UploadRetryEntry } from "./upload-retry";
 
 // Re-export for existing test imports that reach into sync-engine directly.
-export { mergeBookRecord, mergeChatSessionRecord, PUSH_BATCH_SIZE };
+export { mergeBookRecord, mergeChatMessageRecord, mergeChatSessionRecord, PUSH_BATCH_SIZE };
 
 // ---------------------------------------------------------------------------
 // SyncEngine interface

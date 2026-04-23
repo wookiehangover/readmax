@@ -206,7 +206,7 @@ export async function mergeChatSessionRecord(record: Record<string, unknown>): P
  * Merge a chat message record (append-only by message ID).
  * Finds the parent session in IDB and adds the message if not already present.
  */
-async function mergeChatMessageRecord(record: Record<string, unknown>): Promise<void> {
+export async function mergeChatMessageRecord(record: Record<string, unknown>): Promise<void> {
   const store = getChatSessionStore();
   const remoteMsg = serverChatMessageToLocal(record);
   const sessionId = (record.sessionId as string) ?? "";
@@ -232,7 +232,10 @@ async function mergeChatMessageRecord(record: Record<string, unknown>): Promise<
     const exists = session.messages.some((m) => m.id === remoteMsg.id);
     if (!exists) {
       session.messages.push(remoteMsg);
-      sessions[sIdx] = { ...session, updatedAt: Math.max(session.updatedAt, remoteMsg.createdAt) };
+      // Do NOT advance session.updatedAt here. `updatedAt` is a metadata-only
+      // LWW clock for the session row (title, bookId, deletedAt); appending a
+      // message must only grow session.messages. Bumping it would poison the
+      // LWW clock and cause later server-side title/tombstone merges to lose.
       await set(bookId, sessions, store);
     }
     return;

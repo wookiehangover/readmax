@@ -78,6 +78,60 @@ describe("pushChanges batching", () => {
     expect(await getUnsyncedChanges()).toHaveLength(0);
   });
 
+  it("drains rejected entries from the changelog and logs their reasons", async () => {
+    for (let i = 0; i < 5; i++) {
+      await recordChange({
+        entity: "position",
+        entityId: `book-${i}`,
+        operation: "put",
+        data: { cfi: `cfi-${i}`, updatedAt: i },
+        timestamp: i,
+      });
+    }
+
+    const pendingBefore = await getUnsyncedChanges();
+    expect(pendingBefore).toHaveLength(5);
+    // Reject the first two entries; accept the rest.
+    const rejectIds = pendingBefore.slice(0, 2).map((c) => c.id);
+    const acceptIds = pendingBefore.slice(2).map((c) => c.id);
+
+    const fetchMock = vi.fn(async () => {
+      return {
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: async () => ({
+          accepted: acceptIds.map((id) => ({ id })),
+          rejected: rejectIds.map((id) => ({ id, reason: "stale-entity" })),
+          serverTimestamp: new Date().toISOString(),
+        }),
+      } as unknown as Response;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const engine = makeSyncEngine({ userId: "user-test" });
+    await engine.pushChanges();
+
+    // Rejected entries must not re-appear on the next getUnsyncedChanges
+    // (i.e. they drained from the changelog) and must not be re-sent on a
+    // follow-up push.
+    expect(await getUnsyncedChanges()).toHaveLength(0);
+
+    fetchMock.mockClear();
+    await engine.pushChanges();
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    // Each rejection was logged with its reason.
+    expect(warnSpy).toHaveBeenCalledTimes(rejectIds.length);
+    for (const id of rejectIds) {
+      expect(warnSpy).toHaveBeenCalledWith(expect.any(String), id, "stale-entity");
+    }
+
+    warnSpy.mockRestore();
+  });
+
   it("does not schedule a follow-up push when the batch was not full", async () => {
     for (let i = 0; i < 10; i++) {
       await recordChange({

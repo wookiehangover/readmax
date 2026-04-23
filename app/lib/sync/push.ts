@@ -56,12 +56,25 @@ export async function pushChanges(ctx: PushContext): Promise<void> {
   }
 
   const result: SyncPushResponse = await res.json();
+  const rejected = result.rejected ?? [];
   syncDebugLog("push-response", {
     accepted: result.accepted.length,
-    rejected: result.rejected?.length ?? 0,
+    rejected: rejected.length,
   });
-  if (result.accepted.length > 0) {
-    await markSynced(result.accepted.map((a) => a.id));
+
+  // Drain rejected entries alongside accepted ones so a permanently-rejected
+  // entry at the head of the queue cannot starve every later change under
+  // the batch cap. Trade-off: transient server-side per-entry errors are
+  // therefore not retried in place — the next user mutation creates a new
+  // ChangeEntry and drives a fresh push. Rejection reasons are logged so
+  // they remain diagnosable.
+  for (const entry of rejected) {
+    console.warn("[sync] Push entry rejected by server:", entry.id, entry.reason);
+  }
+
+  const syncedIds = [...result.accepted.map((a) => a.id), ...rejected.map((r) => r.id)];
+  if (syncedIds.length > 0) {
+    await markSynced(syncedIds);
     await clearSyncedChanges();
   }
 

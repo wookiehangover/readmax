@@ -237,6 +237,97 @@ test.describe("Layout modes", () => {
     await expect(clusterPills(page).first()).toHaveAttribute("aria-selected", "true");
   });
 
+  test("mode toggle preserves focused state across a round trip", async ({ page }) => {
+    // Open two books in the default (focused) mode. Both should appear as
+    // pills; only the last-opened cluster is visible.
+    await uploadBook(page, TEST_EPUB_1, "Test Book for E2E");
+    await uploadBook(page, TEST_EPUB_2, "Second Test Book");
+    await expect(clusterPills(page)).toHaveCount(2);
+
+    const trigger = page.getByTestId("layout-mode-trigger");
+
+    // Toggle to freeform — ClusterBar disappears.
+    await trigger.click();
+    await page.getByTestId("layout-mode-freeform").click();
+    await expect(page.getByRole("tablist", { name: "Open books" })).toHaveCount(0);
+    await expect(trigger).toHaveAttribute("aria-label", /Freeform/);
+
+    // Toggle back to focused. Focused's session state (both clusters) must
+    // survive the round trip: ClusterBar shows both pills and exactly one
+    // cluster's book reader is mounted. Before the fix, the mode-switch
+    // flush would write dockview JSON to whichever mode `layoutModeRef`
+    // pointed at — corrupting focused's slot — and the second pill would
+    // vanish.
+    await trigger.click();
+    await page.getByTestId("layout-mode-focused").click();
+    await expect(trigger).toHaveAttribute("aria-label", /Focused/);
+    await expect(clusterPills(page)).toHaveCount(2);
+    await expect(
+      page.locator(".dv-default-tab").filter({ hasText: /^Test Book for E2E$|^Second Test Book$/ }),
+    ).toHaveCount(1);
+
+    // Swapping via the inactive pill still works after the round trip.
+    const pills = clusterPills(page);
+    const firstSelected = await pills.nth(0).getAttribute("aria-selected");
+    const inactivePill = firstSelected === "true" ? pills.nth(1) : pills.nth(0);
+    await inactivePill.click();
+    await expect(inactivePill).toHaveAttribute("aria-selected", "true", { timeout: 5_000 });
+  });
+
+  test("toggling freeform → focused cleans up untracked panels", async ({ page }) => {
+    // Force freeform mode at load time so both books mount simultaneously.
+    await page.evaluate(() => {
+      localStorage.setItem(
+        "app-settings",
+        JSON.stringify({
+          sidebarCollapsed: true,
+          layoutMode: "freeform",
+          updatedAt: Date.now(),
+        }),
+      );
+    });
+    await page.goto("/");
+    await page.waitForSelector(".dv-dockview", { timeout: 15_000 });
+
+    // In freeform, both books mount as sibling panels (no swap logic).
+    await uploadBook(page, TEST_EPUB_1, "Test Book for E2E");
+    await uploadBook(page, TEST_EPUB_2, "Second Test Book");
+    await expect(
+      page.locator(".dv-default-tab").filter({ hasText: /^Test Book for E2E$/ }),
+    ).toHaveCount(1);
+    await expect(
+      page.locator(".dv-default-tab").filter({ hasText: /^Second Test Book$/ }),
+    ).toHaveCount(1);
+
+    // Toggle to focused via the switcher. Both untracked book panels should
+    // be reconciled into tracked clusters (two pills) and all but one
+    // should be unmounted (the single-cluster-visible invariant).
+    const trigger = page.getByTestId("layout-mode-trigger");
+    await trigger.click();
+    await page.getByTestId("layout-mode-focused").click();
+    await expect(trigger).toHaveAttribute("aria-label", /Focused/);
+
+    const pills = clusterPills(page);
+    await expect(pills).toHaveCount(2);
+
+    // Exactly one book-reader tab mounted.
+    const bookReaderTabsMounted = page
+      .locator(".dv-default-tab")
+      .filter({ hasText: /^Test Book for E2E$|^Second Test Book$/ });
+    await expect(bookReaderTabsMounted).toHaveCount(1);
+
+    // Switching via the other pill should still work with reconciled
+    // clusters. Identify the inactive pill and click it.
+    const firstPill = pills.nth(0);
+    const secondPill = pills.nth(1);
+    const firstSelected = await firstPill.getAttribute("aria-selected");
+    const inactivePill = firstSelected === "true" ? secondPill : firstPill;
+    await inactivePill.click();
+    await expect(inactivePill).toHaveAttribute("aria-selected", "true", { timeout: 5_000 });
+    // Still exactly one book-reader tab mounted after the swap.
+    await expect(bookReaderTabsMounted).toHaveCount(1);
+  });
+
   test("mobile viewport still renders the cluster bar in focused mode", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     // Reload so the isMobile hook picks up the new size at mount time.

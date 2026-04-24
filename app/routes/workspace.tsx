@@ -103,6 +103,18 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   const apiRef = useRef<DockviewApi | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const disposablesRef = useRef<Array<{ dispose: () => void }>>([]);
+  // Tracks the mode the dockview state currently represents. Advances only
+  // after a mode-switch swap completes, so `flushLayout` always writes to
+  // the slot the visible arrangement belongs to — even while the user's
+  // settings have already flipped to the other mode.
+  const prevLayoutModeRef = useRef(layoutMode);
+  // Gate used by `flushLayout` and the debounced `saveLayout` to skip writes
+  // while a mode-switch swap is mid-flight (between saving the previous
+  // mode and loading the new mode).
+  const modeSwitchInProgressRef = useRef(false);
+  // Generation token for mode-switch swaps so a rapid flip cancels
+  // in-flight work from the prior switch before it applies stale state.
+  const modeSwitchTokenRef = useRef(0);
   // Track which books have TOC data via a version counter (triggers re-render)
   const [_tocVersion, setTocVersion] = useState(0);
   // Track which books currently have open panels in dockview
@@ -121,6 +133,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     closeFocusedCluster,
     getClusterEntries,
     getActiveClusterId,
+    enforceSingleFocusedCluster,
   } = useFocusedMode({ apiRef, layoutMode, isMobileRef });
 
   // Load last-opened timestamps for sorting
@@ -149,15 +162,17 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     className: "dockview-theme-app",
   };
 
-  // Flush layout to IndexedDB immediately (non-debounced). Reads the current
-  // layout mode from a ref so the persisted slot always matches the active
-  // mode, even though this callback is captured once in long-lived dockview
-  // disposables registered in onReady.
+  // Flush layout to IndexedDB immediately (non-debounced). Writes to
+  // `prevLayoutModeRef` — the mode the dockview state currently represents
+  // — not the settings' `layoutModeRef`, which may have already flipped to
+  // the other mode. Skips while a mode-switch swap is mid-flight so we
+  // don't persist a half-loaded transitional state.
   const flushLayout = useCallback(() => {
+    if (modeSwitchInProgressRef.current) return;
     const api = apiRef.current;
     if (!api) return;
     const layout = api.toJSON();
-    const mode = layoutModeRef.current;
+    const mode = prevLayoutModeRef.current;
     AppRuntime.runPromise(
       WorkspaceService.pipe(Effect.andThen((s) => s.saveLayout(mode, layout))),
     ).catch(console.error);
@@ -189,6 +204,12 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
             } catch (err) {
               console.error("Failed to restore dockview layout:", err);
             }
+          }
+          // In focused mode, reconcile any restored/carried panels into
+          // tracked clusters and enforce the single-cluster-visible
+          // invariant. No-op when no cluster panels are mounted.
+          if (mode === "focused") {
+            enforceSingleFocusedCluster();
           }
           setLayoutReady(true);
         })
@@ -304,7 +325,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
         event.api.onDidLayoutChange(saveLayout),
       ];
     },
-    [saveLayout, ws],
+    [saveLayout, ws, enforceSingleFocusedCluster],
   );
 
   // Flush pending layout save on page unload / tab hide
@@ -330,6 +351,84 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [flushLayout]);
+
+  // React to `layoutMode` settings changes by swapping the dockview state:
+  //   1. Flush the current dockview JSON to the *previous* mode's IDB slot.
+  //   2. Load the new mode's saved layout (if any) into dockview; otherwise
+  //      keep the current panels so the user doesn't lose their open books.
+  //   3. If the new mode is focused, reconcile focusedClustersRef from the
+  //      mounted panels and enforce the single-cluster-visible invariant.
+  // `modeSwitchInProgressRef` gates `flushLayout` so partial transitional
+  // states don't get persisted, and `modeSwitchTokenRef` cancels stale
+  // in-flight work if the user flips modes rapidly.
+  useEffect(() => {
+    const prevMode = prevLayoutModeRef.current;
+    if (prevMode === layoutMode) return;
+
+    const api = apiRef.current;
+    if (!api) {
+      // Dockview hasn't mounted yet; `onReady` will pick up the new mode.
+      prevLayoutModeRef.current = layoutMode;
+      return;
+    }
+
+    const token = ++modeSwitchTokenRef.current;
+    modeSwitchInProgressRef.current = true;
+    // Advance the ref up-front so any flush that slips past the guard
+    // writes to the destination slot rather than the source slot.
+    prevLayoutModeRef.current = layoutMode;
+    // Cancel any pending debounced save so it doesn't fire with the old
+    // mode's layout JSON after we've already started the swap.
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+
+    const doSwap = async () => {
+      try {
+        const currentLayout = api.toJSON();
+        await AppRuntime.runPromise(
+          WorkspaceService.pipe(Effect.andThen((s) => s.saveLayout(prevMode, currentLayout))),
+        ).catch(console.error);
+        if (token !== modeSwitchTokenRef.current) return;
+
+        if (layoutMode === "focused") {
+          // Focused mode derives its visible layout from `focusedClustersRef`
+          // (session-scoped "open books" set) plus the single active cluster
+          // — not the saved JSON, which only ever captured the active cluster.
+          // `enforceSingleFocusedCluster` reconciles the tracked-cluster map
+          // from any currently-mounted book panels (so freeform panels carry
+          // over as pills) and drives a swap to the active cluster, which
+          // in turn removes any non-active cluster panels still mounted.
+          enforceSingleFocusedCluster();
+        } else {
+          // Freeform mode: restore the saved multi-panel arrangement if
+          // one exists. Otherwise keep the current panels so the user
+          // doesn't lose their open books when switching from focused
+          // the first time.
+          const saved = await AppRuntime.runPromise(
+            WorkspaceService.pipe(
+              Effect.andThen((s) => s.getLayout(layoutMode)),
+              Effect.catchAll(() => Effect.succeed(null)),
+            ),
+          );
+          if (token !== modeSwitchTokenRef.current) return;
+          if (saved) {
+            try {
+              api.fromJSON(saved);
+            } catch (err) {
+              console.error("Failed to restore dockview layout for mode:", layoutMode, err);
+            }
+          }
+        }
+      } finally {
+        if (token === modeSwitchTokenRef.current) {
+          modeSwitchInProgressRef.current = false;
+        }
+      }
+    };
+    doSwap();
+  }, [layoutMode, enforceSingleFocusedCluster]);
 
   // Sync books to context ref so NewTabPanel (and other consumers) can read them.
   // Done in an effect so it happens after commit, not during render.

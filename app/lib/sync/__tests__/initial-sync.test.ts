@@ -94,3 +94,67 @@ describe("runInitialSyncIfNeeded — chat backfill", () => {
     expect(changes.filter((c) => c.entity === "chat_session")).toHaveLength(2);
   });
 });
+
+describe("runInitialSyncIfNeeded — settings backfill", () => {
+  it("only enqueues synced fields and drops UI/layout fields from the legacy blob", async () => {
+    localStorage.setItem(
+      "app-settings",
+      JSON.stringify({
+        theme: "dark",
+        fontSize: 120,
+        fontFamily: "Merriweather",
+        lineHeight: 1.7,
+        colorTheme: "nord",
+        // UI fields that pre-split clients might still have in the legacy
+        // blob — must NOT reach the change log.
+        layoutMode: "freeform",
+        sidebarCollapsed: true,
+        libraryView: "table",
+        readerLayout: "spread",
+        pdfLayout: "two-page",
+        workspaceSortBy: "title",
+        updatedAt: 4242,
+      }),
+    );
+
+    await runInitialSyncIfNeeded();
+
+    const changes = await getUnsyncedChanges();
+    const settingsChanges = changes.filter((c) => c.entity === "settings");
+    expect(settingsChanges).toHaveLength(1);
+
+    const data = settingsChanges[0].data as Record<string, unknown>;
+    expect(data).toEqual({
+      theme: "dark",
+      fontSize: 120,
+      fontFamily: "Merriweather",
+      lineHeight: 1.7,
+      colorTheme: "nord",
+      updatedAt: 4242,
+    });
+    expect(data).not.toHaveProperty("layoutMode");
+    expect(data).not.toHaveProperty("sidebarCollapsed");
+    expect(data).not.toHaveProperty("libraryView");
+    expect(data).not.toHaveProperty("readerLayout");
+    expect(data).not.toHaveProperty("pdfLayout");
+    expect(data).not.toHaveProperty("workspaceSortBy");
+    expect(settingsChanges[0].timestamp).toBe(4242);
+  });
+
+  it("records no settings change when the legacy blob has only UI fields", async () => {
+    localStorage.setItem(
+      "app-settings",
+      JSON.stringify({
+        layoutMode: "freeform",
+        sidebarCollapsed: true,
+        libraryView: "table",
+        updatedAt: 100,
+      }),
+    );
+
+    await runInitialSyncIfNeeded();
+
+    const changes = await getUnsyncedChanges();
+    expect(changes.filter((c) => c.entity === "settings")).toHaveLength(0);
+  });
+});

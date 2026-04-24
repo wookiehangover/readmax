@@ -1,4 +1,5 @@
 import { get, set, entries } from "idb-keyval";
+import { SYNCED_SETTINGS_KEYS } from "~/lib/settings";
 import { recordChange } from "./change-log";
 import {
   getBookStore,
@@ -124,18 +125,31 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
     }
   }
 
-  // 6. Settings (from localStorage)
+  // 6. Settings (from localStorage). Only the synced subset of fields is
+  // enqueued — local-only UI fields live in a separate localStorage key and
+  // must never reach the server, even on first-time backfill of legacy data
+  // that still has them in `app-settings`.
   try {
     const settingsRaw = localStorage.getItem("app-settings");
     if (settingsRaw) {
-      const settings = JSON.parse(settingsRaw);
-      await recordChange({
-        entity: "settings",
-        entityId: "user-settings",
-        operation: "put",
-        data: settings,
-        timestamp: ((settings as Record<string, unknown>)?.updatedAt as number) ?? Date.now(),
-      });
+      const settings = JSON.parse(settingsRaw) as Record<string, unknown>;
+      const synced: Record<string, unknown> = {};
+      for (const key of SYNCED_SETTINGS_KEYS) {
+        if (key in settings) synced[key] = settings[key];
+      }
+      // Skip recording when the legacy blob carried no synced fields (e.g.
+      // it only ever had UI/layout entries that have since been migrated).
+      if (Object.keys(synced).length > 0) {
+        const updatedAt = typeof settings.updatedAt === "number" ? settings.updatedAt : Date.now();
+        synced.updatedAt = updatedAt;
+        await recordChange({
+          entity: "settings",
+          entityId: "user-settings",
+          operation: "put",
+          data: synced,
+          timestamp: updatedAt,
+        });
+      }
     }
   } catch {
     // Settings sync is best-effort

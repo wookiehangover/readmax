@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Link } from "react-router";
 import {
   BookOpen,
@@ -20,6 +20,7 @@ import { ScrollArea } from "~/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "~/components/ui/tooltip";
 import { type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
 import type { WorkspaceSortBy, LayoutMode } from "~/lib/settings";
+import type { ClusterBarEntry } from "~/hooks/use-focused-mode";
 import { cn } from "~/lib/utils";
 import { useWorkspace } from "~/lib/context/workspace-context";
 
@@ -70,6 +71,14 @@ export interface WorkspaceSidebarProps {
   layoutMode: LayoutMode;
   openBooks: BookMeta[];
   otherBooks: BookMeta[];
+  /**
+   * Snapshot getter for the current focused-mode clusters, in
+   * `focusedOrderRef` order. Read whenever `layoutMode === "focused"`; the
+   * sidebar re-renders on cluster changes via `subscribeClusterChanges`.
+   */
+  getClusterEntries: () => ClusterBarEntry[];
+  /** Snapshot getter for the active focused-mode cluster's bookId. */
+  getActiveClusterId: () => string | null;
   onUpdateSettings: (patch: {
     sidebarCollapsed?: boolean;
     workspaceSortBy?: WorkspaceSortBy;
@@ -86,6 +95,8 @@ export function WorkspaceSidebar({
   layoutMode,
   openBooks,
   otherBooks,
+  getClusterEntries,
+  getActiveClusterId,
   onUpdateSettings,
   onOpenBook,
   onOpenNotebook,
@@ -93,6 +104,14 @@ export function WorkspaceSidebar({
 }: WorkspaceSidebarProps) {
   const ws = useWorkspace();
   const [filterQuery, setFilterQuery] = useState("");
+  // Bump on cluster add/remove/activate so the collapsed focused-mode rail
+  // re-derives its entries from `getClusterEntries()`. Subscribed only in
+  // focused mode to avoid unnecessary work in freeform.
+  const [, setClusterVersion] = useState(0);
+  useEffect(() => {
+    if (layoutMode !== "focused") return;
+    return ws.subscribeClusterChanges(() => setClusterVersion((v) => v + 1));
+  }, [layoutMode, ws]);
 
   const totalBooks = openBooks.length + otherBooks.length;
   const showFilter = !collapsed && totalBooks > FILTER_THRESHOLD;
@@ -104,6 +123,34 @@ export function WorkspaceSidebar({
     () => (filterQuery ? filterBooks(otherBooks, filterQuery) : otherBooks),
     [otherBooks, filterQuery],
   );
+
+  // In focused mode + collapsed sidebar, the rail must show every open
+  // cluster (not just the one whose panels are currently mounted in
+  // dockview). Resolve each cluster bookId to a BookMeta from the lists the
+  // parent already passes; fall back to a stub if the book hasn't loaded
+  // yet so the rail still paints something clickable.
+  const isCollapsedFocused = collapsed && layoutMode === "focused";
+  const activeClusterId = isCollapsedFocused ? getActiveClusterId() : null;
+  const railOpenBooks = useMemo(() => {
+    if (!isCollapsedFocused) return filteredOpenBooks;
+    const byId = new Map<string, BookMeta>();
+    for (const b of openBooks) byId.set(b.id, b);
+    for (const b of otherBooks) byId.set(b.id, b);
+    return getClusterEntries().map(
+      (entry) =>
+        byId.get(entry.bookId) ??
+        ({
+          id: entry.bookId,
+          title: entry.bookTitle,
+          author: "",
+        } as BookMeta),
+    );
+    // `getClusterEntries` reads from refs, so we additionally depend on the
+    // cluster-version state above via the subscriber effect (which calls
+    // setClusterVersion). Including it here would be a no-op since this
+    // useMemo runs on every render anyway when version changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCollapsedFocused, openBooks, otherBooks, getClusterEntries, activeClusterId]);
 
   return (
     <aside
@@ -206,55 +253,57 @@ export function WorkspaceSidebar({
         ) : (
           <TooltipProvider delay={400}>
             <ul className="flex flex-col gap-0.5 p-1 grayscale hover:grayscale-0 transition-all">
-              {filteredOpenBooks.map((book) => (
-                <li key={book.id} className="group/book relative">
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
+              {railOpenBooks.map((book) => {
+                const isActive = isCollapsedFocused && book.id === activeClusterId;
+                return (
+                  <li key={book.id} className="group/book relative">
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <button
+                            type="button"
+                            onClick={() => onOpenBook(book)}
+                            className={cn("flex w-full items-center rounded-md text-left", {
+                              "justify-center p-1.5": collapsed,
+                              "gap-3 px-3 py-2": !collapsed,
+                              "bg-primary/10 ring-1 ring-primary/40 hover:bg-primary/15": isActive,
+                              "bg-accent/50 hover:bg-accent": !isActive,
+                            })}
+                          />
+                        }
+                      >
+                        <WorkspaceSidebarBookContent book={book} collapsed={collapsed} />
+                      </TooltipTrigger>
+                      <TooltipContent side="right" sideOffset={8} hidden={!collapsed}>
+                        <div>
+                          <p>{book.title}</p>
+                          {book.author && <p className="text-background/70">{book.author}</p>}
+                        </div>
+                      </TooltipContent>
+                    </Tooltip>
+                    {!collapsed && (
+                      <div className="absolute top-1/2 right-1 flex -translate-y-1/2 gap-0.5 opacity-0 group-hover/book:opacity-100">
                         <button
                           type="button"
                           onClick={() => onOpenBook(book)}
-                          className={cn(
-                            "flex w-full items-center rounded-md text-left hover:bg-accent bg-accent/50",
-                            {
-                              "justify-center p-1.5": collapsed,
-                              "gap-3 px-3 py-2": !collapsed,
-                            },
-                          )}
-                        />
-                      }
-                    >
-                      <WorkspaceSidebarBookContent book={book} collapsed={collapsed} />
-                    </TooltipTrigger>
-                    <TooltipContent side="right" sideOffset={8} hidden={!collapsed}>
-                      <div>
-                        <p>{book.title}</p>
-                        {book.author && <p className="text-background/70">{book.author}</p>}
+                          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                          title="Open book"
+                        >
+                          <BookOpen className="size-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onOpenNotebook(book)}
+                          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                          title="Open notebook"
+                        >
+                          <NotebookPen className="size-3.5" />
+                        </button>
                       </div>
-                    </TooltipContent>
-                  </Tooltip>
-                  {!collapsed && (
-                    <div className="absolute top-1/2 right-1 flex -translate-y-1/2 gap-0.5 opacity-0 group-hover/book:opacity-100">
-                      <button
-                        type="button"
-                        onClick={() => onOpenBook(book)}
-                        className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                        title="Open book"
-                      >
-                        <BookOpen className="size-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onOpenNotebook(book)}
-                        className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                        title="Open notebook"
-                      >
-                        <NotebookPen className="size-3.5" />
-                      </button>
-                    </div>
-                  )}
-                </li>
-              ))}
+                    )}
+                  </li>
+                );
+              })}
               {!collapsed && filteredOpenBooks.length > 0 && filteredOtherBooks.length > 0 && (
                 <li className="my-1 border-b border-border/50" />
               )}

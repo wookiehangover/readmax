@@ -14,11 +14,12 @@ import {
 import { BookCover, FILTER_THRESHOLD } from "~/components/book-list";
 import { filterBooks } from "~/lib/workspace-utils";
 import { SyncStatus } from "~/components/sync-status";
+import { LayoutModeSwitcher } from "~/components/workspace/layout-mode-switcher";
 import { Input } from "~/components/ui/input";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "~/components/ui/tooltip";
 import { type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
-import type { WorkspaceSortBy } from "~/lib/settings";
+import type { WorkspaceSortBy, LayoutMode } from "~/lib/settings";
 import { cn } from "~/lib/utils";
 import { useWorkspace } from "~/lib/context/workspace-context";
 
@@ -66,11 +67,13 @@ function WorkspaceSidebarBookContent({ book, collapsed }: { book: BookMeta; coll
 export interface WorkspaceSidebarProps {
   collapsed: boolean;
   sortBy: WorkspaceSortBy;
+  layoutMode: LayoutMode;
   openBooks: BookMeta[];
   otherBooks: BookMeta[];
   onUpdateSettings: (patch: {
     sidebarCollapsed?: boolean;
     workspaceSortBy?: WorkspaceSortBy;
+    layoutMode?: LayoutMode;
   }) => void;
   onOpenBook: (book: BookMeta) => void;
   onOpenNotebook: (book: BookMeta) => void;
@@ -80,6 +83,7 @@ export interface WorkspaceSidebarProps {
 export function WorkspaceSidebar({
   collapsed,
   sortBy,
+  layoutMode,
   openBooks,
   otherBooks,
   onUpdateSettings,
@@ -320,6 +324,12 @@ export function WorkspaceSidebar({
           <Settings className="size-4" />
           {!collapsed && <span>Settings</span>}
         </Link>
+
+        <LayoutModeSwitcher
+          layoutMode={layoutMode}
+          collapsed={collapsed}
+          onChange={(mode) => onUpdateSettings({ layoutMode: mode })}
+        />
 
         <div className={cn({ "order-first": collapsed })}>
           <TooltipProvider delay={300}>

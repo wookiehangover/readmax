@@ -165,6 +165,11 @@ export function useFocusedMode({
   useEffect(() => {
     if (layoutMode !== "focused") return;
     const run = () => {
+      // Dockview fires onDidRemovePanel synchronously during the swap's
+      // remove loop, which triggers rebuildClusters → notifyClusterChanges
+      // → this listener. Bail out while a swap is mid-flight so we don't
+      // re-enter swapFocusedCluster and operate on already-removed panels.
+      if (swapInProgressRef.current) return;
       const target = ws.activeClusterBookIdRef.current;
       if (target === lastSwappedRef.current) return;
       lastSwappedRef.current = target;
@@ -197,26 +202,32 @@ export function useFocusedMode({
   }, [layoutMode, ws]);
 
   // Close a focused-mode cluster: remove from the session map and either
-  // activate the next cluster in order or clear panels entirely.
+  // activate the next cluster in order or clear panels entirely. When the
+  // closed cluster is the active one, the swap must remove its mounted
+  // panels — so we keep the entry in focusedClustersRef (the "tracked" set
+  // the swap uses to find panels to remove) until the swap has run.
   const closeFocusedCluster = useCallback(
     (bookId: string) => {
-      focusedClustersRef.current.delete(bookId);
-      focusedOrderRef.current = focusedOrderRef.current.filter((id) => id !== bookId);
-      if (ws.activeClusterBookIdRef.current === bookId) {
-        const nextId = focusedOrderRef.current[focusedOrderRef.current.length - 1] ?? null;
-        // setActiveCluster with a different id triggers the swap effect.
-        // If no cluster remains, explicitly clear panels.
+      const wasActive = ws.activeClusterBookIdRef.current === bookId;
+      const remainingOrder = focusedOrderRef.current.filter((id) => id !== bookId);
+
+      if (wasActive) {
+        const nextId = remainingOrder[remainingOrder.length - 1] ?? null;
         if (nextId === null) {
           ws.activeClusterBookIdRef.current = null;
           swapFocusedCluster(null);
           lastSwappedRef.current = null;
-          ws.notifyClusterChanges();
         } else {
+          // Swap first (while bookId is still tracked so its panels are
+          // removed); setActiveCluster drives the subscriber into
+          // swapFocusedCluster(nextId).
           ws.setActiveCluster(nextId);
         }
-      } else {
-        ws.notifyClusterChanges();
       }
+
+      focusedClustersRef.current.delete(bookId);
+      focusedOrderRef.current = remainingOrder;
+      ws.notifyClusterChanges();
     },
     [swapFocusedCluster, ws],
   );

@@ -253,9 +253,15 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
           fc.hasNotebook = entry.notebookPanelId !== undefined;
         }
         // If the active cluster's book was closed, clear the active bookId.
-        const activeId = ws.activeClusterBookIdRef.current;
-        if (activeId && !next.has(activeId)) {
-          ws.activeClusterBookIdRef.current = null;
+        // Skip this during a focused-mode swap: dockview fires remove/add
+        // events synchronously while swapFocusedCluster is mid-flight, and
+        // the intermediate state (old panels gone, new ones not yet added)
+        // would spuriously clear the active cluster.
+        if (!swapInProgressRef.current) {
+          const activeId = ws.activeClusterBookIdRef.current;
+          if (activeId && !next.has(activeId)) {
+            ws.activeClusterBookIdRef.current = null;
+          }
         }
         ws.notifyClusterChanges();
       };

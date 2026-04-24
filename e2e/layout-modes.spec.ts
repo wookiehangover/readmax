@@ -73,15 +73,7 @@ test.describe("Layout modes", () => {
     await expect(pill1).toContainText("Test Book for E2E");
   });
 
-  // NOTE: the three tests below (multi-book scenarios) are marked fixme
-  // because they consistently trigger a pre-existing re-entrancy bug in the
-  // focused-mode swap: opening a second book throws "invalid operation"
-  // inside `DockviewGroupPanelModel.removePanel`. Root cause is captured in
-  // the task note ("E2E and regression coverage for layout modes" →
-  // "Focused-mode re-entrancy bug (pre-existing)"). Once that is fixed the
-  // `.fixme` calls should be removed and these tests will pass as-is.
-
-  test.fixme("opening a second book adds a pill and swaps the active cluster", async ({ page }) => {
+  test("opening a second book adds a pill and swaps the active cluster", async ({ page }) => {
     await uploadBook(page, TEST_EPUB_1, "Test Book for E2E");
     await uploadBook(page, TEST_EPUB_2, "Second Test Book");
 
@@ -92,19 +84,28 @@ test.describe("Layout modes", () => {
     await expect(pills.nth(1)).toHaveAttribute("aria-selected", "true");
     await expect(pills.nth(0)).toHaveAttribute("aria-selected", "false");
 
-    // Focused mode mounts at most one book-reader panel at a time.
-    await expect(page.locator(".dv-default-tab", { hasText: "Second Test Book" })).toHaveCount(1);
-    await expect(page.locator(".dv-default-tab", { hasText: "Test Book for E2E" })).toHaveCount(0);
+    // Focused mode mounts at most one book-reader panel at a time. Use
+    // anchored regexes to exclude the auto-opened "Discuss: …" chat tab.
+    await expect(
+      page.locator(".dv-default-tab").filter({ hasText: /^Second Test Book$/ }),
+    ).toHaveCount(1);
+    await expect(
+      page.locator(".dv-default-tab").filter({ hasText: /^Test Book for E2E$/ }),
+    ).toHaveCount(0);
 
     // Click the first pill → swap back to the first cluster.
     await pills.nth(0).click();
     await expect(pills.nth(0)).toHaveAttribute("aria-selected", "true");
     await expect(pills.nth(1)).toHaveAttribute("aria-selected", "false");
-    await expect(page.locator(".dv-default-tab", { hasText: "Test Book for E2E" })).toHaveCount(1);
-    await expect(page.locator(".dv-default-tab", { hasText: "Second Test Book" })).toHaveCount(0);
+    await expect(
+      page.locator(".dv-default-tab").filter({ hasText: /^Test Book for E2E$/ }),
+    ).toHaveCount(1);
+    await expect(
+      page.locator(".dv-default-tab").filter({ hasText: /^Second Test Book$/ }),
+    ).toHaveCount(0);
   });
 
-  test.fixme("Cmd+1..9 activates the Nth cluster, and is ignored in editable elements", async ({
+  test("Cmd+1..9 activates the Nth cluster, and is ignored in editable elements", async ({
     page,
   }) => {
     await uploadBook(page, TEST_EPUB_1, "Test Book for E2E");
@@ -165,7 +166,7 @@ test.describe("Layout modes", () => {
     await expect(tab).toHaveAttribute("draggable", "false");
   });
 
-  test.fixme("closing a cluster via its pill X button removes the cluster and its panels", async ({
+  test("closing a cluster via its pill X button removes the cluster and its panels", async ({
     page,
   }) => {
     await uploadBook(page, TEST_EPUB_1, "Test Book for E2E");
@@ -184,14 +185,9 @@ test.describe("Layout modes", () => {
   });
 
   test("freeform mode hides the cluster bar and re-enables tab drag", async ({ page }) => {
-    // Force freeform mode via localStorage and reload. We deliberately skip
-    // driving the LayoutModeSwitcher UI here — that dropdown currently
-    // crashes at runtime ("MenuGroupRootContext is missing") because
-    // `DropdownMenuLabel` is not wrapped in a `DropdownMenuGroup` inside
-    // `layout-mode-switcher.tsx`. That is a separate pre-existing bug
-    // (noted in the task note). Once fixed, a follow-up test should exercise
-    // the switcher + confirmation dialog; this test verifies the rendering
-    // guarantees of the freeform mode itself.
+    // Force freeform mode via localStorage and reload. This test covers the
+    // render-level guarantees of freeform mode in isolation; the switcher
+    // UI + confirmation dialog flow is covered by the dedicated test below.
     await page.evaluate(() => {
       localStorage.setItem(
         "app-settings",
@@ -213,6 +209,43 @@ test.describe("Layout modes", () => {
     // In freeform, dockview runs with `disableDnd={false}`, which surfaces
     // as `draggable="true"` on rendered tabs.
     await expect(page.locator(".dv-tab").first()).toHaveAttribute("draggable", "true");
+  });
+
+  test("switcher UI toggles focused ↔ freeform via dropdown + confirm dialog", async ({ page }) => {
+    await uploadBook(page, TEST_EPUB_1, "Test Book for E2E");
+
+    // Start in focused mode: cluster bar visible, no freeform badge.
+    await expect(clusterPills(page)).toHaveCount(1);
+    await expect(page.getByTestId("freeform-badge")).toHaveCount(0);
+
+    // Open the dropdown and pick Freeform → confirm dialog appears.
+    await page.getByTestId("layout-mode-trigger").click();
+    await page.getByTestId("layout-mode-freeform").click();
+    const confirm = page.getByTestId("freeform-confirm");
+    await expect(confirm).toBeVisible();
+
+    // Cancel first — mode must remain focused.
+    await page.getByTestId("freeform-confirm-cancel").click();
+    await expect(confirm).toBeHidden();
+    await expect(clusterPills(page)).toHaveCount(1);
+    await expect(page.getByTestId("freeform-badge")).toHaveCount(0);
+
+    // Re-open, confirm enable → freeform takes effect.
+    await page.getByTestId("layout-mode-trigger").click();
+    await page.getByTestId("layout-mode-freeform").click();
+    await expect(confirm).toBeVisible();
+    await page.getByTestId("freeform-confirm-enable").click();
+    await expect(confirm).toBeHidden();
+
+    // Cluster bar is gone; freeform badge is shown.
+    await expect(page.getByRole("tablist", { name: "Open books" })).toHaveCount(0);
+    await expect(page.getByTestId("freeform-badge")).toBeVisible();
+
+    // Click the freeform badge to restore focused mode (no confirm needed).
+    await page.getByTestId("freeform-badge").click();
+    await expect(page.getByTestId("freeform-badge")).toHaveCount(0);
+    await expect(clusterPills(page)).toHaveCount(1);
+    await expect(clusterPills(page).first()).toHaveAttribute("aria-selected", "true");
   });
 
   test("mobile viewport still renders the cluster bar in focused mode", async ({ page }) => {

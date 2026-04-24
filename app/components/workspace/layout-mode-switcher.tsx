@@ -4,6 +4,7 @@ import type { LayoutMode } from "~/lib/settings";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuTrigger,
@@ -68,39 +69,41 @@ export function LayoutModeSwitcher({
           {!collapsed && <span className="truncate">{label}</span>}
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" side="top" sideOffset={6} className="w-60">
-          <DropdownMenuLabel>Layout mode</DropdownMenuLabel>
-          <DropdownMenuItem
-            data-testid="layout-mode-focused"
-            onClick={() => handleSelect("focused")}
-            className="flex items-start gap-2 py-1.5"
-          >
-            <Columns2 className="mt-0.5 size-4 shrink-0" />
-            <div className="flex min-w-0 flex-1 flex-col">
-              <span className="text-sm font-medium">Focused</span>
-              <span className="text-xs text-muted-foreground">
-                One book at a time. Chat and notes stay attached.
-              </span>
-            </div>
-            {layoutMode === "focused" && (
-              <Check className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-            )}
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            data-testid="layout-mode-freeform"
-            onClick={() => handleSelect("freeform")}
-            className="flex items-start gap-2 py-1.5"
-          >
-            <LayoutDashboard className="mt-0.5 size-4 shrink-0" />
-            <div className="flex min-w-0 flex-1 flex-col">
-              <span className="text-sm font-medium">Freeform</span>
-              <span className="text-xs text-muted-foreground">
-                Drag panels freely. Advanced — no guardrails.
-              </span>
-            </div>
-            {layoutMode === "freeform" && (
-              <Check className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-            )}
-          </DropdownMenuItem>
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>Layout mode</DropdownMenuLabel>
+            <DropdownMenuItem
+              data-testid="layout-mode-focused"
+              onClick={() => handleSelect("focused")}
+              className="flex items-start gap-2 py-1.5"
+            >
+              <Columns2 className="mt-0.5 size-4 shrink-0" />
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="text-sm font-medium">Focused</span>
+                <span className="text-xs text-muted-foreground">
+                  One book at a time. Chat and notes stay attached.
+                </span>
+              </div>
+              {layoutMode === "focused" && (
+                <Check className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+              )}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              data-testid="layout-mode-freeform"
+              onClick={() => handleSelect("freeform")}
+              className="flex items-start gap-2 py-1.5"
+            >
+              <LayoutDashboard className="mt-0.5 size-4 shrink-0" />
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="text-sm font-medium">Freeform</span>
+                <span className="text-xs text-muted-foreground">
+                  Drag panels freely. Advanced — no guardrails.
+                </span>
+              </div>
+              {layoutMode === "freeform" && (
+                <Check className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+              )}
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
 

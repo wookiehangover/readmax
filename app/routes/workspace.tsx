@@ -95,6 +95,9 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   const collapsedRef = useRef(collapsed);
   collapsedRef.current = collapsed;
   const sortBy = settings.workspaceSortBy;
+  const layoutMode = settings.layoutMode;
+  const layoutModeRef = useRef(layoutMode);
+  layoutModeRef.current = layoutMode;
   const apiRef = useRef<DockviewApi | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const disposablesRef = useRef<Array<{ dispose: () => void }>>([]);
@@ -133,14 +136,18 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     className: "dockview-theme-app",
   };
 
-  // Flush layout to IndexedDB immediately (non-debounced)
+  // Flush layout to IndexedDB immediately (non-debounced). Reads the current
+  // layout mode from a ref so the persisted slot always matches the active
+  // mode, even though this callback is captured once in long-lived dockview
+  // disposables registered in onReady.
   const flushLayout = useCallback(() => {
     const api = apiRef.current;
     if (!api) return;
     const layout = api.toJSON();
-    AppRuntime.runPromise(WorkspaceService.pipe(Effect.andThen((s) => s.saveLayout(layout)))).catch(
-      console.error,
-    );
+    const mode = layoutModeRef.current;
+    AppRuntime.runPromise(
+      WorkspaceService.pipe(Effect.andThen((s) => s.saveLayout(mode, layout))),
+    ).catch(console.error);
   }, []);
 
   // Debounced layout save
@@ -154,10 +161,11 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       apiRef.current = event.api;
       ws.dockviewApi.current = event.api;
 
-      // Try to restore saved layout
+      // Try to restore saved layout for the active mode
+      const mode = layoutModeRef.current;
       AppRuntime.runPromise(
         WorkspaceService.pipe(
-          Effect.andThen((s) => s.getLayout()),
+          Effect.andThen((s) => s.getLayout(mode)),
           Effect.catchAll(() => Effect.succeed(null)),
         ),
       )

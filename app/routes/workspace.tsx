@@ -15,7 +15,7 @@ import { useBookUpload } from "~/hooks/use-book-upload";
 import { DropZone } from "~/components/drop-zone";
 import { WorkspaceService } from "~/lib/stores/workspace-store";
 import { AppRuntime } from "~/lib/effect-runtime";
-import { useSettings } from "~/lib/settings";
+import { clampFocusedSplitRatio, useSettings } from "~/lib/settings";
 import { useEffectQuery } from "~/hooks/use-effect-query";
 import { truncateTitle, sortBooks } from "~/lib/workspace-utils";
 import { cn } from "~/lib/utils";
@@ -42,6 +42,10 @@ import {
 const SIDEBAR_TRANSITION_MS = 270;
 /** Debounce delay for persisting dockview layout changes (ms) */
 const LAYOUT_SAVE_DEBOUNCE_MS = 500;
+/** Debounce delay for persisting the focused-mode split ratio (ms) */
+const FOCUSED_RATIO_SAVE_DEBOUNCE_MS = 300;
+/** Minimum ratio delta to trigger a persist (avoids feedback loops). */
+const FOCUSED_RATIO_EPSILON = 0.005;
 
 export function meta(_args: Route.MetaArgs) {
   return [
@@ -122,6 +126,14 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   // Track whether dockview layout has been restored (controls fade-in)
   const [layoutReady, setLayoutReady] = useState(false);
 
+  // Focused-mode book/right split ratio (book-group width / total width).
+  // Held in a ref so the swap callback in `useFocusedMode` can read the
+  // latest value without re-creating itself when settings change.
+  const focusedSplitRatioRef = useRef(clampFocusedSplitRatio(settings.focusedSplitRatio));
+  focusedSplitRatioRef.current = clampFocusedSplitRatio(settings.focusedSplitRatio);
+  // Debounce timer for persisting the focused-mode ratio after splitter drags.
+  const focusedRatioSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Focused-mode session state, swap effect, Cmd+1..9 shortcut, and ClusterBar
   // getters live in a dedicated hook. The refs it returns are shared with
   // openBook/openNotebook/openChat below and with the dockview listeners
@@ -134,7 +146,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     getClusterEntries,
     getActiveClusterId,
     enforceSingleFocusedCluster,
-  } = useFocusedMode({ apiRef, layoutMode, isMobileRef });
+  } = useFocusedMode({ apiRef, layoutMode, isMobileRef, focusedSplitRatioRef });
 
   // Load last-opened timestamps for sorting
   const { data: lastOpenedMap } = useEffectQuery(
@@ -183,6 +195,55 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(flushLayout, LAYOUT_SAVE_DEBOUNCE_MS);
   }, [flushLayout]);
+
+  // Capture the current book-group / right-group split ratio while in focused
+  // mode and persist it to local-only settings. Skips on mobile (no split),
+  // during cluster swaps and mode-switches (transitional widths), and in
+  // freeform mode (where the listener must not write `focusedSplitRatio`).
+  // Debounced so a splitter drag results in a single write.
+  const captureFocusedRatio = useCallback(() => {
+    if (isMobileRef.current) return;
+    if (layoutModeRef.current !== "focused") return;
+    if (swapInProgressRef.current || modeSwitchInProgressRef.current) return;
+    const api = apiRef.current;
+    if (!api) return;
+
+    const activeBookId = getActiveClusterId();
+    if (!activeBookId) return;
+    const cluster = focusedClustersRef.current.get(activeBookId);
+    if (!cluster) return;
+    const { hasChat, hasNotebook } = cluster;
+    if (!hasChat && !hasNotebook) return;
+
+    const bookPanel = api.panels.find((p) => p.id === `book-${activeBookId}`);
+    const rightAnchor = api.panels.find(
+      (p) => p.id === (hasChat ? `chat-${activeBookId}` : `notebook-${activeBookId}`),
+    );
+    const bookGroup = bookPanel?.group;
+    const rightGroup = rightAnchor?.group;
+    if (!bookGroup || !rightGroup || bookGroup === rightGroup) return;
+
+    const total = bookGroup.api.width + rightGroup.api.width;
+    if (total <= 0) return;
+    const rawRatio = bookGroup.api.width / total;
+    const nextRatio = clampFocusedSplitRatio(rawRatio);
+    if (Math.abs(nextRatio - focusedSplitRatioRef.current) < FOCUSED_RATIO_EPSILON) return;
+
+    if (focusedRatioSaveTimerRef.current) clearTimeout(focusedRatioSaveTimerRef.current);
+    focusedRatioSaveTimerRef.current = setTimeout(() => {
+      // Re-check the latest ref to avoid persisting a stale value if the
+      // user resized again while the debounce was pending.
+      if (Math.abs(nextRatio - focusedSplitRatioRef.current) < FOCUSED_RATIO_EPSILON) return;
+      updateSettings({ focusedSplitRatio: nextRatio });
+    }, FOCUSED_RATIO_SAVE_DEBOUNCE_MS);
+  }, [
+    isMobileRef,
+    swapInProgressRef,
+    getActiveClusterId,
+    focusedClustersRef,
+    focusedSplitRatioRef,
+    updateSettings,
+  ]);
 
   const onReady = useCallback(
     (event: DockviewReadyEvent) => {
@@ -323,9 +384,12 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
         event.api.onDidRemovePanel(saveLayout),
         event.api.onDidMovePanel(saveLayout),
         event.api.onDidLayoutChange(saveLayout),
+        // Persist focused-mode split ratio after splitter drags. The
+        // callback no-ops in freeform mode and during transitional states.
+        event.api.onDidLayoutChange(captureFocusedRatio),
       ];
     },
-    [saveLayout, ws, enforceSingleFocusedCluster],
+    [saveLayout, captureFocusedRatio, ws, enforceSingleFocusedCluster],
   );
 
   // Flush pending layout save on page unload / tab hide
@@ -450,6 +514,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   useEffect(() => {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      if (focusedRatioSaveTimerRef.current) clearTimeout(focusedRatioSaveTimerRef.current);
       for (const d of disposablesRef.current) d.dispose();
       disposablesRef.current = [];
       ws.navigationMap.current.clear();
@@ -928,6 +993,8 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     layoutMode,
     openBooks,
     otherBooks,
+    getClusterEntries,
+    getActiveClusterId,
     onUpdateSettings: updateSettings,
     onOpenBook: (book: BookMeta) => {
       openBook(book);

@@ -1,4 +1,5 @@
 import { get, set, entries } from "idb-keyval";
+import { SYNCED_SETTINGS_KEYS } from "~/lib/settings";
 import { removeSessionLocally } from "~/lib/stores/chat-store";
 import { lwwMerge, setUnionMerge } from "./merge";
 import { remapBookId } from "./remap";
@@ -248,13 +249,21 @@ export async function mergeChatMessageRecord(record: Record<string, unknown>): P
 
 /**
  * Merge a settings record (LWW).
- * Settings live in localStorage, not IDB. After merging, dispatch a custom
- * event so useSettings re-reads.
+ * Settings live in localStorage, not IDB. The synced bucket (`app-settings`)
+ * is the only thing this merger writes; the local-only UI bucket
+ * (`app-ui-settings`) is never read or touched here. Inbound payloads are
+ * filtered to `SYNCED_SETTINGS_KEYS` so legacy server blobs that still carry
+ * UI/layout fields can never overwrite or pollute local state.
  */
-async function mergeSettingsRecord(record: Record<string, unknown>): Promise<void> {
+export async function mergeSettingsRecord(record: Record<string, unknown>): Promise<void> {
   const remoteSettings = record.settings as Record<string, unknown> | undefined;
   const remoteUpdatedAt = toTimestamp(record.updatedAt);
   if (!remoteSettings) return;
+
+  const filteredRemote: Record<string, unknown> = {};
+  for (const key of SYNCED_SETTINGS_KEYS) {
+    if (key in remoteSettings) filteredRemote[key] = remoteSettings[key];
+  }
 
   const STORAGE_KEY = "app-settings";
   let local: Record<string, unknown> = {};
@@ -268,7 +277,7 @@ async function mergeSettingsRecord(record: Record<string, unknown>): Promise<voi
   const localUpdatedAt = typeof local.updatedAt === "number" ? local.updatedAt : 0;
 
   if (remoteUpdatedAt > localUpdatedAt) {
-    const merged = { ...remoteSettings, updatedAt: remoteUpdatedAt };
+    const merged = { ...filteredRemote, updatedAt: remoteUpdatedAt };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
     queueMicrotask(() => {
       window.dispatchEvent(new CustomEvent("settings-changed"));

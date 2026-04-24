@@ -214,21 +214,25 @@ test.describe("Layout modes", () => {
   test("switcher UI toggles focused ↔ freeform via dropdown", async ({ page }) => {
     await uploadBook(page, TEST_EPUB_1, "Test Book for E2E");
 
-    // Start in focused mode: cluster bar visible, no freeform badge.
+    // Start in focused mode: cluster bar visible, trigger reflects "Focused".
+    // The visible label is hidden when the sidebar is collapsed (the default
+    // in this spec's beforeEach), so assert against the stable aria-label.
+    const trigger = page.getByTestId("layout-mode-trigger");
     await expect(clusterPills(page)).toHaveCount(1);
-    await expect(page.getByTestId("freeform-badge")).toHaveCount(0);
+    await expect(trigger).toHaveAttribute("aria-label", /Focused/);
 
     // Open the dropdown and pick Freeform → mode flips immediately.
-    await page.getByTestId("layout-mode-trigger").click();
+    await trigger.click();
     await page.getByTestId("layout-mode-freeform").click();
 
-    // Cluster bar is gone; freeform badge is shown.
+    // Cluster bar is gone; trigger now reflects "Freeform".
     await expect(page.getByRole("tablist", { name: "Open books" })).toHaveCount(0);
-    await expect(page.getByTestId("freeform-badge")).toBeVisible();
+    await expect(trigger).toHaveAttribute("aria-label", /Freeform/);
 
-    // Click the freeform badge to restore focused mode.
-    await page.getByTestId("freeform-badge").click();
-    await expect(page.getByTestId("freeform-badge")).toHaveCount(0);
+    // Switch back to focused via the dropdown.
+    await trigger.click();
+    await page.getByTestId("layout-mode-focused").click();
+    await expect(trigger).toHaveAttribute("aria-label", /Focused/);
     await expect(clusterPills(page)).toHaveCount(1);
     await expect(clusterPills(page).first()).toHaveAttribute("aria-selected", "true");
   });

@@ -27,7 +27,6 @@ import { WatermarkPanel } from "~/components/workspace/watermark-panel";
 import { LeftHeaderActions } from "~/components/workspace/left-header-actions";
 import { WorkspaceSidebar } from "~/components/workspace/workspace-sidebar";
 import { ClusterBar } from "~/components/workspace/cluster-bar";
-import { FreeformBadge } from "~/components/workspace/freeform-badge";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { useSyncListener } from "~/hooks/use-sync-listener";
 import { useFocusedMode } from "~/hooks/use-focused-mode";
@@ -890,9 +889,6 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
               onActivate={(bookId) => ws.setActiveCluster(bookId)}
               onClose={closeFocusedCluster}
             />
-          )}
-          {layoutMode === "freeform" && (
-            <FreeformBadge onRestore={() => updateSettings({ layoutMode: "focused" })} />
           )}
           <div className="flex-1 min-h-0">
             <DockviewReact

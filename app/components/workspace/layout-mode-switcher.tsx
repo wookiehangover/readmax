@@ -19,8 +19,7 @@ interface LayoutModeSwitcherProps {
 
 /**
  * Workspace-level control for switching between focused (default) and
- * freeform layout modes. Both directions apply immediately; the ambient
- * "Freeform" badge above the dockview signals when guardrails are off.
+ * freeform layout modes. Both directions apply immediately.
  */
 export function LayoutModeSwitcher({
   layoutMode,

@@ -29,6 +29,7 @@ import { WorkspaceSidebar } from "~/components/workspace/workspace-sidebar";
 import { ClusterBar } from "~/components/workspace/cluster-bar";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { useSyncListener } from "~/hooks/use-sync-listener";
+import { useFocusedMode } from "~/hooks/use-focused-mode";
 import {
   Sheet,
   SheetContent,
@@ -106,34 +107,21 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   const [_tocVersion, setTocVersion] = useState(0);
   // Track which books currently have open panels in dockview
   const [openBookIds, setOpenBookIds] = useState<Set<string>>(new Set());
-  // Track total panel count for dynamic document title
-  const [panelCount, setPanelCount] = useState(0);
   // Track whether dockview layout has been restored (controls fade-in)
   const [layoutReady, setLayoutReady] = useState(false);
 
-  // --- Focused-mode session state ---
-  // In focused mode, exactly one cluster's panels are mounted at a time. All
-  // clusters the user has opened this session are tracked here so the
-  // ClusterBar can show a pill for each and swap back to them. Panels for
-  // non-active clusters are removed from dockview; their content state
-  // (reading position, notebook, chat) is restored from IDB/Postgres when
-  // the panel is re-added.
-  type FocusedCluster = {
-    bookId: string;
-    bookTitle: string;
-    bookFormat?: string;
-    hasChat: boolean;
-    hasNotebook: boolean;
-    activeTab: "book" | "chat" | "notebook";
-  };
-  const focusedClustersRef = useRef(new Map<string, FocusedCluster>());
-  const focusedOrderRef = useRef<string[]>([]);
-  // Last cluster bookId the swap effect acted on. Prevents re-running swap
-  // logic for the same activation (which would re-mount panels unnecessarily).
-  const lastSwappedRef = useRef<string | null>(null);
-  // Guard to suppress the onDidActivePanelChange → setActiveCluster feedback
-  // loop while the swap effect is mid-swap (removing/adding panels).
-  const swapInProgressRef = useRef(false);
+  // Focused-mode session state, swap effect, Cmd+1..9 shortcut, and ClusterBar
+  // getters live in a dedicated hook. The refs it returns are shared with
+  // openBook/openNotebook/openChat below and with the dockview listeners
+  // registered in `onReady`.
+  const {
+    focusedClustersRef,
+    focusedOrderRef,
+    swapInProgressRef,
+    closeFocusedCluster,
+    getClusterEntries,
+    getActiveClusterId,
+  } = useFocusedMode({ apiRef, layoutMode, isMobileRef });
 
   // Load last-opened timestamps for sorting
   const { data: lastOpenedMap } = useEffectQuery(
@@ -208,10 +196,6 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
           console.error(err);
           setLayoutReady(true);
         });
-
-      // Track total panel count for dynamic title
-      const updatePanelCount = () => setPanelCount(event.api.panels.length);
-      updatePanelCount();
 
       // Track open book panels
       const updateOpenBooks = () => {
@@ -303,8 +287,6 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       // In dockview v5, onDidLayoutChange does not fire for panel add/remove/move,
       // so we must also listen to those events to persist layout changes.
       disposablesRef.current = [
-        event.api.onDidAddPanel(updatePanelCount),
-        event.api.onDidRemovePanel(updatePanelCount),
         event.api.onDidAddPanel(updateOpenBooks),
         event.api.onDidRemovePanel(updateOpenBooks),
         event.api.onDidAddPanel(rebuildClusters),
@@ -502,89 +484,6 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       params: { bookId: book.id, bookTitle: book.title, bookFormat: book.format },
       renderer: "always",
     });
-  }, []);
-
-  // Mount the panels for `targetBookId`'s focused cluster, removing any
-  // currently-mounted cluster panels first. Called whenever the active
-  // focused cluster changes. Content state (reading position, notebook,
-  // chat) is rehydrated from IDB/Postgres when the panel remounts.
-  const swapFocusedCluster = useCallback((targetBookId: string | null) => {
-    const api = apiRef.current;
-    if (!api) return;
-
-    swapInProgressRef.current = true;
-    try {
-      // Remove every panel that belongs to any tracked focused cluster so
-      // we start from a clean slate.
-      const trackedBookIds = focusedClustersRef.current;
-      const toRemove = api.panels.filter((p) => {
-        const bId = (p.params as Record<string, unknown>)?.bookId;
-        return typeof bId === "string" && trackedBookIds.has(bId);
-      });
-      for (const p of toRemove) api.removePanel(p);
-
-      if (!targetBookId) return;
-      const cluster = focusedClustersRef.current.get(targetBookId);
-      if (!cluster) return;
-
-      const { bookId, bookTitle, bookFormat, hasChat, hasNotebook, activeTab } = cluster;
-
-      // Add the book panel (left group / first group on mobile).
-      const bookPanelId = `book-${bookId}`;
-      api.addPanel({
-        id: bookPanelId,
-        component: "book-reader",
-        title: truncateTitle(bookTitle),
-        params: { bookId, bookTitle, bookFormat },
-        renderer: "always",
-      });
-
-      const rightSplit = !isMobileRef.current;
-
-      // Add chat panel (right split on desktop, tab on mobile).
-      if (hasChat) {
-        const chatPanelId = `chat-${bookId}`;
-        api.addPanel({
-          id: chatPanelId,
-          component: "chat",
-          title: truncateTitle(`Discuss: ${bookTitle}`),
-          params: { bookId, bookTitle },
-          renderer: "always",
-          ...(rightSplit
-            ? { position: { referencePanel: bookPanelId, direction: "right" as const } }
-            : {}),
-        });
-      }
-
-      // Add notebook panel — as a tab in the right group if chat exists,
-      // otherwise split right (desktop) or tab (mobile).
-      if (hasNotebook) {
-        const notebookPanelId = `notebook-${bookId}`;
-        const chatPanel = hasChat ? api.panels.find((p) => p.id === `chat-${bookId}`) : undefined;
-        const position: AddPanelPositionOptions | undefined = rightSplit
-          ? chatPanel
-            ? { referenceGroup: chatPanel.group }
-            : { referencePanel: bookPanelId, direction: "right" as const }
-          : undefined;
-        api.addPanel({
-          id: notebookPanelId,
-          component: "notebook",
-          title: truncateTitle(`Notes: ${bookTitle}`),
-          params: { bookId, bookTitle },
-          renderer: "always",
-          ...(position ? { position } : {}),
-        });
-      }
-
-      // Focus the remembered active tab so pill-switching feels continuous.
-      let focusId = bookPanelId;
-      if (activeTab === "chat" && hasChat) focusId = `chat-${bookId}`;
-      else if (activeTab === "notebook" && hasNotebook) focusId = `notebook-${bookId}`;
-      const focusPanel = api.panels.find((p) => p.id === focusId);
-      if (focusPanel) focusPanel.focus();
-    } finally {
-      swapInProgressRef.current = false;
-    }
   }, []);
 
   const openBook = useCallback(
@@ -910,67 +809,6 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
 
   const { handleFileInput } = useBookUpload({ onBookAdded: handleBookAdded });
 
-  // Close a focused-mode cluster: remove from the session map and either
-  // activate the next cluster in order or clear panels entirely.
-  const closeFocusedCluster = useCallback(
-    (bookId: string) => {
-      focusedClustersRef.current.delete(bookId);
-      focusedOrderRef.current = focusedOrderRef.current.filter((id) => id !== bookId);
-      if (ws.activeClusterBookIdRef.current === bookId) {
-        const nextId = focusedOrderRef.current[focusedOrderRef.current.length - 1] ?? null;
-        // setActiveCluster with a different id triggers the swap effect.
-        // If no cluster remains, explicitly clear panels.
-        if (nextId === null) {
-          ws.activeClusterBookIdRef.current = null;
-          swapFocusedCluster(null);
-          lastSwappedRef.current = null;
-          ws.notifyClusterChanges();
-        } else {
-          ws.setActiveCluster(nextId);
-        }
-      } else {
-        ws.notifyClusterChanges();
-      }
-    },
-    [swapFocusedCluster, ws],
-  );
-
-  // Subscribe to cluster-change notifications and run the swap whenever the
-  // active focused cluster changes. Uses `lastSwappedRef` to ignore
-  // re-notifications for the same active id (which also occurs while the
-  // swap itself is adding panels).
-  useEffect(() => {
-    if (layoutMode !== "focused") return;
-    const run = () => {
-      const target = ws.activeClusterBookIdRef.current;
-      if (target === lastSwappedRef.current) return;
-      lastSwappedRef.current = target;
-      swapFocusedCluster(target);
-    };
-    // Initial sync in case a cluster was already active when the subscription
-    // was (re-)established (e.g. after a mode toggle).
-    run();
-    return ws.subscribeClusterChanges(run);
-  }, [layoutMode, swapFocusedCluster, ws]);
-
-  // Cmd+1..9 to activate the Nth open focused cluster.
-  useEffect(() => {
-    if (layoutMode !== "focused") return;
-    function handler(e: KeyboardEvent) {
-      if (!(e.metaKey || e.ctrlKey)) return;
-      if (e.shiftKey || e.altKey) return;
-      const digit = Number.parseInt(e.key, 10);
-      if (!Number.isInteger(digit) || digit < 1 || digit > 9) return;
-      const order = focusedOrderRef.current;
-      const target = order[digit - 1];
-      if (!target) return;
-      e.preventDefault();
-      ws.setActiveCluster(target);
-    }
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [layoutMode, ws]);
-
   // Sync context refs so child panels can open books/notebooks/chats and trigger uploads
   ws.openBookRef.current = openBook;
   ws.openNotebookRef.current = openNotebook;
@@ -978,16 +816,6 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   ws.openStandardEbooksRef.current = openStandardEbooks;
   ws.onBookAddedRef.current = handleBookAdded;
   ws.onBookDeletedRef.current = handleBookDeleted;
-
-  // ClusterBar getters — return snapshots from the refs. ClusterBar
-  // subscribes to cluster changes separately to trigger re-renders.
-  const getClusterEntries = useCallback(() => {
-    return focusedOrderRef.current.map((bookId) => {
-      const fc = focusedClustersRef.current.get(bookId);
-      return { bookId, bookTitle: fc?.bookTitle ?? bookId };
-    });
-  }, []);
-  const getActiveClusterId = useCallback(() => ws.activeClusterBookIdRef.current, [ws]);
 
   const sidebarProps = {
     collapsed,

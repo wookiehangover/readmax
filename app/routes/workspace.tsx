@@ -26,6 +26,7 @@ import { StandardEbooksPanel } from "~/components/workspace/standard-ebooks-pane
 import { WatermarkPanel } from "~/components/workspace/watermark-panel";
 import { LeftHeaderActions } from "~/components/workspace/left-header-actions";
 import { WorkspaceSidebar } from "~/components/workspace/workspace-sidebar";
+import { ClusterBar } from "~/components/workspace/cluster-bar";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { useSyncListener } from "~/hooks/use-sync-listener";
 import {
@@ -109,6 +110,30 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   const [panelCount, setPanelCount] = useState(0);
   // Track whether dockview layout has been restored (controls fade-in)
   const [layoutReady, setLayoutReady] = useState(false);
+
+  // --- Focused-mode session state ---
+  // In focused mode, exactly one cluster's panels are mounted at a time. All
+  // clusters the user has opened this session are tracked here so the
+  // ClusterBar can show a pill for each and swap back to them. Panels for
+  // non-active clusters are removed from dockview; their content state
+  // (reading position, notebook, chat) is restored from IDB/Postgres when
+  // the panel is re-added.
+  type FocusedCluster = {
+    bookId: string;
+    bookTitle: string;
+    bookFormat?: string;
+    hasChat: boolean;
+    hasNotebook: boolean;
+    activeTab: "book" | "chat" | "notebook";
+  };
+  const focusedClustersRef = useRef(new Map<string, FocusedCluster>());
+  const focusedOrderRef = useRef<string[]>([]);
+  // Last cluster bookId the swap effect acted on. Prevents re-running swap
+  // logic for the same activation (which would re-mount panels unnecessarily).
+  const lastSwappedRef = useRef<string | null>(null);
+  // Guard to suppress the onDidActivePanelChange → setActiveCluster feedback
+  // loop while the swap effect is mid-swap (removing/adding panels).
+  const swapInProgressRef = useRef(false);
 
   // Load last-opened timestamps for sorting
   const { data: lastOpenedMap } = useEffectQuery(
@@ -233,6 +258,15 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
           });
         }
         ws.clustersRef.current = next;
+        // Keep the focused-mode session map in sync: when a chat/notebook
+        // panel is added/removed for a tracked cluster, update its flags so
+        // future swaps recreate the same tab set.
+        for (const [bookId, fc] of focusedClustersRef.current) {
+          const entry = next.get(bookId);
+          if (!entry) continue;
+          fc.hasChat = entry.chatPanelId !== undefined;
+          fc.hasNotebook = entry.notebookPanelId !== undefined;
+        }
         // If the active cluster's book was closed, clear the active bookId.
         const activeId = ws.activeClusterBookIdRef.current;
         if (activeId && !next.has(activeId)) {
@@ -247,11 +281,21 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       // cluster unchanged.
       const updateActiveCluster = (panel: { params?: unknown } | undefined) => {
         if (!panel) return;
+        // Ignore focus changes we triggered ourselves during a swap.
+        if (swapInProgressRef.current) return;
         const bookId = (panel.params as Record<string, unknown>)?.bookId;
         if (typeof bookId !== "string") return;
         if (!ws.clustersRef.current.has(bookId)) return;
         if (ws.activeClusterBookIdRef.current === bookId) return;
         ws.activeClusterBookIdRef.current = bookId;
+        // Remember which tab the user focused so the next swap restores it.
+        const fc = focusedClustersRef.current.get(bookId);
+        if (fc) {
+          const id = (panel as { id?: string }).id;
+          if (id?.startsWith("chat-")) fc.activeTab = "chat";
+          else if (id?.startsWith("notebook-")) fc.activeTab = "notebook";
+          else if (id?.startsWith("book-")) fc.activeTab = "book";
+        }
         ws.notifyClusterChanges();
       };
 
@@ -445,6 +489,104 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  // Add a book-reader panel for `book` (no companion panels). Returns nothing.
+  const addBookPanel = useCallback((book: BookMeta) => {
+    const api = apiRef.current;
+    if (!api) return;
+    const panelId = `book-${book.id}`;
+    if (api.panels.some((p) => p.id === panelId)) return;
+    api.addPanel({
+      id: panelId,
+      component: "book-reader",
+      title: truncateTitle(book.title),
+      params: { bookId: book.id, bookTitle: book.title, bookFormat: book.format },
+      renderer: "always",
+    });
+  }, []);
+
+  // Mount the panels for `targetBookId`'s focused cluster, removing any
+  // currently-mounted cluster panels first. Called whenever the active
+  // focused cluster changes. Content state (reading position, notebook,
+  // chat) is rehydrated from IDB/Postgres when the panel remounts.
+  const swapFocusedCluster = useCallback((targetBookId: string | null) => {
+    const api = apiRef.current;
+    if (!api) return;
+
+    swapInProgressRef.current = true;
+    try {
+      // Remove every panel that belongs to any tracked focused cluster so
+      // we start from a clean slate.
+      const trackedBookIds = focusedClustersRef.current;
+      const toRemove = api.panels.filter((p) => {
+        const bId = (p.params as Record<string, unknown>)?.bookId;
+        return typeof bId === "string" && trackedBookIds.has(bId);
+      });
+      for (const p of toRemove) api.removePanel(p);
+
+      if (!targetBookId) return;
+      const cluster = focusedClustersRef.current.get(targetBookId);
+      if (!cluster) return;
+
+      const { bookId, bookTitle, bookFormat, hasChat, hasNotebook, activeTab } = cluster;
+
+      // Add the book panel (left group / first group on mobile).
+      const bookPanelId = `book-${bookId}`;
+      api.addPanel({
+        id: bookPanelId,
+        component: "book-reader",
+        title: truncateTitle(bookTitle),
+        params: { bookId, bookTitle, bookFormat },
+        renderer: "always",
+      });
+
+      const rightSplit = !isMobileRef.current;
+
+      // Add chat panel (right split on desktop, tab on mobile).
+      if (hasChat) {
+        const chatPanelId = `chat-${bookId}`;
+        api.addPanel({
+          id: chatPanelId,
+          component: "chat",
+          title: truncateTitle(`Discuss: ${bookTitle}`),
+          params: { bookId, bookTitle },
+          renderer: "always",
+          ...(rightSplit
+            ? { position: { referencePanel: bookPanelId, direction: "right" as const } }
+            : {}),
+        });
+      }
+
+      // Add notebook panel — as a tab in the right group if chat exists,
+      // otherwise split right (desktop) or tab (mobile).
+      if (hasNotebook) {
+        const notebookPanelId = `notebook-${bookId}`;
+        const chatPanel = hasChat ? api.panels.find((p) => p.id === `chat-${bookId}`) : undefined;
+        const position: AddPanelPositionOptions | undefined = rightSplit
+          ? chatPanel
+            ? { referenceGroup: chatPanel.group }
+            : { referencePanel: bookPanelId, direction: "right" as const }
+          : undefined;
+        api.addPanel({
+          id: notebookPanelId,
+          component: "notebook",
+          title: truncateTitle(`Notes: ${bookTitle}`),
+          params: { bookId, bookTitle },
+          renderer: "always",
+          ...(position ? { position } : {}),
+        });
+      }
+
+      // Focus the remembered active tab so pill-switching feels continuous.
+      let focusId = bookPanelId;
+      if (activeTab === "chat" && hasChat) focusId = `chat-${bookId}`;
+      else if (activeTab === "notebook" && hasNotebook) focusId = `notebook-${bookId}`;
+      const focusPanel = api.panels.find((p) => p.id === focusId);
+      if (focusPanel) focusPanel.focus();
+    } finally {
+      swapInProgressRef.current = false;
+    }
+  }, []);
+
   const openBook = useCallback(
     (book: BookMeta) => {
       const api = apiRef.current;
@@ -455,96 +597,162 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
         WorkspaceService.pipe(Effect.andThen((s) => s.saveLastOpened(book.id, Date.now()))),
       ).catch(console.error);
 
-      // Always focus the existing panel for this book if one is open.
-      const existing = api.panels.find(
-        (p) =>
-          p.id.startsWith("book-") && (p.params as Record<string, unknown>)?.bookId === book.id,
-      );
-      if (existing) {
-        existing.focus();
-        return;
+      const mode = layoutModeRef.current;
+      const isFirstCluster =
+        mode === "focused"
+          ? focusedClustersRef.current.size === 0
+          : !api.panels.some((p) => p.id.startsWith("book-"));
+
+      if (mode === "focused") {
+        // Ensure a focused cluster entry exists for this book. Chat is
+        // eager on desktop (matches the prior companion-chat behavior);
+        // notebook is lazy — added the first time the user clicks the
+        // "Open Notebook" button so the right group stays uncluttered
+        // until explicitly requested.
+        if (!focusedClustersRef.current.has(book.id)) {
+          focusedClustersRef.current.set(book.id, {
+            bookId: book.id,
+            bookTitle: book.title,
+            bookFormat: book.format,
+            hasChat: !isMobileRef.current,
+            hasNotebook: false,
+            activeTab: isMobileRef.current ? "book" : "chat",
+          });
+          focusedOrderRef.current = [...focusedOrderRef.current, book.id];
+        }
+        // Activate the cluster; the swap effect reacts and mounts panels.
+        ws.setActiveCluster(book.id);
+      } else {
+        // Freeform: preserve legacy behavior — focus existing panel if any,
+        // otherwise add book panel (+ companion chat when opening into an
+        // empty workspace on a wide screen).
+        const existing = api.panels.find(
+          (p) =>
+            p.id.startsWith("book-") && (p.params as Record<string, unknown>)?.bookId === book.id,
+        );
+        if (existing) {
+          existing.focus();
+          return;
+        }
+        addBookPanel(book);
+        if (isFirstCluster && !isMobileRef.current && window.innerWidth > 1000) {
+          const chatId = `chat-${book.id}`;
+          api.addPanel({
+            id: chatId,
+            component: "chat",
+            title: truncateTitle(`Discuss: ${book.title}`),
+            params: { bookId: book.id, bookTitle: book.title },
+            renderer: "always",
+            position: { referencePanel: `book-${book.id}`, direction: "right" },
+          });
+        }
       }
 
-      // Check if this will be the first panel (companion new-tab logic)
-      const isFirstPanel = !api.panels.some((p) => p.id.startsWith("book-"));
-
-      const panelId = `book-${book.id}`;
-      api.addPanel({
-        id: panelId,
-        component: "book-reader",
-        title: truncateTitle(book.title),
-        params: { bookId: book.id, bookTitle: book.title, bookFormat: book.format },
-        renderer: "always",
-      });
-
-      // When opening the first panel on a wide screen (and not mobile), add a companion chat panel
-      if (isFirstPanel && !isMobileRef.current && window.innerWidth > 1000) {
-        const chatId = `chat-${book.id}`;
-        api.addPanel({
-          id: chatId,
-          component: "chat",
-          title: truncateTitle(`Discuss: ${book.title}`),
-          params: { bookId: book.id, bookTitle: book.title },
-          renderer: "always",
-          position: { referencePanel: panelId, direction: "right" },
-        });
-      }
-
-      // When opening the first book from an empty workspace on desktop,
-      // auto-collapse the sidebar so the reader gets full width.
-      if (isFirstPanel && !isMobileRef.current && !collapsedRef.current) {
+      // Auto-collapse sidebar on first book in either mode.
+      if (isFirstCluster && !isMobileRef.current && !collapsedRef.current) {
         updateSettings({ sidebarCollapsed: true });
         setTimeout(() => {
           window.dispatchEvent(new Event("resize"));
         }, SIDEBAR_TRANSITION_MS);
       }
     },
-    [updateSettings],
+    [addBookPanel, updateSettings, ws],
   );
 
-  const openNotebook = useCallback((book: BookMeta) => {
-    const api = apiRef.current;
-    if (!api) return;
+  const openNotebook = useCallback(
+    (book: BookMeta) => {
+      const api = apiRef.current;
+      if (!api) return;
 
-    const panelId = `notebook-${book.id}`;
-    const existing = api.panels.find((p) => p.id === panelId);
-    if (existing) {
-      existing.focus();
-      return;
-    }
+      const panelId = `notebook-${book.id}`;
+      const mode = layoutModeRef.current;
 
-    // Find an open book panel to position the notebook to its right
-    const bookPanel = api.panels.find(
-      (p) => p.id.startsWith("book-") && (p.params as Record<string, unknown>)?.bookId === book.id,
-    );
-
-    // On mobile, open as a tab in the same group (no split); on desktop, split right
-    let position: AddPanelPositionOptions | undefined;
-    if (!isMobileRef.current && bookPanel) {
-      const bookGroup = bookPanel.group;
-      const bookRect = bookGroup.element.getBoundingClientRect();
-      // Look for an existing group whose left edge is to the right of the book's group
-      const rightGroup = api.groups.find(
-        (g) => g !== bookGroup && g.element.getBoundingClientRect().left >= bookRect.right - 1,
-      );
-      if (rightGroup) {
-        // Add as a tab in the existing right group
-        position = { referenceGroup: rightGroup };
-      } else {
-        // No group to the right — split to create one
-        position = { referencePanel: bookPanel.id, direction: "right" as const };
+      if (mode === "focused") {
+        // Ensure a cluster exists and is the active one, then add/focus the
+        // notebook tab inside its right group.
+        let fc = focusedClustersRef.current.get(book.id);
+        if (!fc) {
+          fc = {
+            bookId: book.id,
+            bookTitle: book.title,
+            bookFormat: book.format,
+            hasChat: !isMobileRef.current,
+            hasNotebook: true,
+            activeTab: "notebook",
+          };
+          focusedClustersRef.current.set(book.id, fc);
+          focusedOrderRef.current = [...focusedOrderRef.current, book.id];
+          ws.setActiveCluster(book.id);
+          return;
+        }
+        fc.hasNotebook = true;
+        fc.activeTab = "notebook";
+        if (ws.activeClusterBookIdRef.current !== book.id) {
+          ws.setActiveCluster(book.id);
+          return;
+        }
+        const existing = api.panels.find((p) => p.id === panelId);
+        if (existing) {
+          existing.focus();
+          return;
+        }
+        // Active cluster but notebook not mounted — add as tab in the right
+        // group if one exists, else split right from the book panel.
+        const bookPanel = api.panels.find((p) => p.id === `book-${book.id}`);
+        const chatPanel = api.panels.find((p) => p.id === `chat-${book.id}`);
+        const rightSplit = !isMobileRef.current;
+        const position: AddPanelPositionOptions | undefined = rightSplit
+          ? chatPanel
+            ? { referenceGroup: chatPanel.group }
+            : bookPanel
+              ? { referencePanel: bookPanel.id, direction: "right" as const }
+              : undefined
+          : undefined;
+        api.addPanel({
+          id: panelId,
+          component: "notebook",
+          title: truncateTitle(`Notes: ${book.title}`),
+          params: { bookId: book.id, bookTitle: book.title },
+          renderer: "always",
+          ...(position ? { position } : {}),
+        });
+        return;
       }
-    }
 
-    api.addPanel({
-      id: panelId,
-      component: "notebook",
-      title: truncateTitle(`Notes: ${book.title}`),
-      params: { bookId: book.id, bookTitle: book.title },
-      renderer: "always",
-      ...(position ? { position } : {}),
-    });
-  }, []);
+      // Freeform: legacy behavior — split right next to the book panel.
+      const existing = api.panels.find((p) => p.id === panelId);
+      if (existing) {
+        existing.focus();
+        return;
+      }
+      const bookPanel = api.panels.find(
+        (p) =>
+          p.id.startsWith("book-") && (p.params as Record<string, unknown>)?.bookId === book.id,
+      );
+      let position: AddPanelPositionOptions | undefined;
+      if (!isMobileRef.current && bookPanel) {
+        const bookGroup = bookPanel.group;
+        const bookRect = bookGroup.element.getBoundingClientRect();
+        const rightGroup = api.groups.find(
+          (g) => g !== bookGroup && g.element.getBoundingClientRect().left >= bookRect.right - 1,
+        );
+        if (rightGroup) {
+          position = { referenceGroup: rightGroup };
+        } else {
+          position = { referencePanel: bookPanel.id, direction: "right" as const };
+        }
+      }
+      api.addPanel({
+        id: panelId,
+        component: "notebook",
+        title: truncateTitle(`Notes: ${book.title}`),
+        params: { bookId: book.id, bookTitle: book.title },
+        renderer: "always",
+        ...(position ? { position } : {}),
+      });
+    },
+    [ws],
+  );
 
   const openStandardEbooks = useCallback(() => {
     const api = apiRef.current;
@@ -563,46 +771,96 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     });
   }, []);
 
-  const openChat = useCallback((book: BookMeta) => {
-    const api = apiRef.current;
-    if (!api) return;
+  const openChat = useCallback(
+    (book: BookMeta) => {
+      const api = apiRef.current;
+      if (!api) return;
 
-    const panelId = `chat-${book.id}`;
-    const existing = api.panels.find((p) => p.id === panelId);
-    if (existing) {
-      existing.focus();
-      return;
-    }
+      const panelId = `chat-${book.id}`;
+      const mode = layoutModeRef.current;
 
-    // Find an open book panel to position the chat to its right
-    const bookPanel = api.panels.find(
-      (p) => p.id.startsWith("book-") && (p.params as Record<string, unknown>)?.bookId === book.id,
-    );
-
-    // On mobile, open as a tab in the same group (no split); on desktop, split right
-    let position: AddPanelPositionOptions | undefined;
-    if (!isMobileRef.current && bookPanel) {
-      const bookGroup = bookPanel.group;
-      const bookRect = bookGroup.element.getBoundingClientRect();
-      const rightGroup = api.groups.find(
-        (g) => g !== bookGroup && g.element.getBoundingClientRect().left >= bookRect.right - 1,
-      );
-      if (rightGroup) {
-        position = { referenceGroup: rightGroup };
-      } else {
-        position = { referencePanel: bookPanel.id, direction: "right" as const };
+      if (mode === "focused") {
+        let fc = focusedClustersRef.current.get(book.id);
+        if (!fc) {
+          fc = {
+            bookId: book.id,
+            bookTitle: book.title,
+            bookFormat: book.format,
+            hasChat: true,
+            hasNotebook: false,
+            activeTab: "chat",
+          };
+          focusedClustersRef.current.set(book.id, fc);
+          focusedOrderRef.current = [...focusedOrderRef.current, book.id];
+          ws.setActiveCluster(book.id);
+          return;
+        }
+        fc.hasChat = true;
+        fc.activeTab = "chat";
+        if (ws.activeClusterBookIdRef.current !== book.id) {
+          ws.setActiveCluster(book.id);
+          return;
+        }
+        const existing = api.panels.find((p) => p.id === panelId);
+        if (existing) {
+          existing.focus();
+          return;
+        }
+        const bookPanel = api.panels.find((p) => p.id === `book-${book.id}`);
+        const notebookPanel = api.panels.find((p) => p.id === `notebook-${book.id}`);
+        const rightSplit = !isMobileRef.current;
+        const position: AddPanelPositionOptions | undefined = rightSplit
+          ? notebookPanel
+            ? { referenceGroup: notebookPanel.group }
+            : bookPanel
+              ? { referencePanel: bookPanel.id, direction: "right" as const }
+              : undefined
+          : undefined;
+        api.addPanel({
+          id: panelId,
+          component: "chat",
+          title: truncateTitle(`Discuss: ${book.title}`),
+          params: { bookId: book.id, bookTitle: book.title },
+          renderer: "always",
+          ...(position ? { position } : {}),
+        });
+        return;
       }
-    }
 
-    api.addPanel({
-      id: panelId,
-      component: "chat",
-      title: truncateTitle(`Discuss: ${book.title}`),
-      params: { bookId: book.id, bookTitle: book.title },
-      renderer: "always",
-      ...(position ? { position } : {}),
-    });
-  }, []);
+      // Freeform: legacy behavior.
+      const existing = api.panels.find((p) => p.id === panelId);
+      if (existing) {
+        existing.focus();
+        return;
+      }
+      const bookPanel = api.panels.find(
+        (p) =>
+          p.id.startsWith("book-") && (p.params as Record<string, unknown>)?.bookId === book.id,
+      );
+      let position: AddPanelPositionOptions | undefined;
+      if (!isMobileRef.current && bookPanel) {
+        const bookGroup = bookPanel.group;
+        const bookRect = bookGroup.element.getBoundingClientRect();
+        const rightGroup = api.groups.find(
+          (g) => g !== bookGroup && g.element.getBoundingClientRect().left >= bookRect.right - 1,
+        );
+        if (rightGroup) {
+          position = { referenceGroup: rightGroup };
+        } else {
+          position = { referencePanel: bookPanel.id, direction: "right" as const };
+        }
+      }
+      api.addPanel({
+        id: panelId,
+        component: "chat",
+        title: truncateTitle(`Discuss: ${book.title}`),
+        params: { bookId: book.id, bookTitle: book.title },
+        renderer: "always",
+        ...(position ? { position } : {}),
+      });
+    },
+    [ws],
+  );
 
   // Wrap setBooks to also update booksRef and notify booksChangeListener.
   // Both the ref mutation and listener notification happen in a queueMicrotask
@@ -652,6 +910,67 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
 
   const { handleFileInput } = useBookUpload({ onBookAdded: handleBookAdded });
 
+  // Close a focused-mode cluster: remove from the session map and either
+  // activate the next cluster in order or clear panels entirely.
+  const closeFocusedCluster = useCallback(
+    (bookId: string) => {
+      focusedClustersRef.current.delete(bookId);
+      focusedOrderRef.current = focusedOrderRef.current.filter((id) => id !== bookId);
+      if (ws.activeClusterBookIdRef.current === bookId) {
+        const nextId = focusedOrderRef.current[focusedOrderRef.current.length - 1] ?? null;
+        // setActiveCluster with a different id triggers the swap effect.
+        // If no cluster remains, explicitly clear panels.
+        if (nextId === null) {
+          ws.activeClusterBookIdRef.current = null;
+          swapFocusedCluster(null);
+          lastSwappedRef.current = null;
+          ws.notifyClusterChanges();
+        } else {
+          ws.setActiveCluster(nextId);
+        }
+      } else {
+        ws.notifyClusterChanges();
+      }
+    },
+    [swapFocusedCluster, ws],
+  );
+
+  // Subscribe to cluster-change notifications and run the swap whenever the
+  // active focused cluster changes. Uses `lastSwappedRef` to ignore
+  // re-notifications for the same active id (which also occurs while the
+  // swap itself is adding panels).
+  useEffect(() => {
+    if (layoutMode !== "focused") return;
+    const run = () => {
+      const target = ws.activeClusterBookIdRef.current;
+      if (target === lastSwappedRef.current) return;
+      lastSwappedRef.current = target;
+      swapFocusedCluster(target);
+    };
+    // Initial sync in case a cluster was already active when the subscription
+    // was (re-)established (e.g. after a mode toggle).
+    run();
+    return ws.subscribeClusterChanges(run);
+  }, [layoutMode, swapFocusedCluster, ws]);
+
+  // Cmd+1..9 to activate the Nth open focused cluster.
+  useEffect(() => {
+    if (layoutMode !== "focused") return;
+    function handler(e: KeyboardEvent) {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (e.shiftKey || e.altKey) return;
+      const digit = Number.parseInt(e.key, 10);
+      if (!Number.isInteger(digit) || digit < 1 || digit > 9) return;
+      const order = focusedOrderRef.current;
+      const target = order[digit - 1];
+      if (!target) return;
+      e.preventDefault();
+      ws.setActiveCluster(target);
+    }
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [layoutMode, ws]);
+
   // Sync context refs so child panels can open books/notebooks/chats and trigger uploads
   ws.openBookRef.current = openBook;
   ws.openNotebookRef.current = openNotebook;
@@ -659,6 +978,16 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   ws.openStandardEbooksRef.current = openStandardEbooks;
   ws.onBookAddedRef.current = handleBookAdded;
   ws.onBookDeletedRef.current = handleBookDeleted;
+
+  // ClusterBar getters — return snapshots from the refs. ClusterBar
+  // subscribes to cluster changes separately to trigger re-renders.
+  const getClusterEntries = useCallback(() => {
+    return focusedOrderRef.current.map((bookId) => {
+      const fc = focusedClustersRef.current.get(bookId);
+      return { bookId, bookTitle: fc?.bookTitle ?? bookId };
+    });
+  }, []);
+  const getActiveClusterId = useCallback(() => ws.activeClusterBookIdRef.current, [ws]);
 
   const sidebarProps = {
     collapsed,
@@ -717,14 +1046,26 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
         )}
 
         {/* Dockview container — full width when sidebar is collapsed or on mobile */}
-        <div className="flex-1">
-          <DockviewReact
-            theme={dockviewTheme}
-            components={components}
-            watermarkComponent={WatermarkPanel}
-            leftHeaderActionsComponent={LeftHeaderActions}
-            onReady={onReady}
-          />
+        <div className="flex flex-1 flex-col">
+          {layoutMode === "focused" && (
+            <ClusterBar
+              getEntries={getClusterEntries}
+              getActiveId={getActiveClusterId}
+              onActivate={(bookId) => ws.setActiveCluster(bookId)}
+              onClose={closeFocusedCluster}
+            />
+          )}
+          <div className="flex-1 min-h-0">
+            <DockviewReact
+              theme={dockviewTheme}
+              components={components}
+              watermarkComponent={WatermarkPanel}
+              leftHeaderActionsComponent={LeftHeaderActions}
+              onReady={onReady}
+              disableDnd={layoutMode === "focused"}
+              disableFloatingGroups={layoutMode === "focused"}
+            />
+          </div>
         </div>
       </div>
     </DropZone>

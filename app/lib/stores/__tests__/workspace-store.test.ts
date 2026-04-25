@@ -170,4 +170,48 @@ describe("WorkspaceService", () => {
       expect(map.get("book-1")).toBe(2000);
     });
   });
+
+  describe("saveFocusedState + getFocusedState", () => {
+    it("saves and retrieves focused-mode open cluster state", async () => {
+      const layer = makeTestLayer();
+      const run = <A, E>(e: Effect.Effect<A, E, WorkspaceService>) =>
+        Effect.runPromise(Effect.provide(e, layer));
+      const state = {
+        order: ["book-1", "book-2"],
+        activeBookId: "book-2",
+        clusters: [
+          {
+            bookId: "book-1",
+            bookTitle: "First Book",
+            bookFormat: "epub",
+            hasChat: true,
+            hasNotebook: false,
+            activeTab: "chat" as const,
+          },
+          {
+            bookId: "book-2",
+            bookTitle: "Second Book",
+            hasChat: true,
+            hasNotebook: true,
+            activeTab: "notebook" as const,
+          },
+        ],
+      };
+
+      await run(WorkspaceService.pipe(Effect.andThen((s) => s.saveFocusedState(state))));
+      const result = await run(WorkspaceService.pipe(Effect.andThen((s) => s.getFocusedState())));
+
+      expect(result).toEqual(state);
+    });
+
+    it("returns null when no focused state is saved", async () => {
+      const layer = makeTestLayer();
+      const run = <A, E>(e: Effect.Effect<A, E, WorkspaceService>) =>
+        Effect.runPromise(Effect.provide(e, layer));
+
+      const result = await run(WorkspaceService.pipe(Effect.andThen((s) => s.getFocusedState())));
+
+      expect(result).toBeNull();
+    });
+  });
 });

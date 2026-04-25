@@ -13,7 +13,7 @@ import type { Route } from "./+types/workspace";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useBookUpload } from "~/hooks/use-book-upload";
 import { DropZone } from "~/components/drop-zone";
-import { WorkspaceService } from "~/lib/stores/workspace-store";
+import { WorkspaceService, type FocusedWorkspaceState } from "~/lib/stores/workspace-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { clampFocusedSplitRatio, useSettings } from "~/lib/settings";
 import { useEffectQuery } from "~/hooks/use-effect-query";
@@ -29,7 +29,7 @@ import { WorkspaceSidebar } from "~/components/workspace/workspace-sidebar";
 import { ClusterBar } from "~/components/workspace/cluster-bar";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { useSyncListener } from "~/hooks/use-sync-listener";
-import { useFocusedMode } from "~/hooks/use-focused-mode";
+import { useFocusedMode, type FocusedCluster } from "~/hooks/use-focused-mode";
 import {
   Sheet,
   SheetContent,
@@ -42,6 +42,8 @@ import {
 const SIDEBAR_TRANSITION_MS = 270;
 /** Debounce delay for persisting dockview layout changes (ms) */
 const LAYOUT_SAVE_DEBOUNCE_MS = 500;
+/** Debounce delay for persisting focused-mode open cluster state (ms) */
+const FOCUSED_STATE_SAVE_DEBOUNCE_MS = 300;
 /** Debounce delay for persisting the focused-mode split ratio (ms) */
 const FOCUSED_RATIO_SAVE_DEBOUNCE_MS = 300;
 /** Minimum ratio delta to trigger a persist (avoids feedback loops). */
@@ -107,6 +109,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   layoutModeRef.current = layoutMode;
   const apiRef = useRef<DockviewApi | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const focusedStateSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const disposablesRef = useRef<Array<{ dispose: () => void }>>([]);
   // Tracks the mode the dockview state currently represents. Advances only
   // after a mode-switch swap completes, so `flushLayout` always writes to
@@ -174,6 +177,64 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     name: "app",
     className: "dockview-theme-app",
   };
+
+  const serializeFocusedState = useCallback((): FocusedWorkspaceState => {
+    const order = focusedOrderRef.current.filter((bookId) =>
+      focusedClustersRef.current.has(bookId),
+    );
+    return {
+      order,
+      activeBookId: ws.activeClusterBookIdRef.current,
+      clusters: order.map((bookId) => focusedClustersRef.current.get(bookId)!),
+    };
+  }, [focusedClustersRef, focusedOrderRef, ws]);
+
+  const restoreFocusedState = useCallback(
+    (state: FocusedWorkspaceState | null) => {
+      if (!state) return;
+
+      const booksById = new Map(books.map((book) => [book.id, book]));
+      const clustersById = new Map(state.clusters.map((cluster) => [cluster.bookId, cluster]));
+      const restored = new Map<string, FocusedCluster>();
+      const order: string[] = [];
+
+      for (const bookId of state.order) {
+        const cluster = clustersById.get(bookId);
+        const book = booksById.get(bookId);
+        if (!cluster || !book || restored.has(bookId)) continue;
+        restored.set(bookId, {
+          ...cluster,
+          bookTitle: book.title,
+          bookFormat: book.format,
+        });
+        order.push(bookId);
+      }
+
+      focusedClustersRef.current = restored;
+      focusedOrderRef.current = order;
+      ws.activeClusterBookIdRef.current =
+        state.activeBookId && restored.has(state.activeBookId)
+          ? state.activeBookId
+          : (order[order.length - 1] ?? null);
+    },
+    [books, focusedClustersRef, focusedOrderRef, ws],
+  );
+
+  const flushFocusedState = useCallback(() => {
+    if (layoutModeRef.current !== "focused") return;
+    AppRuntime.runPromise(
+      WorkspaceService.pipe(Effect.andThen((s) => s.saveFocusedState(serializeFocusedState()))),
+    ).catch(console.error);
+  }, [serializeFocusedState]);
+
+  const saveFocusedState = useCallback(() => {
+    if (layoutModeRef.current !== "focused") return;
+    if (focusedStateSaveTimerRef.current) clearTimeout(focusedStateSaveTimerRef.current);
+    focusedStateSaveTimerRef.current = setTimeout(() => {
+      focusedStateSaveTimerRef.current = null;
+      flushFocusedState();
+    }, FOCUSED_STATE_SAVE_DEBOUNCE_MS);
+  }, [flushFocusedState]);
 
   // Flush layout to IndexedDB immediately (non-debounced). Writes to
   // `prevLayoutModeRef` — the mode the dockview state currently represents
@@ -267,14 +328,26 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
 
       // Try to restore saved layout for the active mode
       const mode = layoutModeRef.current;
-      AppRuntime.runPromise(
-        WorkspaceService.pipe(
-          Effect.andThen((s) => s.getLayout(mode)),
-          Effect.catchAll(() => Effect.succeed(null)),
+      Promise.all([
+        AppRuntime.runPromise(
+          WorkspaceService.pipe(
+            Effect.andThen((s) => s.getLayout(mode)),
+            Effect.catchAll(() => Effect.succeed(null)),
+          ),
         ),
-      )
-        .then((layout) => {
-          if (layout) {
+        mode === "focused"
+          ? AppRuntime.runPromise(
+              WorkspaceService.pipe(
+                Effect.andThen((s) => s.getFocusedState()),
+                Effect.catchAll(() => Effect.succeed(null)),
+              ),
+            )
+          : Promise.resolve(null),
+      ])
+        .then(([layout, focusedState]) => {
+          if (mode === "focused") restoreFocusedState(focusedState);
+          const hasFocusedRestore = mode === "focused" && focusedOrderRef.current.length > 0;
+          if (layout && !hasFocusedRestore) {
             try {
               event.api.fromJSON(layout);
             } catch (err) {
@@ -375,16 +448,26 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
         const bookId = (panel.params as Record<string, unknown>)?.bookId;
         if (typeof bookId !== "string") return;
         if (!ws.clustersRef.current.has(bookId)) return;
-        if (ws.activeClusterBookIdRef.current === bookId) return;
-        ws.activeClusterBookIdRef.current = bookId;
         // Remember which tab the user focused so the next swap restores it.
         const fc = focusedClustersRef.current.get(bookId);
+        let activeTabChanged = false;
         if (fc) {
           const id = (panel as { id?: string }).id;
-          if (id?.startsWith("chat-")) fc.activeTab = "chat";
-          else if (id?.startsWith("notebook-")) fc.activeTab = "notebook";
-          else if (id?.startsWith("book-")) fc.activeTab = "book";
+          const activeTab = id?.startsWith("chat-")
+            ? "chat"
+            : id?.startsWith("notebook-")
+              ? "notebook"
+              : id?.startsWith("book-")
+                ? "book"
+                : fc.activeTab;
+          activeTabChanged = fc.activeTab !== activeTab;
+          fc.activeTab = activeTab;
         }
+        if (ws.activeClusterBookIdRef.current === bookId) {
+          if (activeTabChanged) ws.notifyClusterChanges();
+          return;
+        }
+        ws.activeClusterBookIdRef.current = bookId;
         ws.notifyClusterChanges();
       };
 
@@ -414,6 +497,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       saveLayout,
       captureFocusedRatio,
       updateFocusedBookGroupChrome,
+      restoreFocusedState,
       ws,
       enforceSingleFocusedCluster,
     ],
@@ -423,6 +507,18 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     updateFocusedBookGroupChrome();
   }, [layoutMode, isMobile, updateFocusedBookGroupChrome]);
 
+  useEffect(() => {
+    if (layoutMode !== "focused") return;
+    return ws.subscribeClusterChanges(saveFocusedState);
+  }, [layoutMode, saveFocusedState, ws]);
+
+  useEffect(() => {
+    if (layoutMode !== "focused") return;
+    const syncFocusedOpenBooks = () => setOpenBookIds(new Set(focusedOrderRef.current));
+    syncFocusedOpenBooks();
+    return ws.subscribeClusterChanges(syncFocusedOpenBooks);
+  }, [layoutMode, focusedOrderRef, ws]);
+
   // Flush pending layout save on page unload / tab hide
   useEffect(() => {
     const handleBeforeUnload = () => {
@@ -431,12 +527,22 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
         saveTimerRef.current = null;
         flushLayout();
       }
+      if (focusedStateSaveTimerRef.current) {
+        clearTimeout(focusedStateSaveTimerRef.current);
+        focusedStateSaveTimerRef.current = null;
+        flushFocusedState();
+      }
     };
     const handleVisibilityChange = () => {
       if (document.visibilityState === "hidden" && saveTimerRef.current) {
         clearTimeout(saveTimerRef.current);
         saveTimerRef.current = null;
         flushLayout();
+      }
+      if (document.visibilityState === "hidden" && focusedStateSaveTimerRef.current) {
+        clearTimeout(focusedStateSaveTimerRef.current);
+        focusedStateSaveTimerRef.current = null;
+        flushFocusedState();
       }
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
@@ -445,7 +551,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       window.removeEventListener("beforeunload", handleBeforeUnload);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [flushLayout]);
+  }, [flushLayout, flushFocusedState]);
 
   // React to `layoutMode` settings changes by swapping the dockview state:
   //   1. Flush the current dockview JSON to the *previous* mode's IDB slot.
@@ -485,6 +591,17 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
         await AppRuntime.runPromise(
           WorkspaceService.pipe(Effect.andThen((s) => s.saveLayout(prevMode, currentLayout))),
         ).catch(console.error);
+        if (prevMode === "focused") {
+          if (focusedStateSaveTimerRef.current) {
+            clearTimeout(focusedStateSaveTimerRef.current);
+            focusedStateSaveTimerRef.current = null;
+          }
+          await AppRuntime.runPromise(
+            WorkspaceService.pipe(
+              Effect.andThen((s) => s.saveFocusedState(serializeFocusedState())),
+            ),
+          ).catch(console.error);
+        }
         if (token !== modeSwitchTokenRef.current) return;
 
         if (layoutMode === "focused") {
@@ -523,7 +640,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       }
     };
     doSwap();
-  }, [layoutMode, enforceSingleFocusedCluster]);
+  }, [layoutMode, enforceSingleFocusedCluster, serializeFocusedState]);
 
   // Sync books to context ref so NewTabPanel (and other consumers) can read them.
   // Done in an effect so it happens after commit, not during render.
@@ -545,6 +662,10 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   useEffect(() => {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      if (focusedStateSaveTimerRef.current) {
+        clearTimeout(focusedStateSaveTimerRef.current);
+        flushFocusedState();
+      }
       if (focusedRatioSaveTimerRef.current) clearTimeout(focusedRatioSaveTimerRef.current);
       for (const d of disposablesRef.current) d.dispose();
       disposablesRef.current = [];

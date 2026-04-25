@@ -18,6 +18,29 @@ const decodeLayout = (raw: unknown): SerializedDockview => {
   return raw as SerializedDockview;
 };
 
+const FocusedWorkspaceClusterSchema = Schema.Struct({
+  bookId: Schema.String,
+  bookTitle: Schema.String,
+  bookFormat: Schema.optional(Schema.String),
+  hasChat: Schema.Boolean,
+  hasNotebook: Schema.Boolean,
+  activeTab: Schema.Literal("book", "chat", "notebook"),
+});
+
+const FocusedWorkspaceStateSchema = Schema.Struct({
+  order: Schema.Array(Schema.String),
+  activeBookId: Schema.NullOr(Schema.String),
+  clusters: Schema.Array(FocusedWorkspaceClusterSchema),
+});
+
+export type FocusedWorkspaceCluster = typeof FocusedWorkspaceClusterSchema.Type;
+export type FocusedWorkspaceState = typeof FocusedWorkspaceStateSchema.Type;
+
+const decodeFocusedWorkspaceState = (raw: unknown): FocusedWorkspaceState => {
+  const decoded = Schema.decodeUnknownSync(FocusedWorkspaceStateSchema)(raw);
+  return decoded as FocusedWorkspaceState;
+};
+
 // --- idb-keyval stores (lazy-initialized for SSR safety) ---
 
 let _layoutStore: ReturnType<typeof createStore> | null = null;
@@ -43,6 +66,7 @@ function getLastOpenedStore() {
  * in the spec) and the legacy key is deleted.
  */
 const LEGACY_LAYOUT_KEY = "dockview-layout";
+const FOCUSED_STATE_KEY = "focused-workspace-state";
 const layoutKey = (mode: LayoutMode) => `dockview-layout-${mode}`;
 
 export class WorkspaceService extends Context.Tag("WorkspaceService")<
@@ -55,6 +79,13 @@ export class WorkspaceService extends Context.Tag("WorkspaceService")<
     readonly getLayout: (
       mode: LayoutMode,
     ) => Effect.Effect<SerializedDockview | null, WorkspaceError | DecodeError>;
+    readonly saveFocusedState: (
+      state: FocusedWorkspaceState,
+    ) => Effect.Effect<void, WorkspaceError>;
+    readonly getFocusedState: () => Effect.Effect<
+      FocusedWorkspaceState | null,
+      WorkspaceError | DecodeError
+    >;
     readonly saveLastOpened: (
       bookId: string,
       timestamp: number,
@@ -104,6 +135,25 @@ export function makeWorkspaceService(stores: WorkspaceServiceStores): WorkspaceS
         return yield* Effect.try({
           try: () => decodeLayout(raw),
           catch: (cause) => new DecodeError({ operation: "getLayout", cause }),
+        });
+      }),
+
+    saveFocusedState: (state: FocusedWorkspaceState) =>
+      Effect.tryPromise({
+        try: () => set(FOCUSED_STATE_KEY, state, layoutStore),
+        catch: (cause) => new WorkspaceError({ operation: "saveFocusedState", cause }),
+      }),
+
+    getFocusedState: () =>
+      Effect.gen(function* () {
+        const raw = yield* Effect.tryPromise({
+          try: () => get<unknown>(FOCUSED_STATE_KEY, layoutStore),
+          catch: (cause) => new WorkspaceError({ operation: "getFocusedState", cause }),
+        });
+        if (!raw) return null;
+        return yield* Effect.try({
+          try: () => decodeFocusedWorkspaceState(raw),
+          catch: (cause) => new DecodeError({ operation: "getFocusedState", cause }),
         });
       }),
 

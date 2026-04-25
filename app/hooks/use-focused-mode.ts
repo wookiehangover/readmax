@@ -136,8 +136,9 @@ export function useFocusedMode({
         // focused), the remove-step above leaves them in place and we
         // skip re-adding.
         const bookPanelId = `book-${bookId}`;
-        if (!api.panels.some((p) => p.id === bookPanelId)) {
-          api.addPanel({
+        let bookPanel = api.panels.find((p) => p.id === bookPanelId);
+        if (!bookPanel) {
+          bookPanel = api.addPanel({
             id: bookPanelId,
             component: "book-reader",
             title: truncateTitle(bookTitle),
@@ -145,6 +146,7 @@ export function useFocusedMode({
             renderer: "always",
           });
         }
+        if (!bookPanel) return;
 
         const rightSplit = !isMobileRef.current;
 
@@ -159,7 +161,7 @@ export function useFocusedMode({
               params: { bookId, bookTitle },
               renderer: "always",
               ...(rightSplit
-                ? { position: { referencePanel: bookPanelId, direction: "right" as const } }
+                ? { position: { referencePanel: bookPanel, direction: "right" as const } }
                 : {}),
             });
           }

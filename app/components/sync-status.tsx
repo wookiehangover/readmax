@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, CloudOff, CloudCheck, CloudUpload, Loader2, AlertTriangle } from "lucide-react";
+import { CloudOff, CloudCheck, CloudUpload, Loader2, AlertTriangle } from "lucide-react";
 import { useSyncState } from "~/lib/sync/use-sync";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";

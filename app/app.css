@@ -254,6 +254,10 @@ body {
   height: 8px;
 }
 
+.dockview-theme-app .dv-focused-book-group > .dv-tabs-and-actions-container {
+  display: none;
+}
+
 .dockview-theme-app
   .dv-drop-target-container
   .dv-drop-target-anchor.dv-drop-target-anchor-container-changed {

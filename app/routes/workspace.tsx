@@ -46,6 +46,7 @@ const LAYOUT_SAVE_DEBOUNCE_MS = 500;
 const FOCUSED_RATIO_SAVE_DEBOUNCE_MS = 300;
 /** Minimum ratio delta to trigger a persist (avoids feedback loops). */
 const FOCUSED_RATIO_EPSILON = 0.005;
+const FOCUSED_BOOK_GROUP_CLASS = "dv-focused-book-group";
 
 export function meta(_args: Route.MetaArgs) {
   return [
@@ -245,6 +246,20 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     updateSettings,
   ]);
 
+  const updateFocusedBookGroupChrome = useCallback(() => {
+    const api = apiRef.current;
+    if (!api) return;
+
+    for (const group of api.groups) {
+      const isFocusedBookGroup =
+        layoutModeRef.current === "focused" &&
+        !isMobileRef.current &&
+        group.panels.length === 1 &&
+        group.panels[0]?.id.startsWith("book-");
+      group.element.classList.toggle(FOCUSED_BOOK_GROUP_CLASS, isFocusedBookGroup);
+    }
+  }, []);
+
   const onReady = useCallback(
     (event: DockviewReadyEvent) => {
       apiRef.current = event.api;
@@ -272,10 +287,12 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
           if (mode === "focused") {
             enforceSingleFocusedCluster();
           }
+          updateFocusedBookGroupChrome();
           setLayoutReady(true);
         })
         .catch((err) => {
           console.error(err);
+          updateFocusedBookGroupChrome();
           setLayoutReady(true);
         });
 
@@ -384,13 +401,27 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
         event.api.onDidRemovePanel(saveLayout),
         event.api.onDidMovePanel(saveLayout),
         event.api.onDidLayoutChange(saveLayout),
+        event.api.onDidAddPanel(updateFocusedBookGroupChrome),
+        event.api.onDidRemovePanel(updateFocusedBookGroupChrome),
+        event.api.onDidMovePanel(updateFocusedBookGroupChrome),
+        event.api.onDidLayoutChange(updateFocusedBookGroupChrome),
         // Persist focused-mode split ratio after splitter drags. The
         // callback no-ops in freeform mode and during transitional states.
         event.api.onDidLayoutChange(captureFocusedRatio),
       ];
     },
-    [saveLayout, captureFocusedRatio, ws, enforceSingleFocusedCluster],
+    [
+      saveLayout,
+      captureFocusedRatio,
+      updateFocusedBookGroupChrome,
+      ws,
+      enforceSingleFocusedCluster,
+    ],
   );
+
+  useEffect(() => {
+    updateFocusedBookGroupChrome();
+  }, [layoutMode, isMobile, updateFocusedBookGroupChrome]);
 
   // Flush pending layout save on page unload / tab hide
   useEffect(() => {

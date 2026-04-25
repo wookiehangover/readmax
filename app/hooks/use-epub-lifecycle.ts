@@ -64,12 +64,126 @@ export interface UseEpubLifecycleReturn {
   bookRef: React.MutableRefObject<EpubBook | null>;
   renditionRef: React.MutableRefObject<Rendition | null>;
   toc: TocEntry[];
+  currentChapterLabel: string | null;
   bookProgress: number;
   currentPage: number | null;
   totalPages: number | null;
   navigateToCfi: (cfi: string) => void;
   flushPositionSave: () => void;
   latestCfiRef: React.MutableRefObject<string | null>;
+}
+
+function flattenToc(entries: TocEntry[]): TocEntry[] {
+  return entries.flatMap((entry) => [entry, ...(entry.subitems ? flattenToc(entry.subitems) : [])]);
+}
+
+function normalizeEpubHref(href: string): string {
+  const withoutFragment = href.split("#")[0]?.split("?")[0] ?? "";
+  const withoutLeadingSlash = withoutFragment.replace(/^\/+/, "");
+
+  try {
+    return decodeURIComponent(withoutLeadingSlash);
+  } catch {
+    return withoutLeadingSlash;
+  }
+}
+
+function hrefsMatch(left: string, right: string): boolean {
+  const normalizedLeft = normalizeEpubHref(left);
+  const normalizedRight = normalizeEpubHref(right);
+
+  if (!normalizedLeft || !normalizedRight) {
+    return false;
+  }
+
+  return (
+    normalizedLeft === normalizedRight ||
+    normalizedLeft.endsWith(`/${normalizedRight}`) ||
+    normalizedRight.endsWith(`/${normalizedLeft}`)
+  );
+}
+
+function getSpineIndexForHref(book: EpubBook, href: string): number | null {
+  const normalizedHref = normalizeEpubHref(href);
+  const spine = book.spine as any;
+  const section = spine.get?.(normalizedHref) ?? spine.get?.(href);
+
+  if (typeof section?.index === "number") {
+    return section.index;
+  }
+
+  if (typeof spine.each !== "function") {
+    return null;
+  }
+
+  let matchedIndex: number | null = null;
+  let fallbackIndex = 0;
+  spine.each((item: any) => {
+    if (matchedIndex !== null) {
+      fallbackIndex += 1;
+      return;
+    }
+    if (typeof item?.href === "string" && hrefsMatch(item.href, normalizedHref)) {
+      matchedIndex = typeof item.index === "number" ? item.index : fallbackIndex;
+    }
+    fallbackIndex += 1;
+  });
+
+  return matchedIndex;
+}
+
+function findLastTocEntry(
+  entries: TocEntry[],
+  predicate: (entry: TocEntry) => boolean,
+): TocEntry | null {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    if (predicate(entries[index]!)) {
+      return entries[index]!;
+    }
+  }
+
+  return null;
+}
+
+function resolveCurrentChapterLabel({
+  toc,
+  book,
+  currentSpineHref,
+  currentSpineIndex,
+}: {
+  toc: TocEntry[];
+  book: EpubBook | null;
+  currentSpineHref?: string;
+  currentSpineIndex?: number;
+}): string | null {
+  if (!book || toc.length === 0) {
+    return null;
+  }
+
+  const flattenedToc = flattenToc(toc).filter((entry) => entry.label.trim().length > 0);
+  if (flattenedToc.length === 0) {
+    return null;
+  }
+
+  if (currentSpineHref) {
+    const hrefMatch = findLastTocEntry(flattenedToc, (entry) =>
+      hrefsMatch(entry.href, currentSpineHref),
+    );
+    if (hrefMatch) {
+      return hrefMatch.label;
+    }
+  }
+
+  if (currentSpineIndex == null) {
+    return null;
+  }
+
+  const spineMatch = findLastTocEntry(flattenedToc, (entry) => {
+    const spineIndex = getSpineIndexForHref(book, entry.href);
+    return spineIndex !== null && spineIndex <= currentSpineIndex;
+  });
+
+  return spineMatch?.label ?? null;
 }
 
 export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecycleReturn {
@@ -95,6 +209,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
   const latestCfiRef = useRef<string | null>(null);
 
   const [toc, setToc] = useState<TocEntry[]>([]);
+  const [currentChapterLabel, setCurrentChapterLabel] = useState<string | null>(null);
   const [bookProgress, setBookProgress] = useState(0);
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState<number | null>(null);
@@ -142,6 +257,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     let cancelled = false;
     let epubBook: EpubBook | null = null;
     let rendition: Rendition | null = null;
+    let tocData: TocEntry[] = [];
 
     const init = async () => {
       const bookData = await AppRuntime.runPromise(
@@ -250,7 +366,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
             href: item.href ?? "",
             ...(item.subitems?.length ? { subitems: mapToc(item.subitems) } : {}),
           }));
-        const tocData = mapToc(nav.toc);
+        tocData = mapToc(nav.toc);
         setToc(tocData);
         configRef.current.onTocExtracted?.(tocData);
       }
@@ -319,6 +435,14 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
         // "Page X of Y" immediately instead of "0%" until first navigation.
         const loc = rendition.currentLocation() as any;
         const startCfiForPage = loc?.start?.cfi ?? latestCfiRef.current;
+        setCurrentChapterLabel(
+          resolveCurrentChapterLabel({
+            toc: tocData,
+            book: epubBook,
+            currentSpineHref: loc?.start?.href,
+            currentSpineIndex: loc?.start?.index,
+          }),
+        );
         if (locTotal > 0 && startCfiForPage) {
           const locIndex = epubBook.locations.locationFromCfi(startCfiForPage);
           if (typeof locIndex === "number" && locIndex >= 0) {
@@ -357,6 +481,14 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
             setTotalPages(epubLocTotal);
           }
           latestCfiRef.current = location.start.cfi;
+          setCurrentChapterLabel(
+            resolveCurrentChapterLabel({
+              toc: tocData,
+              book: bookRef.current,
+              currentSpineHref: location.start.href,
+              currentSpineIndex: location.start.index,
+            }),
+          );
 
           // Update chat context
           if (configRef.current.chatContextMap && location.start.index != null) {
@@ -418,6 +550,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
       document.removeEventListener("keydown", handleKeyDown);
       flushPositionSave();
       setToc([]);
+      setCurrentChapterLabel(null);
       configRef.current.onCleanupToc?.();
       if (rendition) rendition.destroy();
       if (epubBook) epubBook.destroy();
@@ -468,6 +601,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     bookRef,
     renditionRef,
     toc,
+    currentChapterLabel,
     bookProgress,
     currentPage,
     totalPages,

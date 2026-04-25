@@ -48,7 +48,7 @@ export function ClusterBar({ getEntries, getActiveId, onActivate, onClose }: Clu
     <div
       role="tablist"
       aria-label="Open books"
-      className="flex items-center gap-1.5 overflow-x-auto border-b border-border/60 bg-background px-2 py-1.5"
+      className="flex items-center gap-1.5 overflow-x-auto h-11 border-b border-border/60 bg-background px-2 py-1.5"
     >
       {entries.map((entry, idx) => {
         const isActive = entry.bookId === activeId;

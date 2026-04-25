@@ -246,37 +246,44 @@ function WorkspaceBookReaderInner({
     theme: settings.theme,
   });
 
-  const { toc, currentChapterLabel, currentPage, totalPages, flushPositionSave, latestCfiRef } =
-    useEpubLifecycle({
-      bookId: book.id,
-      containerRef,
-      readerLayout: localReaderLayout,
-      fontFamily: localFontFamily,
-      fontSize: localFontSize,
-      lineHeight: localLineHeight,
-      theme: settings.theme,
-      loadAndApplyHighlights,
-      registerSelectionHandler,
-      enabled: hasBeenVisible,
-      panelId: panelApi?.id,
-      chatContextMap,
-      onRenditionReady,
-      onTocExtracted: (tocData) => {
-        const id = panelApi?.id ?? book.id;
-        tocMap.current.set(id, tocData);
-        tocChangeListener.current?.();
-      },
-      onCleanupToc: () => {
-        const id = panelApi?.id ?? book.id;
-        tocMap.current.delete(id);
-        tocChangeListener.current?.();
-      },
-      onSearchOpen: handleSearchOpenFromIframe,
-      onRelocated: showToolbar,
-      panelRef,
-      bookRef,
-      renditionRef,
-    });
+  const {
+    toc,
+    currentChapterLabel,
+    currentPage,
+    totalPages,
+    navigateToTocHref,
+    flushPositionSave,
+    latestCfiRef,
+  } = useEpubLifecycle({
+    bookId: book.id,
+    containerRef,
+    readerLayout: localReaderLayout,
+    fontFamily: localFontFamily,
+    fontSize: localFontSize,
+    lineHeight: localLineHeight,
+    theme: settings.theme,
+    loadAndApplyHighlights,
+    registerSelectionHandler,
+    enabled: hasBeenVisible,
+    panelId: panelApi?.id,
+    chatContextMap,
+    onRenditionReady,
+    onTocExtracted: (tocData) => {
+      const id = panelApi?.id ?? book.id;
+      tocMap.current.set(id, tocData);
+      tocChangeListener.current?.();
+    },
+    onCleanupToc: () => {
+      const id = panelApi?.id ?? book.id;
+      tocMap.current.delete(id);
+      tocChangeListener.current?.();
+    },
+    onSearchOpen: handleSearchOpenFromIframe,
+    onRelocated: showToolbar,
+    panelRef,
+    bookRef,
+    renditionRef,
+  });
 
   // Temporary highlight: briefly flash a CFI range in the reader
   const applyTempHighlight = useCallback((cfi: string) => {
@@ -625,9 +632,7 @@ function WorkspaceBookReaderInner({
                     <TocList
                       entries={toc}
                       onNavigate={(href) => {
-                        renditionRef.current?.display(href).catch((err: unknown) => {
-                          console.warn("TOC navigation failed:", err);
-                        });
+                        navigateToTocHref(href);
                         setTocOpen(false);
                       }}
                     />

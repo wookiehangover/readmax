@@ -17,7 +17,7 @@ import {
 import { resolveStartCfi, savePositionDualKey } from "~/lib/position-utils";
 import { getTypographyCss, getRenditionOptions } from "~/lib/epub/epub-rendering-utils";
 import type { TocEntry } from "~/lib/context/reader-context";
-import { showToast } from "~/lib/toast";
+import { toast } from "sonner";
 
 const POSITION_SAVE_DEBOUNCE_MS = 1000;
 
@@ -467,7 +467,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
         if (!warnedBrokenTocBookIdsRef.current.has(bookId)) {
           warnedBrokenTocBookIdsRef.current.add(bookId);
           console.warn("TOC navigation failed:", { bookId, href });
-          showToast("This book's table of contents may have broken links.");
+          toast("This book's table of contents may have broken links.");
         }
       })();
     },

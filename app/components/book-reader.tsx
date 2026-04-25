@@ -80,35 +80,36 @@ export function BookReader({ book }: BookReaderProps) {
     [highlightsRef],
   );
 
-  const { toc, currentChapterLabel, currentPage, totalPages, navigateToCfi } = useEpubLifecycle({
-    bookId: book.id,
-    containerRef,
-    readerLayout: settings.readerLayout,
-    fontFamily: settings.fontFamily,
-    fontSize: settings.fontSize,
-    lineHeight: settings.lineHeight,
-    theme: settings.theme,
-    loadAndApplyHighlights,
-    registerSelectionHandler,
-    onTocExtracted: (tocData) => {
-      setToc(tocData);
-      setNavigateToHref((href: string) => {
-        renditionRef.current?.display(href).catch((err: unknown) => {
-          console.warn("TOC navigation failed:", err);
-        });
-      });
-    },
-    onCleanupToc: () => {
-      setToc([]);
-      setNavigateToHref(() => {});
-    },
-    onSearchOpen: handleSearchOpenFromIframe,
-    bookRef,
-    renditionRef,
-  });
+  const { toc, currentChapterLabel, currentPage, totalPages, navigateToCfi, navigateToTocHref } =
+    useEpubLifecycle({
+      bookId: book.id,
+      containerRef,
+      readerLayout: settings.readerLayout,
+      fontFamily: settings.fontFamily,
+      fontSize: settings.fontSize,
+      lineHeight: settings.lineHeight,
+      theme: settings.theme,
+      loadAndApplyHighlights,
+      registerSelectionHandler,
+      onTocExtracted: (tocData) => {
+        setToc(tocData);
+      },
+      onCleanupToc: () => {
+        setToc([]);
+        setNavigateToHref(() => {});
+      },
+      onSearchOpen: handleSearchOpenFromIframe,
+      bookRef,
+      renditionRef,
+    });
 
   // Use contextToc from the navigation context (synced via onTocExtracted)
   const activeToc = contextToc.length > 0 ? contextToc : toc;
+
+  useEffect(() => {
+    setNavigateToHref(navigateToTocHref);
+    return () => setNavigateToHref(() => {});
+  }, [navigateToTocHref, setNavigateToHref]);
 
   useEffect(() => {
     const timer = setTimeout(() => {

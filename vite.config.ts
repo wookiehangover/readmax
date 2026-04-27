@@ -1,8 +1,18 @@
 import { reactRouter } from "@react-router/dev/vite";
 import tailwindcss from "@tailwindcss/vite";
-import { defineConfig } from "vite";
+import { createHash } from "node:crypto";
+import { readFile, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import { defineConfig, type Plugin } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 import tsconfigPaths from "vite-tsconfig-paths";
+
+const indexHtmlPath = resolve("build/client/index.html");
+const serviceWorkerPath = resolve("build/client/sw.js");
+const indexHtmlPrecacheEntryPattern =
+  /\{\s*"url":\s*"\/index\.html",\s*"revision":\s*(?:null|"[a-f0-9]+")\s*\}/;
+
+let isIndexHtmlRevisionPatchScheduled = false;
 
 function getSiteOrigin() {
   const productionUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL;
@@ -10,6 +20,58 @@ function getSiteOrigin() {
   const vercelUrl = process.env.VERCEL_URL;
   if (vercelUrl) return `https://${vercelUrl}`;
   return "";
+}
+
+function isMissingFile(cause: unknown) {
+  return cause instanceof Error && "code" in cause && cause.code === "ENOENT";
+}
+
+async function writeIndexHtmlPrecacheRevision() {
+  const indexHtml = await readFile(indexHtmlPath);
+  const revision = createHash("sha256").update(indexHtml).digest("hex");
+  const serviceWorker = await readFile(serviceWorkerPath, "utf8");
+  const patchedServiceWorker = serviceWorker.replace(
+    indexHtmlPrecacheEntryPattern,
+    JSON.stringify({ url: "/index.html", revision }),
+  );
+
+  if (patchedServiceWorker === serviceWorker) {
+    throw new Error("Unable to patch /index.html precache revision in build/client/sw.js");
+  }
+
+  await writeFile(serviceWorkerPath, patchedServiceWorker);
+}
+
+function scheduleIndexHtmlPrecacheRevisionPatch() {
+  if (isIndexHtmlRevisionPatchScheduled) return;
+  isIndexHtmlRevisionPatchScheduled = true;
+
+  process.once("beforeExit", () => {
+    writeIndexHtmlPrecacheRevision().catch((cause) => {
+      console.error(cause);
+      process.exitCode = 1;
+    });
+  });
+}
+
+function patchIndexHtmlPrecacheRevision(): Plugin {
+  return {
+    name: "patch-index-html-precache-revision",
+    enforce: "post",
+    apply: "build",
+    async closeBundle() {
+      try {
+        await writeIndexHtmlPrecacheRevision();
+      } catch (cause) {
+        if (isMissingFile(cause)) {
+          scheduleIndexHtmlPrecacheRevisionPatch();
+          return;
+        }
+
+        throw cause;
+      }
+    },
+  };
 }
 
 export default defineConfig({
@@ -128,6 +190,7 @@ export default defineConfig({
         ],
       },
     }),
+    patchIndexHtmlPrecacheRevision(),
   ],
   define: {
     __SITE_ORIGIN__: JSON.stringify(getSiteOrigin()),

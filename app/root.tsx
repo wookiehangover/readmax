@@ -9,6 +9,8 @@ import {
   useLocation,
   useNavigate,
 } from "react-router";
+import { useRegisterSW } from "virtual:pwa-register/react";
+import { toast } from "sonner";
 
 import type { Route } from "./+types/root";
 import "./app.css";
@@ -65,6 +67,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <link rel="manifest" href="/manifest.webmanifest" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
@@ -159,12 +162,42 @@ function SettingsShortcut() {
   return null;
 }
 
+function ServiceWorkerRefreshToast() {
+  const {
+    needRefresh: [needRefresh],
+    updateServiceWorker,
+  } = useRegisterSW();
+
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("serviceWorker" in navigator) || !needRefresh) {
+      return;
+    }
+
+    const toastId = toast("A new version is available", {
+      action: {
+        label: "Refresh",
+        onClick: () => {
+          void updateServiceWorker(true);
+        },
+      },
+      duration: Infinity,
+    });
+
+    return () => {
+      toast.dismiss(toastId);
+    };
+  }, [needRefresh, updateServiceWorker]);
+
+  return null;
+}
+
 export default function App() {
   return (
     <AuthProvider>
       <SyncProvider>
         <WorkspaceProvider>
           <SettingsShortcut />
+          <ServiceWorkerRefreshToast />
           <CommandBar />
           <Outlet />
           <Toaster />

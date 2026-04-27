@@ -64,7 +64,7 @@ export async function loader({ request }: { request: Request }) {
   };
 
   if (type === "cover") {
-    headers["Cache-Control"] = "private, max-age=604800, stale-while-revalidate=86400";
+    headers["Cache-Control"] = "private, max-age=31536000, immutable";
   }
 
   return new Response(result.stream, { headers });

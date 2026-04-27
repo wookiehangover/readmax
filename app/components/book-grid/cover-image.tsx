@@ -1,5 +1,5 @@
 import { useBlobObjectUrl } from "~/hooks/use-blob-object-url";
-import { isPublicBlobUrl } from "~/lib/blob-url";
+import { coverCacheKey, isPublicBlobUrl } from "~/lib/blob-url";
 import { cn } from "~/lib/utils";
 
 export function CoverImage({
@@ -7,18 +7,22 @@ export function CoverImage({
   alt,
   remoteCoverUrl,
   bookId,
+  updatedAt,
   needsDownload,
 }: {
   coverImage: Blob | null;
   alt: string;
   remoteCoverUrl?: string;
   bookId?: string;
+  updatedAt?: number;
   needsDownload?: boolean;
 }) {
   const directUrl = remoteCoverUrl && isPublicBlobUrl(remoteCoverUrl) ? remoteCoverUrl : null;
+  const cacheKey = coverCacheKey({ remoteCoverUrl, updatedAt });
+  const versionParam = cacheKey ? `&v=${encodeURIComponent(cacheKey)}` : "";
   const proxyUrl =
     !directUrl && remoteCoverUrl && bookId
-      ? `/api/sync/files/download?bookId=${encodeURIComponent(bookId)}&type=cover`
+      ? `/api/sync/files/download?bookId=${encodeURIComponent(bookId)}&type=cover${versionParam}`
       : null;
   const remoteUrl = directUrl ?? proxyUrl;
   const fallbackBlobUrl = useBlobObjectUrl(remoteUrl ? null : coverImage, bookId ?? null);

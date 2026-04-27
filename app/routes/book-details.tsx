@@ -8,7 +8,7 @@ import { BookService, type BookMeta, bookNeedsDownload } from "~/lib/stores/book
 import { AnnotationService } from "~/lib/stores/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { useBlobObjectUrl } from "~/hooks/use-blob-object-url";
-import { isPublicBlobUrl } from "~/lib/blob-url";
+import { coverCacheKey, isPublicBlobUrl } from "~/lib/blob-url";
 import { useEffectQuery } from "~/hooks/use-effect-query";
 import { TiptapEditor } from "~/components/tiptap-editor";
 import { Input } from "~/components/ui/input";
@@ -48,18 +48,22 @@ function CoverImage({
   alt,
   remoteCoverUrl,
   bookId,
+  updatedAt,
   needsDownload,
 }: {
   coverImage: Blob | null;
   alt: string;
   remoteCoverUrl?: string;
   bookId?: string;
+  updatedAt?: number;
   needsDownload?: boolean;
 }) {
   const directUrl = remoteCoverUrl && isPublicBlobUrl(remoteCoverUrl) ? remoteCoverUrl : null;
+  const cacheKey = coverCacheKey({ remoteCoverUrl, updatedAt });
+  const versionParam = cacheKey ? `&v=${encodeURIComponent(cacheKey)}` : "";
   const proxyUrl =
     !directUrl && remoteCoverUrl && bookId
-      ? `/api/sync/files/download?bookId=${encodeURIComponent(bookId)}&type=cover`
+      ? `/api/sync/files/download?bookId=${encodeURIComponent(bookId)}&type=cover${versionParam}`
       : null;
   const remoteUrl = directUrl ?? proxyUrl;
   const fallbackBlobUrl = useBlobObjectUrl(remoteUrl ? null : coverImage, bookId ?? null);
@@ -168,6 +172,7 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
               alt={title}
               remoteCoverUrl={book.remoteCoverUrl}
               bookId={book.id}
+              updatedAt={book.updatedAt}
               needsDownload={bookNeedsDownload(book)}
             />
           ) : (

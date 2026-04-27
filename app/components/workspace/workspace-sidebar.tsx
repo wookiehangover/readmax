@@ -43,6 +43,7 @@ function WorkspaceSidebarBookContent({ book, collapsed }: { book: BookMeta; coll
             coverImage={book.coverImage}
             remoteCoverUrl={book.remoteCoverUrl}
             bookId={book.id}
+            updatedAt={book.updatedAt}
           />
         ) : (
           <div className="flex h-12 w-8 items-center justify-center rounded bg-muted">

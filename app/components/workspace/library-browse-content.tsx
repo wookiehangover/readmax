@@ -207,6 +207,7 @@ export function LibraryBrowseContent({ panelApi }: LibraryBrowseContentProps = {
                               alt={book.title}
                               remoteCoverUrl={book.remoteCoverUrl}
                               bookId={book.id}
+                              updatedAt={book.updatedAt}
                               needsDownload={needsDownload}
                             />
                           ) : (

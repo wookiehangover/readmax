@@ -31,6 +31,7 @@ function CommandBarBookIcon({ book }: { book: BookMeta }) {
         coverImage={book.coverImage}
         remoteCoverUrl={book.remoteCoverUrl}
         bookId={book.id}
+        updatedAt={book.updatedAt}
       />
     );
   }

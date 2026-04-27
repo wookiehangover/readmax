@@ -1,6 +1,7 @@
 import { createStore, get, set, del, entries } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
 import { ulid } from "ulid";
+import { isWellFormedEntry } from "./idb-entry";
 import type { ChangeEntry } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -48,8 +49,12 @@ export async function recordChange(
 export async function getUnsyncedChanges(): Promise<ChangeEntry[]> {
   const all = await entries<string, ChangeEntry>(getChangeLogStore());
   return all
-    .map(([_, value]) => value)
-    .filter((entry) => !entry.synced)
+    .filter(isWellFormedEntry)
+    .map(([, value]) => value)
+    .filter(
+      (entry): entry is ChangeEntry =>
+        !!entry && typeof entry === "object" && "synced" in entry && !entry.synced,
+    )
     .sort((a, b) => a.id.localeCompare(b.id));
 }
 
@@ -75,7 +80,14 @@ export async function markSynced(ids: string[]): Promise<void> {
 export async function clearSyncedChanges(): Promise<number> {
   const store = getChangeLogStore();
   const all = await entries<string, ChangeEntry>(store);
-  const synced = all.filter(([_, value]) => value.synced);
+  const synced = all.filter(
+    (entry): entry is [IDBValidKey, ChangeEntry] =>
+      isWellFormedEntry(entry) &&
+      !!entry[1] &&
+      typeof entry[1] === "object" &&
+      "synced" in entry[1] &&
+      entry[1].synced,
+  );
   await Promise.all(synced.map(([key]) => del(key, store)));
   return synced.length;
 }

@@ -1,6 +1,7 @@
 import { get, set, entries } from "idb-keyval";
 import { SYNCED_SETTINGS_KEYS } from "~/lib/settings";
 import { removeSessionLocally } from "~/lib/stores/chat-store";
+import { isWellFormedEntry } from "./idb-entry";
 import { lwwMerge, setUnionMerge } from "./merge";
 import { remapBookId } from "./remap";
 import {
@@ -35,7 +36,9 @@ export async function mergeBookRecord(record: Record<string, unknown>): Promise<
   // the UI does not show a duplicate entry until the next push/pull.
   if (!remoteDeletedAt && remoteHash) {
     const allBooks = await entries<string, Record<string, unknown>>(store);
-    for (const [localId, localBook] of allBooks) {
+    for (const entry of allBooks) {
+      if (!isWellFormedEntry(entry)) continue;
+      const [localId, localBook] = entry;
       if (!localBook || localId === id) continue;
       if (localBook.deletedAt != null) continue;
       if (localBook.fileHash !== remoteHash) continue;

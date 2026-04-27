@@ -2,6 +2,7 @@ import { createStore, entries } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
 import type { BookMeta } from "~/lib/stores/book-store";
 import { recordChange } from "./change-log";
+import { isWellFormedEntry } from "./idb-entry";
 
 const BACKFILL_FLAG_KEY = "readmax:blob-url-backfill:v1";
 
@@ -43,7 +44,9 @@ export async function runBlobUrlBackfillIfNeeded(): Promise<void> {
   }
 
   let enqueued = 0;
-  for (const [id, raw] of allEntries) {
+  for (const entry of allEntries) {
+    if (!isWellFormedEntry(entry)) continue;
+    const [id, raw] = entry;
     const meta = raw as BookMeta | undefined;
     if (!meta || typeof meta !== "object") continue;
     if (meta.deletedAt) continue;

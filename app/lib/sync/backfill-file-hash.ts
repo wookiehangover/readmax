@@ -3,6 +3,7 @@ import type { UseStore } from "idb-keyval";
 import { computeFileHash } from "~/lib/book-hash";
 import type { BookMeta } from "~/lib/stores/book-store";
 import { recordChange } from "./change-log";
+import { isWellFormedEntry } from "./idb-entry";
 
 const BACKFILL_FLAG_KEY = "readmax:file-hash-backfill:v1";
 
@@ -44,7 +45,9 @@ export async function runFileHashBackfillIfNeeded(): Promise<void> {
   }
 
   let updated = 0;
-  for (const [id, raw] of allEntries) {
+  for (const entry of allEntries) {
+    if (!isWellFormedEntry(entry)) continue;
+    const [id, raw] = entry;
     const meta = raw as BookMeta | undefined;
     if (!meta || typeof meta !== "object") continue;
     if (!meta.hasLocalFile) continue;

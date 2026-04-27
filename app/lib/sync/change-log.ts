@@ -81,7 +81,7 @@ export async function clearSyncedChanges(): Promise<number> {
   const store = getChangeLogStore();
   const all = await entries<string, ChangeEntry>(store);
   const synced = all.filter(
-    (entry): entry is [IDBValidKey, ChangeEntry] =>
+    (entry): entry is [string, ChangeEntry] =>
       isWellFormedEntry(entry) &&
       !!entry[1] &&
       typeof entry[1] === "object" &&

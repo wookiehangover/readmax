@@ -11,7 +11,6 @@ export async function triggerUpdateCheck(): Promise<{ checked: boolean; updateFo
 
   const registration = swRegistration;
   const installingBefore = registration.installing;
-  const hadWaitingBefore = Boolean(registration.waiting);
   let updateFound = false;
 
   function handleUpdateFound() {
@@ -30,7 +29,7 @@ export async function triggerUpdateCheck(): Promise<{ checked: boolean; updateFo
   // The state checks cover browsers that expose the new worker synchronously before
   // the listener observes the event, or move it to `waiting` quickly after install.
   updateFound ||= registration.installing !== null && registration.installing !== installingBefore;
-  updateFound ||= !hadWaitingBefore && registration.waiting !== null;
+  updateFound ||= registration.waiting !== null;
 
   return { checked: true, updateFound };
 }

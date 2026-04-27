@@ -162,7 +162,7 @@ export default defineConfig({
             },
           },
           {
-            urlPattern: /^\/api\/.*/,
+            urlPattern: ({ url, sameOrigin }) => sameOrigin && url.pathname.startsWith("/api/"),
             handler: "NetworkOnly",
           },
         ],

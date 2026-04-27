@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChangeEntry } from "../types";
 
 const entriesMock = vi.hoisted(() => vi.fn());
@@ -28,11 +28,18 @@ function makeChange(overrides: Partial<ChangeEntry> = {}): ChangeEntry {
 }
 
 describe("change-log entry guards", () => {
+  beforeEach(() => {
+    entriesMock.mockReset();
+    delMock.mockReset();
+  });
+
   it("getUnsyncedChanges skips malformed IDB entries", async () => {
     const unsynced = makeChange({ id: "01H00000000000000000000001" });
     entriesMock.mockResolvedValueOnce([
       undefined,
       ["string-value", "not-a-change"],
+      ["missing-id", { synced: false }],
+      ["non-string-id", { id: 123, synced: false }],
       ["synced", makeChange({ id: "01H00000000000000000000002", synced: true })],
       ["unsynced", unsynced],
     ]);
@@ -42,9 +49,12 @@ describe("change-log entry guards", () => {
 
   it("clearSyncedChanges skips malformed IDB entries", async () => {
     const synced = makeChange({ id: "01H00000000000000000000003", synced: true });
+    const stringSynced = { ...makeChange({ id: "01H00000000000000000000005" }), synced: "false" };
     entriesMock.mockResolvedValueOnce([
       undefined,
       ["string-value", "not-a-change"],
+      [null, synced],
+      ["string-synced", stringSynced],
       ["unsynced", makeChange({ id: "01H00000000000000000000004" })],
       ["synced", synced],
     ]);
@@ -52,5 +62,6 @@ describe("change-log entry guards", () => {
 
     await expect(clearSyncedChanges()).resolves.toBe(1);
     expect(delMock).toHaveBeenCalledOnce();
+    expect(delMock).toHaveBeenCalledWith("synced", expect.anything());
   });
 });

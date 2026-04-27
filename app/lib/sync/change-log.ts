@@ -15,6 +15,25 @@ function getChangeLogStore(): UseStore {
   return _changeLogStore;
 }
 
+function isUnsyncedChangeEntry(entry: unknown): entry is ChangeEntry {
+  return (
+    !!entry &&
+    typeof entry === "object" &&
+    "id" in entry &&
+    "synced" in entry &&
+    typeof entry.id === "string" &&
+    entry.synced === false
+  );
+}
+
+function isSyncedChangeEntry(entry: unknown): entry is ChangeEntry {
+  return !!entry && typeof entry === "object" && "synced" in entry && entry.synced === true;
+}
+
+function isNonNullIDBValidKey(key: unknown): key is IDBValidKey {
+  return key !== null && key !== undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -51,10 +70,7 @@ export async function getUnsyncedChanges(): Promise<ChangeEntry[]> {
   return all
     .filter(isWellFormedEntry)
     .map(([, value]) => value)
-    .filter(
-      (entry): entry is ChangeEntry =>
-        !!entry && typeof entry === "object" && "synced" in entry && !entry.synced,
-    )
+    .filter(isUnsyncedChangeEntry)
     .sort((a, b) => a.id.localeCompare(b.id));
 }
 
@@ -82,11 +98,7 @@ export async function clearSyncedChanges(): Promise<number> {
   const all = await entries<string, ChangeEntry>(store);
   const synced = all.filter(
     (entry): entry is [string, ChangeEntry] =>
-      isWellFormedEntry(entry) &&
-      !!entry[1] &&
-      typeof entry[1] === "object" &&
-      "synced" in entry[1] &&
-      entry[1].synced,
+      isWellFormedEntry(entry) && isNonNullIDBValidKey(entry[0]) && isSyncedChangeEntry(entry[1]),
   );
   await Promise.all(synced.map(([key]) => del(key, store)));
   return synced.length;

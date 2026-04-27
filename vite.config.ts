@@ -46,6 +46,36 @@ export default defineConfig({
             },
           },
           {
+            urlPattern: ({ url }) =>
+              url.pathname === "/api/sync/files/download" &&
+              url.searchParams.get("type") === "cover",
+            handler: "CacheFirst",
+            options: {
+              cacheName: "covers-proxy",
+              expiration: {
+                maxEntries: 500,
+                maxAgeSeconds: 60 * 60 * 24 * 365,
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
+          {
+            urlPattern: /^https:\/\/[^/]+\.public\.blob\.vercel-storage\.com\/covers\/.*/,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "covers-public",
+              expiration: {
+                maxEntries: 500,
+                maxAgeSeconds: 60 * 60 * 24 * 365,
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
+          {
             urlPattern: /^\/api\/.*/,
             handler: "NetworkOnly",
           },

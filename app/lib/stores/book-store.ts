@@ -40,6 +40,12 @@ export function bookNeedsDownload(book: BookMeta): boolean {
 
 const decodeBookMeta = Schema.decodeUnknownSync(BookMetaSchema);
 
+function isBookStoreEntry(entry: unknown): entry is [IDBValidKey, unknown] {
+  // Legacy or corrupted IndexedDB iterations can surface missing tuple entries;
+  // guard before reading entry[0]/entry[1] so signed-out local uploads still work.
+  return Array.isArray(entry) && entry.length >= 2;
+}
+
 /**
  * Full book record including binary data.
  * @deprecated Prefer BookMeta for listings. Only use Book when you also need the ArrayBuffer.
@@ -153,15 +159,15 @@ export function makeBookService(stores: BookServiceStores): BookService["Type"] 
           try: () => {
             const books: BookMeta[] = [];
             for (const entry of allEntries) {
-              if (!Array.isArray(entry) || entry.length < 2) continue;
-              const raw = entry[1];
+              if (!isBookStoreEntry(entry)) continue;
+              const [key, raw] = entry;
               if (raw == null || typeof raw !== "object") continue;
               try {
                 const meta = decodeBookMeta(raw);
                 if (meta.deletedAt === undefined) books.push(meta);
               } catch (err) {
                 console.warn(
-                  `[book-store] Skipping malformed book record (key=${String(entry[0])})`,
+                  `[book-store] Skipping malformed book record (key=${String(key)})`,
                   err,
                 );
               }
@@ -295,8 +301,8 @@ export function makeBookService(stores: BookServiceStores): BookService["Type"] 
         return yield* Effect.try({
           try: () => {
             for (const entry of allEntries) {
-              if (!Array.isArray(entry) || entry.length < 2) continue;
-              const raw = entry[1];
+              if (!isBookStoreEntry(entry)) continue;
+              const [key, raw] = entry;
               if (raw == null || typeof raw !== "object") continue;
               try {
                 const meta = decodeBookMeta(raw);
@@ -304,7 +310,7 @@ export function makeBookService(stores: BookServiceStores): BookService["Type"] 
                 if (meta.fileHash === hash) return meta;
               } catch (err) {
                 console.warn(
-                  `[book-store] Skipping malformed book record (key=${String(entry[0])})`,
+                  `[book-store] Skipping malformed book record (key=${String(key)})`,
                   err,
                 );
               }

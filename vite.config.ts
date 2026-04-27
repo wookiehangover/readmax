@@ -9,8 +9,10 @@ import tsconfigPaths from "vite-tsconfig-paths";
 
 const indexHtmlPath = resolve("build/client/index.html");
 const serviceWorkerPath = resolve("build/client/sw.js");
-const indexHtmlPrecacheEntryPattern =
-  /\{\s*"url":\s*"\/index\.html",\s*"revision":\s*(?:null|"[a-f0-9]+")\s*\}/;
+const indexHtmlPrecacheEntryPatterns = [
+  /\{\s*("?url"?)\s*:\s*"\/index\.html"\s*,\s*("?revision"?)\s*:\s*(?:null|"[a-f0-9]+")\s*\}/,
+  /\{\s*("?revision"?)\s*:\s*(?:null|"[a-f0-9]+")\s*,\s*("?url"?)\s*:\s*"\/index\.html"\s*\}/,
+] as const;
 
 let isIndexHtmlRevisionPatchScheduled = false;
 let isIndexHtmlRevisionPatched = false;
@@ -31,14 +33,19 @@ async function writeIndexHtmlPrecacheRevision() {
   const indexHtml = await readFile(indexHtmlPath);
   const revision = createHash("sha256").update(indexHtml).digest("hex");
   const serviceWorker = await readFile(serviceWorkerPath, "utf8");
-  const indexHtmlPrecacheEntry = JSON.stringify({ url: "/index.html", revision });
-  const patchedServiceWorker = serviceWorker.replace(
-    indexHtmlPrecacheEntryPattern,
-    indexHtmlPrecacheEntry,
-  );
+  const patchedServiceWorker = serviceWorker
+    .replace(indexHtmlPrecacheEntryPatterns[0], (_entry, urlKey, revisionKey) => {
+      return `{${urlKey}:"/index.html",${revisionKey}:"${revision}"}`;
+    })
+    .replace(indexHtmlPrecacheEntryPatterns[1], (_entry, revisionKey, urlKey) => {
+      return `{${revisionKey}:"${revision}",${urlKey}:"/index.html"}`;
+    });
 
   if (patchedServiceWorker === serviceWorker) {
-    if (serviceWorker.includes(indexHtmlPrecacheEntry)) {
+    if (
+      indexHtmlPrecacheEntryPatterns.some((pattern) => pattern.test(serviceWorker)) &&
+      serviceWorker.includes(`"${revision}"`)
+    ) {
       isIndexHtmlRevisionPatched = true;
       return;
     }

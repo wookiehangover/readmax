@@ -13,6 +13,7 @@ const indexHtmlPrecacheEntryPattern =
   /\{\s*"url":\s*"\/index\.html",\s*"revision":\s*(?:null|"[a-f0-9]+")\s*\}/;
 
 let isIndexHtmlRevisionPatchScheduled = false;
+let isIndexHtmlRevisionPatched = false;
 
 function getSiteOrigin() {
   const productionUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL;
@@ -30,16 +31,23 @@ async function writeIndexHtmlPrecacheRevision() {
   const indexHtml = await readFile(indexHtmlPath);
   const revision = createHash("sha256").update(indexHtml).digest("hex");
   const serviceWorker = await readFile(serviceWorkerPath, "utf8");
+  const indexHtmlPrecacheEntry = JSON.stringify({ url: "/index.html", revision });
   const patchedServiceWorker = serviceWorker.replace(
     indexHtmlPrecacheEntryPattern,
-    JSON.stringify({ url: "/index.html", revision }),
+    indexHtmlPrecacheEntry,
   );
 
   if (patchedServiceWorker === serviceWorker) {
+    if (serviceWorker.includes(indexHtmlPrecacheEntry)) {
+      isIndexHtmlRevisionPatched = true;
+      return;
+    }
+
     throw new Error("Unable to patch /index.html precache revision in build/client/sw.js");
   }
 
   await writeFile(serviceWorkerPath, patchedServiceWorker);
+  isIndexHtmlRevisionPatched = true;
 }
 
 function scheduleIndexHtmlPrecacheRevisionPatch() {
@@ -47,10 +55,19 @@ function scheduleIndexHtmlPrecacheRevisionPatch() {
   isIndexHtmlRevisionPatchScheduled = true;
 
   process.once("beforeExit", () => {
-    writeIndexHtmlPrecacheRevision().catch((cause) => {
-      console.error(cause);
-      process.exitCode = 1;
-    });
+    if (isIndexHtmlRevisionPatched) {
+      isIndexHtmlRevisionPatchScheduled = false;
+      return;
+    }
+
+    writeIndexHtmlPrecacheRevision()
+      .catch((cause) => {
+        console.error(cause);
+        process.exitCode = 1;
+      })
+      .finally(() => {
+        isIndexHtmlRevisionPatchScheduled = false;
+      });
   });
 }
 

@@ -21,6 +21,7 @@ import { AuthProvider } from "~/lib/context/auth-context";
 import { WorkspaceProvider } from "~/lib/context/workspace-context";
 import { useSync, SyncContext } from "~/lib/sync/use-sync";
 import { COLOR_THEMES } from "~/lib/color-themes";
+import { setSWRegistration } from "~/lib/sw-registry";
 
 // Build a minimal JSON blob of non-default theme CSS variables for the FOUC script.
 // This is serialized at build/SSR time and embedded in the inline script.
@@ -58,6 +59,23 @@ const themeScript = `
 `;
 
 const SITE_ORIGIN = typeof __SITE_ORIGIN__ !== "undefined" ? __SITE_ORIGIN__ : "";
+const SW_UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
+
+declare global {
+  interface Window {
+    __readmaxSWUpdateIntervalId?: number;
+  }
+}
+
+function startSWUpdatePolling(registration: ServiceWorkerRegistration) {
+  if (typeof window === "undefined" || window.__readmaxSWUpdateIntervalId !== undefined) {
+    return;
+  }
+
+  window.__readmaxSWUpdateIntervalId = window.setInterval(() => {
+    registration.update().catch(console.error);
+  }, SW_UPDATE_CHECK_INTERVAL_MS);
+}
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
@@ -166,7 +184,14 @@ function ServiceWorkerRefreshToast() {
   const {
     needRefresh: [needRefresh],
     updateServiceWorker,
-  } = useRegisterSW();
+  } = useRegisterSW({
+    onRegisteredSW(_url, registration) {
+      setSWRegistration(registration);
+      if (registration) {
+        startSWUpdatePolling(registration);
+      }
+    },
+  });
 
   useEffect(() => {
     if (typeof navigator === "undefined" || !("serviceWorker" in navigator) || !needRefresh) {

@@ -1,0 +1,36 @@
+let swRegistration: ServiceWorkerRegistration | undefined;
+
+export function setSWRegistration(registration: ServiceWorkerRegistration | undefined) {
+  swRegistration = registration;
+}
+
+export async function triggerUpdateCheck(): Promise<{ checked: boolean; updateFound: boolean }> {
+  if (!swRegistration) {
+    return { checked: false, updateFound: false };
+  }
+
+  const registration = swRegistration;
+  const installingBefore = registration.installing;
+  const hadWaitingBefore = Boolean(registration.waiting);
+  let updateFound = false;
+
+  function handleUpdateFound() {
+    updateFound = true;
+  }
+
+  registration.addEventListener("updatefound", handleUpdateFound);
+
+  try {
+    await registration.update();
+  } finally {
+    registration.removeEventListener("updatefound", handleUpdateFound);
+  }
+
+  // `updatefound` is the most direct signal that `update()` discovered a new worker.
+  // The state checks cover browsers that expose the new worker synchronously before
+  // the listener observes the event, or move it to `waiting` quickly after install.
+  updateFound ||= registration.installing !== null && registration.installing !== installingBefore;
+  updateFound ||= !hadWaitingBefore && registration.waiting !== null;
+
+  return { checked: true, updateFound };
+}

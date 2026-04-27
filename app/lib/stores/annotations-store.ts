@@ -4,6 +4,7 @@ import { Context, Effect, Layer, Schema } from "effect";
 import type { JSONContent } from "@tiptap/react";
 import { HighlightError, NotebookError, DecodeError } from "~/lib/errors";
 import { recordChange } from "~/lib/sync/change-log";
+import { isWellFormedEntry } from "~/lib/sync/idb-entry";
 import { getHighlightStore, getNotebookStore } from "~/lib/sync/stores";
 
 // --- Schemas ---
@@ -132,12 +133,26 @@ export function makeAnnotationService(stores: AnnotationServiceStores): Annotati
           catch: (cause) => new HighlightError({ operation: "getHighlightsByBook", cause }),
         });
         return yield* Effect.try({
-          try: () =>
-            allEntries
-              .map(([, raw]) => raw)
-              .filter(Boolean)
-              .map((raw) => decodeHighlight(raw))
-              .filter((hl) => hl.bookId === bookId && hl.deletedAt === undefined),
+          try: () => {
+            const highlights: Highlight[] = [];
+            for (const entry of allEntries) {
+              if (!isWellFormedEntry(entry)) continue;
+              const [key, raw] = entry;
+              if (raw == null || typeof raw !== "object") continue;
+              try {
+                const highlight = decodeHighlight(raw);
+                if (highlight.bookId === bookId && highlight.deletedAt === undefined) {
+                  highlights.push(highlight);
+                }
+              } catch (err) {
+                console.warn(
+                  `[annotations-store] Skipping malformed highlight record (key=${String(key)})`,
+                  err,
+                );
+              }
+            }
+            return highlights;
+          },
           catch: (cause) => new DecodeError({ operation: "getHighlightsByBook", cause }),
         });
       }),

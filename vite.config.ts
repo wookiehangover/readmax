@@ -22,7 +22,7 @@ export default defineConfig({
       strategies: "generateSW",
       workbox: {
         globPatterns: [
-          "**/*.{js,css}",
+          "**/*.{js,css,html}",
           "fonts/**/*.woff2",
           "*.svg",
           "*.png",
@@ -30,20 +30,11 @@ export default defineConfig({
           "apple-touch-icon*",
           "og-image.png",
         ],
-        navigateFallback: "/",
+        cleanupOutdatedCaches: true,
+        additionalManifestEntries: [{ url: "/index.html", revision: null }],
+        navigateFallback: "/index.html",
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
-          {
-            urlPattern: ({ request }) => request.mode === "navigate",
-            handler: "NetworkFirst",
-            options: {
-              cacheName: "html-cache",
-              networkTimeoutSeconds: 3,
-              expiration: {
-                maxEntries: 10,
-              },
-            },
-          },
           {
             urlPattern: /^https:\/\/fonts\.(?:googleapis|gstatic)\.com\/.*/,
             handler: "StaleWhileRevalidate",

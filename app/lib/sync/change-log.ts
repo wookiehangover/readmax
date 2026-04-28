@@ -1,6 +1,7 @@
 import { createStore, get, set, del, entries } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
 import { ulid } from "ulid";
+import { isWellFormedEntry } from "./idb-entry";
 import type { ChangeEntry } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -12,6 +13,25 @@ let _changeLogStore: ReturnType<typeof createStore> | null = null;
 function getChangeLogStore(): UseStore {
   if (!_changeLogStore) _changeLogStore = createStore("ebook-reader-changelog", "changes");
   return _changeLogStore;
+}
+
+function isUnsyncedChangeEntry(entry: unknown): entry is ChangeEntry {
+  return (
+    !!entry &&
+    typeof entry === "object" &&
+    "id" in entry &&
+    "synced" in entry &&
+    typeof entry.id === "string" &&
+    entry.synced === false
+  );
+}
+
+function isSyncedChangeEntry(entry: unknown): entry is ChangeEntry {
+  return !!entry && typeof entry === "object" && "synced" in entry && entry.synced === true;
+}
+
+function isNonNullIDBValidKey(key: unknown): key is IDBValidKey {
+  return key !== null && key !== undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -48,8 +68,9 @@ export async function recordChange(
 export async function getUnsyncedChanges(): Promise<ChangeEntry[]> {
   const all = await entries<string, ChangeEntry>(getChangeLogStore());
   return all
-    .map(([_, value]) => value)
-    .filter((entry) => !entry.synced)
+    .filter(isWellFormedEntry)
+    .map(([, value]) => value)
+    .filter(isUnsyncedChangeEntry)
     .sort((a, b) => a.id.localeCompare(b.id));
 }
 
@@ -75,7 +96,10 @@ export async function markSynced(ids: string[]): Promise<void> {
 export async function clearSyncedChanges(): Promise<number> {
   const store = getChangeLogStore();
   const all = await entries<string, ChangeEntry>(store);
-  const synced = all.filter(([_, value]) => value.synced);
+  const synced = all.filter(
+    (entry): entry is [string, ChangeEntry] =>
+      isWellFormedEntry(entry) && isNonNullIDBValidKey(entry[0]) && isSyncedChangeEntry(entry[1]),
+  );
   await Promise.all(synced.map(([key]) => del(key, store)));
   return synced.length;
 }

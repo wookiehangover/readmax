@@ -1,5 +1,6 @@
 import { get, set, del, entries } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
+import { isWellFormedEntry } from "./idb-entry";
 import { appendOnlyMerge, lwwMerge } from "./merge";
 import {
   getActiveSessionStore,
@@ -124,7 +125,9 @@ export async function remapBookId(
   }
 
   const allHighlights = await entries<string, Record<string, unknown>>(highlightStore);
-  for (const [hId, h] of allHighlights) {
+  for (const entry of allHighlights) {
+    if (!isWellFormedEntry(entry)) continue;
+    const [hId, h] = entry;
     if (!h || h.bookId !== fromId) continue;
     await set(hId, { ...h, bookId: toId }, highlightStore);
   }

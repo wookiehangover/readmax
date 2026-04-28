@@ -43,6 +43,7 @@ const themeScript = `
     var dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
     if (dark) document.documentElement.classList.add('dark');
     var ct = s.colorTheme || 'default';
+    var themeColor = dark ? '#0a0a0a' : '#ffffff';
     if (ct !== 'default') {
       var m = dark ? 'dark' : 'light';
       var themes = ${colorThemeVarsJson};
@@ -52,8 +53,11 @@ const themeScript = `
         for (var k in vars) {
           if (vars.hasOwnProperty(k)) root.style.setProperty(k, vars[k]);
         }
+        if (vars['--background']) themeColor = vars['--background'];
       }
     }
+    var themeColorMeta = document.querySelector('meta[name="theme-color"]');
+    if (themeColorMeta) themeColorMeta.setAttribute('content', themeColor);
   } catch(e) {}
 })();
 `;
@@ -83,6 +87,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+        <meta name="theme-color" content="#ffffff" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -147,6 +152,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Links />
       </head>
       <body>
+        <div aria-hidden="true" className="safari-titlebar-color" />
         {children}
         <ThemeEffect />
         <ScrollRestoration />

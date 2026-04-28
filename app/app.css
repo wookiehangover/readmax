@@ -47,6 +47,17 @@ body {
   @apply bg-background overscroll-none;
 }
 
+.safari-titlebar-color {
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 0;
+  height: 6px;
+  pointer-events: none;
+  background-color: var(--background);
+}
+
 .dark {
   color-scheme: dark;
 }

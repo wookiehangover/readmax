@@ -74,6 +74,15 @@ function applyColorThemeVars(themeId: string, mode: "light" | "dark") {
   }
 }
 
+function updateThemeColorMeta() {
+  const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+  if (!meta) return;
+
+  const background = getComputedStyle(document.body).backgroundColor;
+  meta.content =
+    background || (document.documentElement.classList.contains("dark") ? "#0a0a0a" : "#ffffff");
+}
+
 export function ThemeEffect() {
   const [settings] = useSettings();
 
@@ -81,12 +90,14 @@ export function ThemeEffect() {
   useEffect(() => {
     const resolved = resolveTheme(settings.theme);
     document.documentElement.classList.toggle("dark", resolved === "dark");
+    updateThemeColorMeta();
   }, [settings.theme]);
 
   // Apply color theme CSS variables whenever theme or colorTheme changes
   useEffect(() => {
     const mode = resolveTheme(settings.theme);
     applyColorThemeVars(settings.colorTheme, mode);
+    updateThemeColorMeta();
   }, [settings.theme, settings.colorTheme]);
 
   // Listen for system preference changes when theme is "system"
@@ -97,6 +108,7 @@ export function ThemeEffect() {
       const isDark = mq.matches;
       document.documentElement.classList.toggle("dark", isDark);
       applyColorThemeVars(settings.colorTheme, isDark ? "dark" : "light");
+      updateThemeColorMeta();
     };
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);

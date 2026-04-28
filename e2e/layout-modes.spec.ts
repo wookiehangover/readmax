@@ -168,6 +168,41 @@ test.describe("Layout modes", () => {
     ).toHaveCount(1);
   });
 
+  test("opening a book from a Library tab closes that tab in focused mode", async ({ page }) => {
+    await page.evaluate(() => {
+      localStorage.setItem(
+        "app-settings",
+        JSON.stringify({
+          sidebarCollapsed: true,
+          layoutMode: "freeform",
+          updatedAt: Date.now(),
+        }),
+      );
+    });
+    await page.goto("/");
+    await page.waitForSelector(".dv-dockview", { timeout: 15_000 });
+
+    await uploadBook(page, TEST_EPUB_1, "Test Book for E2E");
+
+    await page.getByTitle("New Library tab").first().click();
+    const libraryTab = page.locator(".dv-default-tab").filter({ hasText: /^Library$/ });
+    await expect(libraryTab).toHaveCount(1);
+
+    const trigger = page.getByTestId("layout-mode-trigger");
+    await trigger.click();
+    await page.getByTestId("layout-mode-focused").click();
+    await expect(page.getByRole("tablist", { name: "Open books" })).toBeVisible();
+    await libraryTab.click();
+
+    await page
+      .locator("button.block.w-full.text-left")
+      .filter({ hasText: "Test Book for E2E" })
+      .click();
+
+    await expect(libraryTab).toHaveCount(0);
+    await expect(clusterPills(page)).toHaveCount(1);
+  });
+
   test("focused mode disables tab drag-and-drop on dockview tabs", async ({ page }) => {
     await uploadBook(page, TEST_EPUB_1, "Test Book for E2E");
 

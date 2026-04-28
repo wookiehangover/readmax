@@ -55,6 +55,7 @@ interface SystemPromptContext {
 
 const CURRENT_CHAPTER_CONTEXT_CHARS = 8000;
 const VISIBLE_PAGE_CONTEXT_CHARS = 2000;
+const MAX_CHAT_STEPS = 20;
 
 function truncateContext(text: string, limit: number): string {
   const trimmed = text.trim();
@@ -548,7 +549,13 @@ export async function action({ request }: Route.ActionArgs) {
             },
           }),
         },
-        stopWhen: stepCountIs(5),
+        // Some reading-companion answers legitimately need several tool rounds:
+        // book search/read, web search, recommendations, highlights, or notes.
+        // Keep a bounded cap, but force the final step to synthesize instead
+        // of spending the last slot on another tool call.
+        prepareStep: ({ stepNumber }) =>
+          stepNumber >= MAX_CHAT_STEPS - 1 ? { activeTools: [] } : undefined,
+        stopWhen: stepCountIs(MAX_CHAT_STEPS),
       });
 
       writer.merge(

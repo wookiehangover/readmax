@@ -80,6 +80,7 @@ export function ClusterBar({ getEntries, getActiveId, onActivate, onClose }: Clu
                     coverImage={book.coverImage}
                     remoteCoverUrl={book.remoteCoverUrl}
                     bookId={book.id}
+                    updatedAt={book.updatedAt}
                   />
                 </div>
               ) : (

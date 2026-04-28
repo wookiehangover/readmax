@@ -186,21 +186,7 @@ export function ChatSessionList({
                   }}
                 >
                   <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <EditableTitle
-                      value={session.title || "Untitled"}
-                      className="text-xs"
-                      onSave={(newTitle) => {
-                        AppRuntime.runPromise(
-                          ChatService.pipe(
-                            Effect.andThen((s) =>
-                              s.updateSessionTitle(session.id, bookId, newTitle),
-                            ),
-                          ),
-                        )
-                          .then(() => loadSessions())
-                          .catch(console.error);
-                      }}
-                    />
+                    <span className="truncate text-xs">{session.title || "Untitled"}</span>
                     <span className="text-[10px] text-muted-foreground">
                       {formatRelativeTime(session.updatedAt)}
                     </span>

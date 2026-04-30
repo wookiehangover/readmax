@@ -1,8 +1,9 @@
 import { DurableObject } from "cloudflare:workers";
+import { createRequestHandler, type RequestHandler } from "@react-router/cloudflare";
 import { runWithEnv, type Env } from "~/lib/env.server";
 
 type ConsoleWithCreateTask = Console & { createTask?: unknown };
-type RequestHandler = import("react-router").RequestHandler;
+type CloudflareRequestContext = Parameters<RequestHandler<Env>>[0];
 
 declare module "react-router" {
   interface AppLoadContext {
@@ -13,7 +14,7 @@ declare module "react-router" {
   }
 }
 
-let requestHandlerPromise: Promise<RequestHandler> | undefined;
+let requestHandlerPromise: Promise<RequestHandler<Env>> | undefined;
 
 disableUnsupportedConsoleCreateTask();
 
@@ -32,11 +33,38 @@ function disableUnsupportedConsoleCreateTask() {
 }
 
 function getRequestHandler() {
-  requestHandlerPromise ??= import("react-router").then(({ createRequestHandler }) =>
-    createRequestHandler(() => import("virtual:react-router/server-build"), import.meta.env.MODE),
+  requestHandlerPromise ??= Promise.resolve(
+    createRequestHandler<Env>({
+      // Route modules are imported from this lazy build callback during request handling, after runWithEnv() has set ALS.
+      build: () => import("virtual:react-router/server-build"),
+      getLoadContext: ({ context }) => ({
+        cloudflare: {
+          env: context.cloudflare.env,
+          ctx: context.cloudflare.ctx as unknown as ExecutionContext,
+        },
+      }),
+      mode: import.meta.env.MODE,
+    }),
   );
 
   return requestHandlerPromise;
+}
+
+function createCloudflareRequestContext(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext,
+): CloudflareRequestContext {
+  return {
+    data: {},
+    env: Object.assign(Object.create(env), { ASSETS: { fetch } }),
+    functionPath: "/",
+    next: (input, init) => fetch(input ?? request, init),
+    params: {},
+    passThroughOnException: () => ctx.passThroughOnException(),
+    request: request as CloudflareRequestContext["request"],
+    waitUntil: (promise) => ctx.waitUntil(promise),
+  };
 }
 
 function withRuntimeDefaults(env: Env): Env {
@@ -61,9 +89,7 @@ export default {
     const requestHandler = await getRequestHandler();
 
     return runWithEnv(runtimeEnv, ctx, () =>
-      requestHandler(request, {
-        cloudflare: { env: runtimeEnv, ctx },
-      }),
+      requestHandler(createCloudflareRequestContext(request, runtimeEnv, ctx)),
     );
   },
 } satisfies ExportedHandler<Env>;

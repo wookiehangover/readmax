@@ -5,7 +5,6 @@ import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { defineConfig, type Plugin } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
-import tsconfigPaths from "vite-tsconfig-paths";
 
 const indexHtmlPath = resolve("build/client/index.html");
 const serviceWorkerPath = resolve("build/client/sw.js");
@@ -102,7 +101,6 @@ export default defineConfig({
   plugins: [
     tailwindcss(),
     reactRouter(),
-    tsconfigPaths(),
     VitePWA({
       registerType: "prompt",
       strategies: "generateSW",
@@ -218,4 +216,7 @@ export default defineConfig({
   define: {
     __SITE_ORIGIN__: JSON.stringify(getSiteOrigin()),
   },
+  resolve: {
+    tsconfigPaths: true
+  }
 });

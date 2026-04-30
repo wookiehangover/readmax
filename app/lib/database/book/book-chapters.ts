@@ -16,6 +16,33 @@ const CHAPTERS_COLUMNS = sql`
   extracted_at AS "extractedAt"
 `;
 
+function upsertBookChaptersQuery(
+  userId: string,
+  bookId: string,
+  chapters: unknown,
+  extractedAt: Date,
+) {
+  return sql`
+    INSERT INTO readmax.book_chapters (user_id, book_id, chapters, extracted_at)
+    VALUES (
+      ${userId},
+      ${bookId},
+      ${JSON.stringify(chapters)}::jsonb,
+      ${extractedAt.toISOString()}
+    )
+    ON CONFLICT (user_id, book_id) DO UPDATE
+      SET chapters = EXCLUDED.chapters,
+          extracted_at = EXCLUDED.extracted_at
+    RETURNING ${CHAPTERS_COLUMNS}
+  `;
+}
+
+async function lockBookChaptersUpload(client: PoolClient, userId: string, bookId: string) {
+  await client.query(sql`
+    SELECT pg_advisory_xact_lock(hashtext(${userId}), hashtext(${bookId}))
+  `);
+}
+
 export interface ChapterWithIndex {
   readonly index: number;
 }
@@ -59,24 +86,43 @@ export async function upsertBookChapters(
   extractedAt: Date = new Date(),
 ): Promise<BookChaptersRow | null> {
   const pool = getPool();
-  const result = await pool.query<BookChaptersRow>(sql`
-    INSERT INTO readmax.book_chapters (user_id, book_id, chapters, extracted_at)
-    VALUES (
-      ${userId},
-      ${bookId},
-      ${JSON.stringify(chapters)}::jsonb,
-      ${extractedAt.toISOString()}
-    )
-    ON CONFLICT (user_id, book_id) DO UPDATE
-      SET chapters = EXCLUDED.chapters,
-          extracted_at = EXCLUDED.extracted_at
-    RETURNING ${CHAPTERS_COLUMNS}
-  `);
+  const result = await pool.query<BookChaptersRow>(
+    upsertBookChaptersQuery(userId, bookId, chapters, extractedAt),
+  );
 
   if (result.rows.length === 0) {
     return null;
   }
   return result.rows[0];
+}
+
+export async function replaceBookChaptersWithLock(
+  userId: string,
+  bookId: string,
+  chapters: unknown,
+  extractedAt: Date = new Date(),
+): Promise<BookChaptersRow | null> {
+  const pool = getPool();
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+    await lockBookChaptersUpload(client, userId, bookId);
+    const result = await client.query<BookChaptersRow>(
+      upsertBookChaptersQuery(userId, bookId, chapters, extractedAt),
+    );
+    await client.query("COMMIT");
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+    return result.rows[0];
+  } catch (err) {
+    await client.query("ROLLBACK").catch(console.error);
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 export async function mergeBookChapters(
@@ -86,9 +132,7 @@ export async function mergeBookChapters(
   chapters: readonly ChapterWithIndex[],
   extractedAt: Date = new Date(),
 ): Promise<BookChaptersRow | null> {
-  await client.query(sql`
-    SELECT pg_advisory_xact_lock(hashtext(${userId}), hashtext(${bookId}))
-  `);
+  await lockBookChaptersUpload(client, userId, bookId);
 
   const existing = await client.query<BookChaptersRow>(sql`
     SELECT ${CHAPTERS_COLUMNS}

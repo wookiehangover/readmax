@@ -1,0 +1,47 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "readmaxxing",
+  "main": "./workers/app.ts",
+  "compatibility_date": "2026-04-30",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./build/client",
+  },
+  "observability": {
+    "enabled": true,
+  },
+  "vars": {
+    "WEBAUTHN_RP_NAME": "Readmaxxing",
+  },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "00000000-0000-0000-0000-000000000000",
+      "localConnectionString": "postgres://postgres:postgres@localhost:5432/readmaxxing",
+    },
+  ],
+  "r2_buckets": [
+    {
+      "binding": "R2_FILES",
+      "bucket_name": "readmaxxing-files",
+    },
+    {
+      "binding": "R2_COVERS",
+      "bucket_name": "readmaxxing-covers",
+    },
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "AGENTS",
+        "class_name": "Agents",
+      },
+    ],
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["Agents"],
+    },
+  ],
+}

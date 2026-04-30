@@ -1,3 +1,4 @@
+import { cloudflare } from "@cloudflare/vite-plugin";
 import { reactRouter } from "@react-router/dev/vite";
 import tailwindcss from "@tailwindcss/vite";
 import { createHash } from "node:crypto";
@@ -100,6 +101,7 @@ function patchIndexHtmlPrecacheRevision(): Plugin {
 
 export default defineConfig({
   plugins: [
+    cloudflare({ viteEnvironment: { name: "ssr" } }),
     tailwindcss(),
     reactRouter(),
     tsconfigPaths(),
@@ -217,5 +219,6 @@ export default defineConfig({
   ],
   define: {
     __SITE_ORIGIN__: JSON.stringify(getSiteOrigin()),
+    "console.createTask": "undefined",
   },
 });

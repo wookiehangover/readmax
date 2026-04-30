@@ -9,7 +9,7 @@ import { BookService } from "~/lib/stores/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { extractBookChapters, type BookChapter } from "~/lib/epub/epub-text-extract";
 import { extractPdfChapters } from "~/lib/pdf/pdf-text-extract";
-import { isChaptersUploaded, markChaptersUploaded } from "~/lib/stores/chapter-upload-cache-store";
+import { uploadChaptersOnce } from "~/lib/chat/upload-chapters";
 import { cn } from "~/lib/utils";
 import { useSyncListener } from "~/hooks/use-sync-listener";
 import { useWorkspace } from "~/lib/context/workspace-context";
@@ -31,8 +31,6 @@ interface ChatPanelProps {
   bookId: string;
   bookTitle: string;
 }
-
-const CHAPTER_UPLOAD_CHUNK_BYTES = 3 * 1024 * 1024;
 
 // Signature for the last message's parts — enough to detect in-flight streaming
 // growth (new text tokens, new tool invocations) without relying on deep equality.
@@ -65,90 +63,6 @@ function messagesDiffer(a: UIMessage[], b: UIMessage[]): boolean {
   const lb = b[b.length - 1];
   if (la.id !== lb.id) return true;
   return lastMessageSignature(la) !== lastMessageSignature(lb);
-}
-
-function serializedJsonByteLength(value: unknown): number {
-  return new TextEncoder().encode(JSON.stringify(value)).byteLength;
-}
-
-function createChapterUploadChunks(chapters: BookChapter[]): BookChapter[][] {
-  const chunks: BookChapter[][] = [];
-  let current: BookChapter[] = [];
-
-  for (const chapter of chapters) {
-    const singleChapterBytes = serializedJsonByteLength([chapter]);
-    if (singleChapterBytes > CHAPTER_UPLOAD_CHUNK_BYTES) {
-      // TODO(spec: Add chunked chapter upload): split oversized chapters instead of skipping them.
-      console.warn("Skipping oversized chapter upload chunk:", {
-        chapterIndex: chapter.index,
-        bytes: singleChapterBytes,
-        limit: CHAPTER_UPLOAD_CHUNK_BYTES,
-      });
-      continue;
-    }
-
-    if (current.length === 0) {
-      current = [chapter];
-      continue;
-    }
-
-    const nextChunk = [...current, chapter];
-    if (serializedJsonByteLength(nextChunk) > CHAPTER_UPLOAD_CHUNK_BYTES) {
-      chunks.push(current);
-      current = [chapter];
-    } else {
-      current = nextChunk;
-    }
-  }
-
-  if (current.length > 0) {
-    chunks.push(current);
-  }
-
-  return chunks;
-}
-
-function createChapterUploadId(bookId: string): string {
-  return globalThis.crypto?.randomUUID?.() ?? `${bookId}-${Date.now()}-${Math.random()}`;
-}
-
-async function uploadChaptersOnce(
-  bookId: string,
-  chapters: BookChapter[],
-  format: string | undefined,
-): Promise<void> {
-  if (await isChaptersUploaded(bookId)) return;
-
-  const chunks = createChapterUploadChunks(chapters);
-  if (chunks.length === 0) return;
-
-  const uploadId = createChapterUploadId(bookId);
-  const totalChapters = chunks.reduce((count, chunk) => count + chunk.length, 0);
-
-  for (const [chunkIndex, chunk] of chunks.entries()) {
-    const res = await fetch(`/api/books/${encodeURIComponent(bookId)}/chapters`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        uploadId,
-        chunkIndex,
-        totalChunks: chunks.length,
-        totalChapters,
-        chapters: chunk,
-        format,
-      }),
-    });
-
-    if (res.ok) continue;
-
-    // 401 (signed out) / 503 (sync off) are expected — don't mark, try again next open
-    if (res.status !== 401 && res.status !== 503) {
-      console.error("Failed to upload chapters:", res.status, await res.text().catch(() => ""));
-    }
-    return;
-  }
-
-  await markChaptersUploaded(bookId);
 }
 
 export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {

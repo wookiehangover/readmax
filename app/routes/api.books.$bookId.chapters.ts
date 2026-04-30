@@ -1,14 +1,25 @@
 import type { BookChapter } from "~/lib/epub/epub-text-extract";
 import { requireAuth } from "~/lib/database/auth-middleware";
 import { getBookByIdForUser } from "~/lib/database/book/book";
-import { mergeBookChapters, upsertBookChapters } from "~/lib/database/book/book-chapters";
+import {
+  mergeBookChapters,
+  replaceBookChaptersWithLock,
+  upsertBookChapters,
+} from "~/lib/database/book/book-chapters";
 import { getPool } from "~/lib/database/pool";
+
+const ENVELOPE_FIELDS = ["uploadId", "chunkIndex", "totalChunks", "totalChapters"] as const;
 
 interface UploadChaptersBody {
   uploadId: string;
   chunkIndex: number;
   totalChunks: number;
   totalChapters: number;
+  chapters: BookChapter[];
+  format?: string;
+}
+
+interface LegacyUploadChaptersBody {
   chapters: BookChapter[];
   format?: string;
 }
@@ -29,9 +40,53 @@ function hasValidChapterIndex(value: unknown): value is BookChapter {
   return isRecord(value) && isNonNegativeInteger(value.index);
 }
 
-function parseUploadBody(body: unknown): { body: UploadChaptersBody } | { error: string } {
+function parseChapters(
+  body: Record<string, unknown>,
+): { chapters: BookChapter[] } | { error: string } {
+  if (!Array.isArray(body.chapters)) {
+    return { error: "chapters must be an array" };
+  }
+  if (body.chapters.some((chapter) => !hasValidChapterIndex(chapter))) {
+    return { error: "each chapter must include a non-negative integer index" };
+  }
+  return { chapters: body.chapters as BookChapter[] };
+}
+
+export function parseUploadBody(
+  body: unknown,
+):
+  | { kind: "envelope"; body: UploadChaptersBody }
+  | { kind: "legacy"; body: LegacyUploadChaptersBody }
+  | { error: string } {
   if (!isRecord(body)) {
     return { error: "body must be an object" };
+  }
+
+  const presentEnvelopeFields = ENVELOPE_FIELDS.filter((field) => field in body);
+  if (presentEnvelopeFields.length > 0 && presentEnvelopeFields.length < ENVELOPE_FIELDS.length) {
+    return {
+      error:
+        "upload envelope must include uploadId, chunkIndex, totalChunks, and totalChapters together",
+    };
+  }
+
+  const parsedChapters = parseChapters(body);
+  if ("error" in parsedChapters) {
+    return parsedChapters;
+  }
+
+  if (presentEnvelopeFields.length === 0) {
+    if (body.format !== undefined && typeof body.format !== "string") {
+      return { error: "format must be a string when provided" };
+    }
+
+    return {
+      kind: "legacy",
+      body: {
+        chapters: parsedChapters.chapters,
+        format: typeof body.format === "string" ? body.format : undefined,
+      },
+    };
   }
 
   if (typeof body.uploadId !== "string" || body.uploadId.length === 0) {
@@ -49,28 +104,21 @@ function parseUploadBody(body: unknown): { body: UploadChaptersBody } | { error:
   if (!isNonNegativeInteger(body.totalChapters)) {
     return { error: "totalChapters must be a non-negative integer" };
   }
-  if (!Array.isArray(body.chapters)) {
-    return { error: "chapters must be an array" };
-  }
-  if (body.chapters.some((chapter) => !hasValidChapterIndex(chapter))) {
-    return { error: "each chapter must include a non-negative integer index" };
-  }
-  if (body.chapters.length > body.totalChapters) {
+  if (parsedChapters.chapters.length > body.totalChapters) {
     return { error: "chapters length cannot exceed totalChapters" };
   }
   if (body.format !== undefined && typeof body.format !== "string") {
     return { error: "format must be a string when provided" };
   }
 
-  const chapters = body.chapters as BookChapter[];
-
   return {
+    kind: "envelope",
     body: {
       uploadId: body.uploadId,
       chunkIndex: body.chunkIndex,
       totalChunks: body.totalChunks,
       totalChapters: body.totalChapters,
-      chapters,
+      chapters: parsedChapters.chapters,
       format: typeof body.format === "string" ? body.format : undefined,
     },
   };
@@ -87,7 +135,7 @@ function chapterCount(chapters: unknown): number {
  * Called by the client once per book on first open, so the server can
  * reuse the cached chapters on subsequent chat requests.
  *
- * Body: { uploadId, chunkIndex, totalChunks, totalChapters, chapters, format? }
+ * Body: { chapters, format? } or { uploadId, chunkIndex, totalChunks, totalChapters, chapters, format? }
  */
 export async function action({
   request,
@@ -128,11 +176,23 @@ export async function action({
   if ("error" in parsed) {
     return Response.json({ error: parsed.error }, { status: 400 });
   }
+
+  if (parsed.kind === "legacy") {
+    const row = await upsertBookChapters(userId, bookId, parsed.body.chapters);
+
+    return Response.json({
+      ok: true,
+      bookId,
+      chapterCount: chapterCount(row?.chapters),
+      extractedAt: row?.extractedAt ?? null,
+    });
+  }
+
   const { body } = parsed;
 
   const row =
     body.chunkIndex === 0
-      ? await upsertBookChapters(userId, bookId, body.chapters)
+      ? await replaceBookChaptersWithLock(userId, bookId, body.chapters)
       : await mergeChapterUploadChunk(userId, bookId, body.chapters);
 
   return Response.json({
@@ -147,11 +207,7 @@ export async function action({
   });
 }
 
-async function mergeChapterUploadChunk(
-  userId: string,
-  bookId: string,
-  chapters: BookChapter[],
-) {
+async function mergeChapterUploadChunk(userId: string, bookId: string, chapters: BookChapter[]) {
   const pool = getPool();
   const client = await pool.connect();
 

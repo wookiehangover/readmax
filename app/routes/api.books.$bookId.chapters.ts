@@ -2,11 +2,11 @@ import type { BookChapter } from "~/lib/epub/epub-text-extract";
 import { requireAuth } from "~/lib/database/auth-middleware";
 import { getBookByIdForUser } from "~/lib/database/book/book";
 import {
+  isChapterUploadSessionMismatchError,
   mergeBookChapters,
   replaceBookChaptersWithLock,
   upsertBookChapters,
 } from "~/lib/database/book/book-chapters";
-import { getPool } from "~/lib/database/pool";
 
 const ENVELOPE_FIELDS = ["uploadId", "chunkIndex", "totalChunks", "totalChapters"] as const;
 
@@ -190,10 +190,21 @@ export async function action({
 
   const { body } = parsed;
 
-  const row =
-    body.chunkIndex === 0
-      ? await replaceBookChaptersWithLock(userId, bookId, body.chapters)
-      : await mergeChapterUploadChunk(userId, bookId, body.chapters);
+  let row;
+  try {
+    row =
+      body.chunkIndex === 0
+        ? await replaceBookChaptersWithLock(userId, bookId, body.uploadId, body.chapters)
+        : await mergeBookChapters(userId, bookId, body.uploadId, body.chapters);
+  } catch (err) {
+    if (isChapterUploadSessionMismatchError(err)) {
+      return Response.json(
+        { error: "Upload session superseded; restart from chunk 0" },
+        { status: 409 },
+      );
+    }
+    throw err;
+  }
 
   return Response.json({
     ok: true,
@@ -205,21 +216,4 @@ export async function action({
     chapterCount: chapterCount(row?.chapters),
     extractedAt: row?.extractedAt ?? null,
   });
-}
-
-async function mergeChapterUploadChunk(userId: string, bookId: string, chapters: BookChapter[]) {
-  const pool = getPool();
-  const client = await pool.connect();
-
-  try {
-    await client.query("BEGIN");
-    const row = await mergeBookChapters(client, userId, bookId, chapters);
-    await client.query("COMMIT");
-    return row;
-  } catch (err) {
-    await client.query("ROLLBACK").catch(console.error);
-    throw err;
-  } finally {
-    client.release();
-  }
 }

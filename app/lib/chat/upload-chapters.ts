@@ -77,6 +77,15 @@ export async function uploadChaptersOnce(
 
     if (res.ok) continue;
 
+    if (res.status === 409) {
+      console.debug("Chapter upload session superseded; retrying from chunk 0 next open", {
+        bookId,
+        uploadId,
+        chunkIndex,
+      });
+      return;
+    }
+
     // 401 (signed out) / 503 (sync off) are expected — don't mark, try again next open
     if (res.status !== 401 && res.status !== 503) {
       console.error("Failed to upload chapters:", res.status, await res.text().catch(() => ""));

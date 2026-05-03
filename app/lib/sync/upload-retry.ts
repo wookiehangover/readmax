@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 /**
- * Backoff schedule applied to failing blob uploads, keyed by attempt count.
+ * Backoff schedule applied to failing remote storage uploads, keyed by attempt count.
  * Attempts beyond the last slot stay capped at the final value (30 min).
  */
 export const UPLOAD_BACKOFF_SCHEDULE_MS: readonly number[] = [
@@ -56,14 +56,13 @@ export function clearUploadRetry(state: Map<string, UploadRetryEntry>, key: stri
 }
 
 // ---------------------------------------------------------------------------
-// In-call retry: classify blob SDK errors and retry transient ones
+// In-call retry: classify upload errors and retry transient ones
 // ---------------------------------------------------------------------------
 
 /**
- * Classification of errors thrown by `@vercel/blob/client#upload`. The SDK
- * exposes typed error classes (`BlobAccessError`, `BlobServiceNotAvailable`,
- * `BlobServiceRateLimited`, etc.) but the `/client` subpath does not re-export
- * them, so we match on `constructor.name` / `name` / message fragments.
+ * Classification of errors thrown by the first-party upload helper. Legacy
+ * Vercel Blob error class names are still recognized so old tests/backfill code
+ * exercise the same retry semantics during the migration window.
  */
 export type BlobErrorClass = "auth" | "transient" | "permanent";
 
@@ -75,6 +74,8 @@ export function classifyBlobError(err: unknown): BlobErrorClass {
 
   // Auth: access denied (403) or failed client-token exchange (401/403).
   if (
+    ctor === "UploadAccessError" ||
+    name === "UploadAccessError" ||
     ctor === "BlobAccessError" ||
     name === "BlobAccessError" ||
     ctor === "BlobClientTokenExpiredError" ||
@@ -86,6 +87,12 @@ export function classifyBlobError(err: unknown): BlobErrorClass {
 
   // Permanent: validation / not-found / aborted — retrying won't help.
   if (
+    ctor === "UploadFileTooLargeError" ||
+    name === "UploadFileTooLargeError" ||
+    ctor === "UploadContentTypeNotAllowedError" ||
+    name === "UploadContentTypeNotAllowedError" ||
+    ctor === "UploadPermanentError" ||
+    name === "UploadPermanentError" ||
     ctor === "BlobFileTooLargeError" ||
     name === "BlobFileTooLargeError" ||
     ctor === "BlobContentTypeNotAllowedError" ||
@@ -108,6 +115,8 @@ export function classifyBlobError(err: unknown): BlobErrorClass {
 
   // Transient: service outage, rate limiting, unknown server error.
   if (
+    ctor === "UploadServerError" ||
+    name === "UploadServerError" ||
     ctor === "BlobServiceNotAvailable" ||
     name === "BlobServiceNotAvailable" ||
     ctor === "BlobServiceRateLimited" ||

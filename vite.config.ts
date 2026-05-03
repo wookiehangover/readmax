@@ -4,7 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig, loadEnv, type Plugin } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 import tsconfigPaths from "vite-tsconfig-paths";
 
@@ -18,12 +18,11 @@ const indexHtmlPrecacheEntryPatterns = [
 let isIndexHtmlRevisionPatchScheduled = false;
 let isIndexHtmlRevisionPatched = false;
 
-function getSiteOrigin() {
-  const productionUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL;
-  if (productionUrl) return `https://${productionUrl}`;
-  const vercelUrl = process.env.VERCEL_URL;
-  if (vercelUrl) return `https://${vercelUrl}`;
-  return "";
+function getSiteOrigin(env: Record<string, string | undefined>) {
+  const siteUrl = env.PUBLIC_SITE_URL?.trim();
+  if (!siteUrl) return "";
+
+  return siteUrl.replace(/\/$/, "");
 }
 
 function isMissingFile(cause: unknown) {
@@ -99,7 +98,7 @@ function patchIndexHtmlPrecacheRevision(): Plugin {
   };
 }
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
     cloudflare({ viteEnvironment: { name: "ssr" } }),
     tailwindcss(),
@@ -204,7 +203,9 @@ export default defineConfig({
     patchIndexHtmlPrecacheRevision(),
   ],
   define: {
-    __SITE_ORIGIN__: JSON.stringify(getSiteOrigin()),
+    __SITE_ORIGIN__: JSON.stringify(
+      getSiteOrigin({ ...loadEnv(mode, process.cwd(), ""), ...process.env }),
+    ),
     "console.createTask": "undefined",
   },
-});
+}));

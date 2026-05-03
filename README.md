@@ -57,6 +57,7 @@ All environment variables are optional for local offline reading. Sync and chat 
 - `DATABASE_URL` — local development Postgres connection string; production uses the `HYPERDRIVE` Worker binding
 - `WEBAUTHN_RP_ID` — WebAuthn Relying Party ID (e.g. `localhost` for dev, your domain for prod)
 - `WEBAUTHN_RP_ORIGIN` — WebAuthn origin URL (e.g. `http://localhost:5173` for dev)
+- `PUBLIC_SITE_URL` — canonical public origin used for absolute social preview URLs
 - `AI_GATEWAY_API_KEY` — Cloudflare AI Gateway API key for chat
 - `ANTHROPIC_API_KEY` — Anthropic API key for chat model access
 - `ANTHROPIC_BASE_URL` — optional custom Anthropic-compatible endpoint

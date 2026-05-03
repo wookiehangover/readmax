@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { Pool } from "pg";
 
 export interface Env {
   readonly HYPERDRIVE?: Hyperdrive;
@@ -12,6 +13,7 @@ export interface Env {
   readonly WEBAUTHN_RP_ID?: string;
   readonly WEBAUTHN_RP_ORIGIN?: string;
   readonly ANTHROPIC_API_KEY?: string;
+  readonly ANTHROPIC_BASE_URL?: string;
   readonly AI_GATEWAY_API_KEY?: string;
   readonly AI_GATEWAY_BASE_URL?: string;
   readonly AI_GATEWAY_ACCOUNT_ID?: string;
@@ -25,6 +27,13 @@ interface EnvContext {
 }
 
 const envStorage = new AsyncLocalStorage<EnvContext>();
+
+(globalThis as { __readmaxxingGetEnv?: () => Env }).__readmaxxingGetEnv = getEnv;
+(
+  globalThis as {
+    __readmaxxingCreatePgPool?: (config: { readonly connectionString?: string }) => Pool;
+  }
+).__readmaxxingCreatePgPool = (config) => new Pool(config);
 
 export function runWithEnv<T>(env: Env, ctx: ExecutionContext, callback: () => T): T {
   return envStorage.run({ env, ctx }, callback);
@@ -44,7 +53,7 @@ export function getExecutionContext(): ExecutionContext | undefined {
 export function isDatabaseRuntimeAvailable(): boolean {
   const env = getEnv();
 
-  return Boolean(env.DATABASE_URL) && !env.HYPERDRIVE;
+  return Boolean(env.HYPERDRIVE?.connectionString ?? env.DATABASE_URL);
 }
 
 function getNodeEnvFallback(): Env {

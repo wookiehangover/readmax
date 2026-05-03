@@ -1,6 +1,6 @@
-import { DurableObject } from "cloudflare:workers";
 import { createRequestHandler, type RequestHandler } from "@react-router/cloudflare";
 import { runWithEnv, type Env } from "~/lib/env.server";
+export { ChatAgent } from "./chat-agent";
 
 type ConsoleWithCreateTask = Console & { createTask?: unknown };
 type CloudflareRequestContext = Parameters<RequestHandler<Env>>[0];
@@ -73,12 +73,6 @@ function withRuntimeDefaults(env: Env): Env {
   return Object.assign(Object.create(env) as Env, {
     NODE_ENV: import.meta.env.MODE,
   });
-}
-
-export class Agents extends DurableObject<Env> {
-  override fetch() {
-    return new Response("Agents Durable Object placeholder", { status: 501 });
-  }
 }
 
 export default {

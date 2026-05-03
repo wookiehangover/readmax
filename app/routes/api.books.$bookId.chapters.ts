@@ -2,6 +2,7 @@ import type { BookChapter } from "~/lib/epub/epub-text-extract";
 import { requireAuth } from "~/lib/database/auth-middleware";
 import { getBookByIdForUser } from "~/lib/database/book/book";
 import { upsertBookChapters } from "~/lib/database/book/book-chapters";
+import { getEnv } from "~/lib/env.server";
 
 interface UploadChaptersBody {
   chapters: BookChapter[];
@@ -28,7 +29,8 @@ export async function action({
     return Response.json({ error: "Method not allowed" }, { status: 405 });
   }
 
-  if (!process.env.DATABASE_URL) {
+  const env = getEnv();
+  if (!env.DATABASE_URL && !env.HYPERDRIVE) {
     return Response.json({ error: "Sync not configured" }, { status: 503 });
   }
 

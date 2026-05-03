@@ -60,9 +60,7 @@ export function clearUploadRetry(state: Map<string, UploadRetryEntry>, key: stri
 // ---------------------------------------------------------------------------
 
 /**
- * Classification of errors thrown by the first-party upload helper. Legacy
- * Vercel Blob error class names are still recognized so old tests/backfill code
- * exercise the same retry semantics during the migration window.
+ * Classification of errors thrown by the first-party upload helper.
  */
 export type BlobErrorClass = "auth" | "transient" | "permanent";
 
@@ -73,15 +71,7 @@ export function classifyBlobError(err: unknown): BlobErrorClass {
   const msg = err.message;
 
   // Auth: access denied (403) or failed client-token exchange (401/403).
-  if (
-    ctor === "UploadAccessError" ||
-    name === "UploadAccessError" ||
-    ctor === "BlobAccessError" ||
-    name === "BlobAccessError" ||
-    ctor === "BlobClientTokenExpiredError" ||
-    name === "BlobClientTokenExpiredError" ||
-    /client token/i.test(msg)
-  ) {
+  if (ctor === "UploadAccessError" || name === "UploadAccessError" || /client token/i.test(msg)) {
     return "auth";
   }
 
@@ -92,38 +82,13 @@ export function classifyBlobError(err: unknown): BlobErrorClass {
     ctor === "UploadContentTypeNotAllowedError" ||
     name === "UploadContentTypeNotAllowedError" ||
     ctor === "UploadPermanentError" ||
-    name === "UploadPermanentError" ||
-    ctor === "BlobFileTooLargeError" ||
-    name === "BlobFileTooLargeError" ||
-    ctor === "BlobContentTypeNotAllowedError" ||
-    name === "BlobContentTypeNotAllowedError" ||
-    ctor === "BlobPathnameMismatchError" ||
-    name === "BlobPathnameMismatchError" ||
-    ctor === "BlobPreconditionFailedError" ||
-    name === "BlobPreconditionFailedError" ||
-    ctor === "BlobNotFoundError" ||
-    name === "BlobNotFoundError" ||
-    ctor === "BlobStoreNotFoundError" ||
-    name === "BlobStoreNotFoundError" ||
-    ctor === "BlobStoreSuspendedError" ||
-    name === "BlobStoreSuspendedError" ||
-    ctor === "BlobRequestAbortedError" ||
-    name === "BlobRequestAbortedError"
+    name === "UploadPermanentError"
   ) {
     return "permanent";
   }
 
   // Transient: service outage, rate limiting, unknown server error.
-  if (
-    ctor === "UploadServerError" ||
-    name === "UploadServerError" ||
-    ctor === "BlobServiceNotAvailable" ||
-    name === "BlobServiceNotAvailable" ||
-    ctor === "BlobServiceRateLimited" ||
-    name === "BlobServiceRateLimited" ||
-    ctor === "BlobUnknownError" ||
-    name === "BlobUnknownError"
-  ) {
+  if (ctor === "UploadServerError" || name === "UploadServerError") {
     return "transient";
   }
 

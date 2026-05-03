@@ -21,9 +21,11 @@ Ebook reader web app. Users drag-and-drop `.epub` files, which are persisted in 
 - **Linting**: oxlint (no eslint)
 - **Formatting**: oxfmt
 - **Effect System**: Effect.ts (`effect` package)
-- **Database**: Postgres via `pg` + `pg-sql` (PlanetScale Postgres on Vercel with Fluid Compute)
+- **Runtime**: Cloudflare Workers via `@cloudflare/vite-plugin` + `@react-router/cloudflare`
+- **Database**: Postgres via `pg` + `pg-sql` (PlanetScale Postgres reached through Cloudflare Hyperdrive in production)
 - **Auth**: Self-hosted WebAuthn passkeys via `@simplewebauthn/server` + `@simplewebauthn/browser`
-- **File Storage**: Vercel Blob (private access, server-proxied)
+- **File Storage**: Cloudflare R2 (private, server-proxied)
+- **Chat Runtime**: Cloudflare Agents SDK backed by Durable Objects
 - **Sync**: Local-first sync engine with per-entity-type merge strategies (LWW, set-union, append-only)
 - **Package Manager**: pnpm
 
@@ -69,7 +71,7 @@ The app is local-first for most entities: IndexedDB is the source of truth and s
 
 **Sync events**: The sync engine dispatches granular `sync:entity-updated` events (not a blanket event). Components use the `useSyncListener(["entity"])` hook to only re-render when their specific data changes.
 
-**File sync**: Epub files and covers are uploaded to Vercel Blob (private). On pull, metadata syncs immediately; files are downloaded on-demand when the user opens the book.
+**File sync**: Epub files and covers are uploaded to private Cloudflare R2 buckets. On pull, metadata syncs immediately; files are downloaded on-demand through the authenticated `/api/sync/files/download` proxy when the user opens the book.
 
 **Initial sync**: On first login, `runInitialSyncIfNeeded()` scans all IDB stores and backfills the change log so existing data gets pushed.
 
@@ -77,11 +79,11 @@ The app is local-first for most entities: IndexedDB is the source of truth and s
 
 Chat is **server-authoritative**: Postgres (`readmax.chat_session`, `readmax.chat_message`) is the source of truth for sessions and messages, not IndexedDB. This is a deliberate deviation from the local-first model used for books and annotations, because chat involves streaming LLM output and server-executed tools.
 
-**Transport**: The client uses the AI SDK's `DefaultChatTransport` with `resume: true`. On mount, `useChat` hydrates message history from `/api/chat/messages/:sessionId` and, if an `activeStreamId` is present, reconnects to the in-flight SSE stream via `/api/chat/resume/:sessionId` (backed by `resumable-stream` + Redis). This survives page reloads and tab switches mid-generation.
+**Transport**: The client uses the AI SDK's `DefaultChatTransport` with `resume: true`. Each chat session is handled by one Cloudflare Agent (Durable Object) keyed by session id. On mount, `useChat` hydrates message history from `/api/chat/messages/:sessionId` and, if an `activeStreamId` is present, reconnects to the in-flight SSE stream via `/api/chat/resume/:sessionId`. Resumability comes from the Durable Object maintaining session stream state; no Redis or `resumable-stream` runtime is used.
 
 **IDB as warm-start cache**: `app/lib/stores/chat-store.ts` keeps a per-session IDB copy of messages purely so the chat panel can paint something before the server hydration request returns. It is written from the server-authoritative list via `cacheServerMessages()` and is **never** pushed to the server for messages. Session metadata (title, `bookId`, timestamps) is still synced LWW via the sync engine as `chat_session`.
 
-**Server-executed tools**: The following tools run entirely inside the `/api/chat` route handler on the server, not in the browser:
+**Server-executed tools**: The following tools run inside the chat Agent on the server, not in the browser:
 
 - `read_notes` — reads the user's notebook from Postgres and returns its markdown
 - `append_to_notes` — appends markdown to the notebook and persists it server-side

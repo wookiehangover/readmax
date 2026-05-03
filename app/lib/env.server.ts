@@ -7,8 +7,7 @@ export interface Env {
   readonly R2_COVERS?: R2Bucket;
   readonly AGENTS?: DurableObjectNamespace;
   readonly DATABASE_URL?: string;
-  readonly BLOB_READ_WRITE_TOKEN?: string;
-  readonly REDIS_URL?: string;
+  readonly PUBLIC_SITE_URL?: string;
   readonly WEBAUTHN_RP_NAME?: string;
   readonly WEBAUTHN_RP_ID?: string;
   readonly WEBAUTHN_RP_ORIGIN?: string;

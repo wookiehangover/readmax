@@ -1,11 +1,10 @@
-import { get as getVercelBlob } from "@vercel/blob";
 import { createHash, createHmac } from "node:crypto";
 import { existsSync } from "node:fs";
 import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { Pool } from "pg";
 
-import { isLegacyVercelBlobUrl, r2StorageUrl, type StoredBlobType } from "../app/lib/blob-url";
+import { r2StorageUrl, type StoredBlobType } from "../app/lib/blob-url";
 
 type BlobColumn = "fileBlobUrl" | "coverBlobUrl";
 
@@ -73,6 +72,14 @@ interface BlobBytes {
 
 const VERCEL_BLOB_PATTERN = "%blob.vercel-storage.com%";
 const COVER_CACHE_CONTROL = "private, max-age=31536000, immutable";
+
+function isLegacyVercelBlobUrl(value: string): boolean {
+  try {
+    return new URL(value).host.includes("blob.vercel-storage.com");
+  } catch {
+    return false;
+  }
+}
 
 export function classifyBookStorage(row: BookRow): MigrationItem[] {
   const items: MigrationItem[] = [];
@@ -300,24 +307,17 @@ async function migrateBook(row: BookRow, pool: Pool, config: RuntimeConfig): Pro
 
   const migrated: MigratedItem[] = [];
   for (const item of items) {
-    const result = await getVercelBlob(item.oldUrl, {
-      access: "private",
-      token: config.blobToken,
-      useCache: false,
-    });
-    if (!result || result.statusCode !== 200 || !result.stream) {
-      throw new Error(`Failed to read Vercel Blob object for ${item.bookId} ${item.type}`);
-    }
+    const result = await downloadVercelBlob(item.oldUrl, config.blobToken);
 
     const key = deriveR2ObjectKey({
       type: item.type,
       userId: item.userId,
       bookId: item.bookId,
-      contentType: result.blob.contentType,
+      contentType: result.contentType,
       sourceUrl: item.oldUrl,
     });
     const bytes = await readStreamBytes(result.stream);
-    await putR2Object(config.r2, item.type, key, bytes.body, result.blob.contentType);
+    await putR2Object(config.r2, item.type, key, bytes.body, result.contentType);
 
     const migratedItem = {
       ...item,
@@ -344,6 +344,26 @@ async function migrateBook(row: BookRow, pool: Pool, config: RuntimeConfig): Pro
   await updateBookRow(pool, row.id, migrated);
   console.log(`[updated] ${row.id}: ${migrated.length} reference(s) now point at R2`);
   return migrated.length;
+}
+
+async function downloadVercelBlob(
+  url: string,
+  token: string,
+): Promise<{ readonly stream: ReadableStream<Uint8Array>; readonly contentType: string }> {
+  const response = await fetch(url, {
+    headers: { authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (!response.ok || !response.body) {
+    const text = await response.text().catch(() => "");
+    throw new Error(
+      `Failed to read Vercel Blob object: ${response.status} ${response.statusText} ${text}`,
+    );
+  }
+  return {
+    stream: response.body,
+    contentType: response.headers.get("content-type") ?? "application/octet-stream",
+  };
 }
 
 async function readStreamBytes(stream: ReadableStream<Uint8Array>): Promise<BlobBytes> {

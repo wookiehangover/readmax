@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  coverCacheKey,
-  isLegacyVercelBlobUrl,
-  parseStoredBlobReference,
-  r2StorageUrl,
-} from "~/lib/blob-url";
+import { coverCacheKey, parseStoredBlobReference, r2StorageUrl } from "~/lib/blob-url";
 
 describe("storage references", () => {
   it("builds and parses R2 storage URLs", () => {
@@ -26,12 +21,6 @@ describe("storage references", () => {
     });
   });
 
-  it("detects legacy Vercel Blob URLs", () => {
-    const value = "https://store.blob.vercel-storage.com/covers/book.jpg";
-    expect(isLegacyVercelBlobUrl(value)).toBe(true);
-    expect(parseStoredBlobReference(value, "cover")).toEqual({ kind: "legacy-vercel", url: value });
-  });
-
   it("returns null for unsupported or malformed references", () => {
     expect(parseStoredBlobReference("https://example.com/foo.jpg", "cover")).toBeNull();
     expect(parseStoredBlobReference("")).toBeNull();
@@ -48,13 +37,13 @@ describe("coverCacheKey", () => {
     expect(key).toBe("covers/covers/user/book/cover.jpg:1234");
   });
 
-  it("keys legacy URLs on the URL plus updatedAt", () => {
+  it("keys non-R2 cover URLs on the URL plus updatedAt", () => {
     expect(
       coverCacheKey({
-        remoteCoverUrl: "https://store.blob.vercel-storage.com/covers/book.jpg",
+        remoteCoverUrl: "https://example.com/covers/book.jpg",
         updatedAt: 1234.9,
       }),
-    ).toBe("https://store.blob.vercel-storage.com/covers/book.jpg:1234");
+    ).toBe("https://example.com/covers/book.jpg:1234");
   });
 
   it("returns null when there is no cover URL", () => {
@@ -63,8 +52,7 @@ describe("coverCacheKey", () => {
 
   it("returns the same key for the same input", () => {
     const book = {
-      coverBlobUrl:
-        "https://store.blob.vercel-storage.com/covers/abcdefabcdefabcdefabcdefabcdefab.jpg",
+      coverBlobUrl: "https://example.com/covers/abcdefabcdefabcdefabcdefabcdefab.jpg",
       updatedAt: 5678,
     };
 

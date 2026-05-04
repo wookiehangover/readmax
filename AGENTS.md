@@ -11,7 +11,8 @@ Ebook reader web app. Users drag-and-drop `.epub` files, which are persisted in 
 - **Epub rendering**: epubjs
 - **Local storage**: idb-keyval (IndexedDB). One object store per database — see "IndexedDB store pattern" below
 - **Fonts**: Google Fonts + self-hosted Geist / Geist Mono (woff2 variable fonts in `public/fonts/`)
-- **Linting / formatting**: oxlint and oxfmt (no eslint, no prettier)
+- **Linting**: oxlint (no eslint)
+- **Formatting**: oxfmt (no prettier)
 - **Effect system**: Effect.ts (`effect` package)
 - **Runtime**: Cloudflare Workers via `@cloudflare/vite-plugin` + `@react-router/cloudflare`
 - **Database**: Postgres via `pg` + `pg-sql`. In production the connection is brokered by Cloudflare Hyperdrive; locally it points at a normal `DATABASE_URL`
@@ -49,7 +50,7 @@ To style epub content, inject directly into the iframe via `rendition.hooks.cont
 - Inject `<style>` tags with typography CSS (`font-family`, `font-size`, `line-height`) using `!important`
 - Use `rendition.themes.register()` / `rendition.themes.select()` for dark/light color theming
 
-Do not use `rendition.themes.override()` for typography — it is unreliable and gets reset by `themes.select()`.
+**Do not** use `rendition.themes.override()` for typography — it is unreliable and gets reset by `themes.select()`.
 
 ### Settings persistence
 
@@ -81,11 +82,11 @@ The app is local-first for most entities: IndexedDB is the source of truth and s
 
 ### Chat architecture
 
-Chat is server-authoritative: the Postgres tables `readmax.chat_session` and `readmax.chat_message` are the source of truth for sessions and messages, not IndexedDB. This is a deliberate departure from the local-first model used everywhere else, because chat involves streaming LLM output and server-executed tools.
+Chat is **server-authoritative**: the Postgres tables `readmax.chat_session` and `readmax.chat_message` are the source of truth for sessions and messages, not IndexedDB. This is a deliberate departure from the local-first model used everywhere else, because chat involves streaming LLM output and server-executed tools.
 
 **Transport.** The client uses the AI SDK's `DefaultChatTransport` with `resume: true`. Each chat session is owned by one Cloudflare Agent (Durable Object) keyed by session id (binding name `AGENTS`, class `ChatAgent`). On mount, the chat panel hydrates message history from `GET /api/chat/messages/:sessionId`, and if the session has an `activeStreamId` it reconnects to the in-flight SSE via `GET /api/chat/resume/:sessionId`. Resumability is provided entirely by the Durable Object holding stream state — there is no Redis and no `resumable-stream` runtime.
 
-**IDB warm-start cache.** `app/lib/stores/chat-store.ts` keeps a per-session IDB copy of messages so the panel can paint something before the server hydration request returns. It is written from the server-authoritative list via `cacheServerMessages()` and is never pushed to the server. Session metadata (title, `bookId`, timestamps, `activeStreamId`) is still synced LWW through the regular sync engine as the `chat_session` entity.
+**IDB warm-start cache.** `app/lib/stores/chat-store.ts` keeps a per-session IDB copy of messages so the panel can paint something before the server hydration request returns. It is written from the server-authoritative list via `cacheServerMessages()` and is **never** pushed to the server. Session metadata (title, `bookId`, timestamps, `activeStreamId`) is still synced LWW through the regular sync engine as the `chat_session` entity.
 
 **Server-executed tools.** These tools run inside `ChatAgent` on the server, not in the browser:
 
@@ -94,7 +95,7 @@ Chat is server-authoritative: the Postgres tables `readmax.chat_session` and `re
 - `edit_notes` — runs a sandboxed JS edit script against the notebook SDK and persists the result
 - `create_highlight` — upserts a highlight row keyed by a text anchor (chapter index + snippet); the CFI is resolved later by the client
 
-Tool output is streamed back as SSE UI message parts. `app/components/chat/use-chat-tool-handlers.ts` watches for `output-available` parts and applies the resulting state change locally (update the notebook editor, add the highlight to the annotations store, resolve the CFI). The client never re-runs these tools.
+Tool output is streamed back as SSE UI message parts. `app/components/chat/use-chat-tool-handlers.ts` watches for `output-available` parts and applies the resulting state change locally (update the notebook editor, add the highlight to the annotations store, resolve the CFI). The client **never** re-runs these tools.
 
 **Auth-gated endpoints.** All chat endpoints require a valid passkey session and return 401 otherwise. When signed out the chat panel renders a sign-in CTA instead of an input — it does not attempt to stream locally.
 
@@ -187,7 +188,7 @@ export class MyError extends Data.TaggedError("MyError")<{
   ```
 
 - Use `Effect.ensuring` for cleanup logic instead of `finally`.
-- Do not wrap IndexedDB or other async service calls in raw `try/catch`. Wrap them in `Effect.tryPromise` and let Effect propagate typed errors.
+- **Do not** wrap IndexedDB or other async service calls in raw `try/catch`. Wrap them in `Effect.tryPromise` and let Effect propagate typed errors.
 
 ## Coding conventions
 
@@ -212,7 +213,7 @@ export class MyError extends Data.TaggedError("MyError")<{
 
 ### No barrel modules
 
-- Do not create `index.ts` or re-export files. Import directly from the source module.
+- **Do not** create `index.ts` or re-export files. Import directly from the source module.
 - Bad: `import { Foo } from "~/components/foo"` (resolves to `foo/index.ts`)
 - Good: `import { Foo } from "~/components/foo/foo-component"`
 

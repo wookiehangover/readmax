@@ -1,178 +1,168 @@
-# Ebook Reader
+# readmaxxing
 
-A browser-based ebook reader. Drag and drop `.epub` or `.pdf` files to load them, and read with customizable typography and layout settings. Books are stored locally in IndexedDB — no server or account required. Optionally sign in with a passkey to sync across devices.
+## What is this
 
-## Features
+A local-first ebook reader in the browser. Drag and drop `.epub` files to load them; books, reading positions, highlights, and notebooks live in IndexedDB and work fully offline. Sign in with a passkey to sync across devices and chat with an AI agent that has read access to your library and notebook. Built on React Router v7 + TypeScript on Cloudflare Workers, with R2 for file storage, Hyperdrive in front of Postgres, and Cloudflare Agents (Durable Objects) for chat sessions.
 
-- **Drag-and-drop loading** — drop `.epub` or `.pdf` files anywhere on the page
-- **Local persistence** — books and reading positions stored in IndexedDB
-- **Inbox-style layout** — book list sidebar with reader pane
-- **Dark mode** — system-aware with manual toggle
-- **Layout modes** — single page, two-page spread, continuous scroll
-- **Typography controls** — font family, size, and line height
-- **Reading progress** — chapter and overall progress indicators
-- **Position memory** — resumes where you left off per book
-- **Cross-device sync** — sign in with a passkey to sync books, reading positions, highlights, notebooks, chat sessions, and settings across devices
-- **Passkey authentication** — passwordless login via WebAuthn (self-hosted, no third-party auth service)
-- **Cloud storage** — epub files and cover images stored privately in Cloudflare R2
+## Stack
 
-## Tech Stack
+- React Router v7 (framework mode), TypeScript
+- Tailwind CSS v4, shadcn/ui (Base UI, not Radix)
+- epubjs for parsing and rendering, idb-keyval for IndexedDB
+- Effect.ts for service-based DI and typed errors
+- Cloudflare Workers (runtime), R2 (private file + cover storage), Hyperdrive (Postgres proxy), Agents / Durable Objects (chat sessions)
+- PlanetScale Postgres reached through Hyperdrive in production, plain `pg` locally
+- WebAuthn passkeys via `@simplewebauthn/server` and `@simplewebauthn/browser`
+- pnpm, oxlint, oxfmt, Vitest, Playwright
 
-- [React Router v7](https://reactrouter.com/) (framework mode)
-- [TypeScript](https://www.typescriptlang.org/)
-- [Tailwind CSS v4](https://tailwindcss.com/)
-- [shadcn/ui](https://ui.shadcn.com/)
-- [epubjs](https://github.com/futurepress/epub.js) — epub parsing and rendering
-- [idb-keyval](https://github.com/nickersk/idb-keyval) — IndexedDB storage
-- [Effect.ts](https://effect.website/) — typed error handling and service architecture
-- [pg](https://github.com/brianc/node-postgres) + [pg-sql](https://github.com/calebmer/pg-sql) — Postgres database access
-- [@simplewebauthn/server](https://simplewebauthn.dev/) + [@simplewebauthn/browser](https://simplewebauthn.dev/) — WebAuthn passkey authentication
-- [Cloudflare Workers](https://developers.cloudflare.com/workers/) — app runtime and API routes
-- [Cloudflare R2](https://developers.cloudflare.com/r2/) — private file and cover storage
-- [Cloudflare Hyperdrive](https://developers.cloudflare.com/hyperdrive/) — Postgres connectivity from Workers
-- [Cloudflare Agents](https://developers.cloudflare.com/agents/) — Durable Object-backed chat sessions and resumable streams
+## Local development
 
-## Getting Started
+Prerequisites: Node 20+, pnpm, and a local Postgres instance with a `readmaxxing` database. The app reads `DATABASE_URL` directly in dev; in production it goes through the `HYPERDRIVE` Worker binding.
 
 ```bash
-cp .env.example .env.local  # fill in local sync values if needed
 pnpm install
-pnpm run dev
-```
-
-Open [http://localhost:5173](http://localhost:5173) and drop an `.epub` file to get started.
-
-The app works fully offline without any environment variables. Sync features require Postgres plus private Cloudflare R2 buckets — see [Environment Variables](#environment-variables) below.
-
-## Environment Variables
-
-Copy `.env.example` to `.env.local`:
-
-```bash
 cp .env.example .env.local
 ```
 
-All environment variables are optional for local offline reading. Sync and chat features require:
+Fill in `.env.local`. The notable variables:
 
-- `DATABASE_URL` — local development Postgres connection string; production uses the `HYPERDRIVE` Worker binding
-- `WEBAUTHN_RP_ID` — WebAuthn Relying Party ID (e.g. `localhost` for dev, your domain for prod)
-- `WEBAUTHN_RP_ORIGIN` — WebAuthn origin URL (e.g. `http://localhost:5173` for dev)
-- `PUBLIC_SITE_URL` — canonical public origin used for absolute social preview URLs
-- `AI_GATEWAY_API_KEY` — Cloudflare AI Gateway API key for chat
-- `ANTHROPIC_API_KEY` — Anthropic API key for chat model access
-- `ANTHROPIC_BASE_URL` — optional custom Anthropic-compatible endpoint
+- `DATABASE_URL` — local Postgres connection string.
+- `WEBAUTHN_RP_ID` / `WEBAUTHN_RP_ORIGIN` — passkey relying-party config (`localhost` and `http://localhost:5173` in dev).
+- `PUBLIC_SITE_URL` — canonical public origin. The service worker registers itself against this, and absolute social preview URLs are derived from it.
+- `AI_GATEWAY_API_KEY`, `ANTHROPIC_API_KEY` — required for chat. `ANTHROPIC_BASE_URL` is optional.
 
-Production resources are configured in `wrangler.jsonc` as Worker bindings:
-
-- `HYPERDRIVE` — Cloudflare Hyperdrive config pointing at PlanetScale Postgres
-- `R2_FILES` / `R2_COVERS` — private R2 bucket bindings for book files and covers
-- `AGENTS` — Durable Object namespace for Cloudflare Agents chat sessions
-
-Set production secrets with Wrangler:
+Apply the schema:
 
 ```bash
-pnpm exec wrangler secret put WEBAUTHN_RP_ID
-pnpm exec wrangler secret put WEBAUTHN_RP_ORIGIN
-pnpm exec wrangler secret put AI_GATEWAY_API_KEY
-pnpm exec wrangler secret put ANTHROPIC_API_KEY
-pnpm exec wrangler secret put ANTHROPIC_BASE_URL  # optional
+psql "$DATABASE_URL" -f database/readmax/core.sql
+for f in database/migrations/*.sql; do psql "$DATABASE_URL" -f "$f"; done
 ```
 
-Create the private R2 buckets before deploying the Worker:
+Run the dev server:
 
 ```bash
-pnpm exec wrangler r2 bucket create readmax-files
-pnpm exec wrangler r2 bucket create readmax-covers
+pnpm dev          # react-router dev (Vite, fastest inner loop)
+pnpm start        # wrangler dev against the built Worker (closer to prod)
 ```
 
-Do not enable public access for either bucket; uploads and downloads go through authenticated `/api/sync/files/*` routes.
-
-## Database Setup
-
-The app uses a `readmax` Postgres schema. Apply the schema files in order:
+Tests, lint, and formatting:
 
 ```bash
-psql $DATABASE_URL -f database/readmax/core.sql
+pnpm test         # vitest unit tests
+pnpm e2e          # playwright end-to-end tests
+pnpm oxlint       # lint
+pnpm oxfmt .      # format
+pnpm typecheck    # react-router typegen + tsc
 ```
 
-Migrations are in `database/migrations/` — apply them sequentially.
+## Architecture overview
 
-## Migrating Vercel Blob to R2
+Epub parsing and rendering happen entirely in the browser. epubjs renders each book inside an isolated iframe; typography and theming are injected through `rendition.hooks.content.register()` because the iframe does not inherit parent-page CSS or font links.
 
-Wave 3 includes a one-shot local migration script that copies legacy Vercel Blob objects referenced by `readmax.book.file_blob_url` and `readmax.book.cover_blob_url` into the private Cloudflare R2 buckets, then rewrites those DB columns to `r2://...` references.
+The app is local-first for everything except chat. IndexedDB is the source of truth for books, reading positions, highlights, notebooks, and settings; service mutations append to a changelog store that is pushed to the server on an interval and pulled back on demand. Most entities use Last-Write-Wins by `updatedAt`; highlights use set-union with tombstones; chat is the exception — Postgres is authoritative and IDB is only a warm-start cache for the chat panel.
 
-1. Set these environment variables locally, either in `.env.local` or as CLI flag overrides: `DATABASE_URL`, `BLOB_READ_WRITE_TOKEN`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_FILES_BUCKET`, and `R2_COVERS_BUCKET`.
-2. Run a dry run first:
-   ```bash
-   pnpm exec tsx scripts/backfill-blob-to-r2.ts --dry-run --audit-csv migration.csv
-   ```
-3. Inspect `migration.csv` and the stdout plan.
-4. Run the migration without `--dry-run`:
-   ```bash
-   pnpm exec tsx scripts/backfill-blob-to-r2.ts --audit-csv migration.csv
-   ```
-5. Verify no legacy references remain:
-   ```sql
-   SELECT count(*)
-   FROM readmax.book
-   WHERE file_blob_url ILIKE '%blob.vercel-storage.com%'
-      OR cover_blob_url ILIKE '%blob.vercel-storage.com%';
-   ```
-   The count must be `0`.
-6. Only after that verification passes, proceed to Wave 4 cleanup or merge. This is a required manual gate before deploying the Cloudflare-only runtime.
+Cloudflare resource topology:
 
-## Deploy and Cutover
+- **Workers** — single Worker entry at `workers/app.ts` serving all routes and API endpoints.
+- **Hyperdrive** — `HYPERDRIVE` binding pools and caches connections to PlanetScale Postgres.
+- **R2** — `R2_FILES` (bucket `readmax-files`) and `R2_COVERS` (bucket `readmax-covers`). Both are private; reads go through authenticated `/api/sync/files/*` proxy routes.
+- **Agents / Durable Objects** — `AGENTS` namespace bound to the `ChatAgent` class. One Durable Object per chat session, holding stream state for SSE resume.
 
-Cloudflare is the only production runtime. Deployments use Workers, R2, Hyperdrive, and Cloudflare Agents; do not configure a separate Node server.
+See `AGENTS.md` for the full architecture rules — Effect.ts conventions, sync engine details, chat tool execution model, component structure rules, and gotchas.
 
-1. Create Cloudflare resources:
-   - R2 buckets: `readmax-files` and `readmax-covers`
-   - Hyperdrive config pointing at PlanetScale Postgres
-   - Worker using `wrangler.jsonc`
-2. Add required Worker secrets:
+## Deployment to Cloudflare
+
+Cloudflare is the only production runtime. There is no Node server.
+
+1. **Provision Cloudflare resources.**
+   - Private R2 buckets (do not enable public access; reads are auth-proxied):
+     ```bash
+     pnpm exec wrangler r2 bucket create readmax-files
+     pnpm exec wrangler r2 bucket create readmax-covers
+     ```
+   - Hyperdrive config pointing at the production Postgres connection string:
+     ```bash
+     pnpm exec wrangler hyperdrive create readmaxxing-pg --connection-string "$PG_URL"
+     ```
+     Paste the returned id into the `hyperdrive[0].id` field in `wrangler.jsonc`.
+   - The Workers project, R2 bindings, and `ChatAgent` Durable Object migration are already declared in `wrangler.jsonc`; you only need a Workers slot in your account.
+
+2. **Set Worker secrets.**
    ```bash
    pnpm exec wrangler secret put WEBAUTHN_RP_ID
    pnpm exec wrangler secret put WEBAUTHN_RP_ORIGIN
    pnpm exec wrangler secret put AI_GATEWAY_API_KEY
    pnpm exec wrangler secret put ANTHROPIC_API_KEY
-   pnpm exec wrangler secret put ANTHROPIC_BASE_URL  # optional
+   pnpm exec wrangler secret put ANTHROPIC_BASE_URL   # optional
    ```
-3. Run the Wave 3 backfill script against the production database.
-4. Before merging or deploying Wave 4, verify no legacy storage URLs remain:
+
+3. **Set non-secret vars.** `PUBLIC_SITE_URL` and `WEBAUTHN_RP_NAME` live in the `vars` block of `wrangler.jsonc`; update `PUBLIC_SITE_URL` to the deployed origin before shipping.
+
+4. **(Only if migrating from a previous Vercel + Vercel Blob deployment.)** Run the one-shot backfill that copies legacy Vercel Blob objects into R2 and rewrites `readmax.book.file_blob_url` / `cover_blob_url` to `r2://...` references. Always dry-run first:
+   ```bash
+   pnpm exec tsx scripts/backfill-blob-to-r2.ts --dry-run --audit-csv migration.csv
+   pnpm exec tsx scripts/backfill-blob-to-r2.ts --audit-csv migration.csv
+   ```
+   See [Migration script reference](#migration-script-reference) for flags.
+
+5. **(Only if step 4 was needed.) Mandatory pre-deploy gate.** Confirm no legacy storage URLs remain in production:
    ```sql
    SELECT count(*)
    FROM readmax.book
    WHERE file_url ILIKE '%blob.vercel-storage.com%'
-      OR cover_url ILIKE '%blob.vercel-storage.com%'
-      OR file_blob_url ILIKE '%blob.vercel-storage.com%'
-      OR cover_blob_url ILIKE '%blob.vercel-storage.com%';
+      OR cover_url ILIKE '%blob.vercel-storage.com%';
    ```
-   Confirm the count is `0`.
-5. Build and deploy:
+   The count must be `0` before proceeding.
+
+6. **Build and deploy.**
    ```bash
    pnpm build
    pnpm exec wrangler deploy
    ```
-6. Cut DNS over to the Worker route.
-7. After traffic is healthy, decommission the old Vercel deployment.
+   Use `pnpm exec wrangler deploy --dry-run` first to validate Worker packaging.
 
-Use `pnpm run dev` for local development (`react-router dev`) and `pnpm run start` for `wrangler dev` against the built Worker configuration. Use `pnpm exec wrangler deploy --dry-run` to validate Worker packaging without deploying.
+7. **Cut DNS over** to the Worker route once health checks pass.
 
-## Scripts
+## Migration script reference
 
-| Command              | Description                  |
-| -------------------- | ---------------------------- |
-| `pnpm run dev`       | Start development server     |
-| `pnpm run build`     | Production build             |
-| `pnpm run start`     | Serve production build       |
-| `pnpm run typecheck` | Run TypeScript type checking |
-| `pnpm run lint`      | Lint with oxlint             |
-| `pnpm run format`    | Format with oxfmt            |
+`scripts/backfill-blob-to-r2.ts` is a one-shot Node script intended to be run from a developer machine with network access to both Vercel Blob and Cloudflare R2. It reads `BLOB_READ_WRITE_TOKEN`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_FILES_BUCKET`, and `R2_COVERS_BUCKET` from the environment (or `.env.local`), with CLI overrides for each.
 
-## Troubleshooting sync
+| Flag                          | Purpose                                                                            |
+| ----------------------------- | ---------------------------------------------------------------------------------- |
+| `--dry-run`                   | Print the migration plan without downloads, R2 writes, or DB updates.              |
+| `--resume-from <bookId>`      | Start from this book id in id-sorted order. Use after a partial failure.           |
+| `--concurrency <n>`           | Books processed in parallel (default `5`).                                         |
+| `--audit-csv <path>`          | Append `bookId,oldUrl,newKey,bytes,sha256,migratedAtISO` rows for every migration. |
+| `--database-url <url>`        | Override `DATABASE_URL`.                                                           |
+| `--blob-read-write-token <t>` | Override `BLOB_READ_WRITE_TOKEN`.                                                  |
+| `--r2-account-id <id>`        | Override `R2_ACCOUNT_ID`.                                                          |
+| `--r2-access-key-id <id>`     | Override `R2_ACCESS_KEY_ID`.                                                       |
+| `--r2-secret-access-key <s>`  | Override `R2_SECRET_ACCESS_KEY`.                                                   |
+| `--r2-files-bucket <name>`    | Override `R2_FILES_BUCKET`.                                                        |
+| `--r2-covers-bucket <name>`   | Override `R2_COVERS_BUCKET`.                                                       |
 
-Verbose sync diagnostics are opt-in. In DevTools, run `localStorage.setItem("sync_debug", "1")` and reload to see structured `[sync-debug]` logs for upload attempts, push/pull cycles, and retry backoffs. Clear the flag with `localStorage.removeItem("sync_debug")`.
+Typical run:
 
-## License
+```bash
+pnpm exec tsx scripts/backfill-blob-to-r2.ts \
+  --audit-csv migration.csv \
+  --concurrency 8 \
+  --resume-from 01HZ...   # only when resuming after a failure
+```
 
-MIT
+## Project structure
+
+```
+app/         React Router v7 app: routes, components, hooks, Effect services, lib
+workers/     Cloudflare Worker entry (app.ts) and ChatAgent Durable Object
+scripts/     Operational scripts (backfill-blob-to-r2.ts)
+database/    readmax schema (readmax/core.sql) and sequential SQL migrations/
+e2e/         Playwright tests and fixture epubs
+public/      Static assets, icons, self-hosted Geist fonts
+```
+
+## Pointers
+
+- `AGENTS.md` — architecture conventions, Effect.ts patterns, sync engine details, chat runtime, component rules.
+- `database/migrations/` — sequential SQL migrations; apply in filename order.
+- `wrangler.jsonc` — Worker bindings, vars, R2 buckets, Durable Object class migrations.

@@ -217,6 +217,6 @@ export default defineConfig({
     __SITE_ORIGIN__: JSON.stringify(getSiteOrigin()),
   },
   resolve: {
-    tsconfigPaths: true
-  }
+    tsconfigPaths: true,
+  },
 });

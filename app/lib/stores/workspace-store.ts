@@ -1,10 +1,9 @@
-import { createStore, get, set, del, entries } from "idb-keyval";
+import { createStore, get, set, del, keys } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
 import { Context, Effect, Layer, Schema } from "effect";
 import type { SerializedDockview } from "dockview";
 import { WorkspaceError, DecodeError } from "~/lib/errors";
 import type { LayoutMode } from "~/lib/settings";
-import { isWellFormedEntry } from "~/lib/sync/idb-entry";
 
 // --- Schema ---
 
@@ -193,13 +192,13 @@ export function makeWorkspaceService(stores: WorkspaceServiceStores): WorkspaceS
     getLastOpenedMap: () =>
       Effect.tryPromise({
         try: async () => {
-          const all = await entries<string, unknown>(lastOpenedStore);
+          const allKeys = await keys(lastOpenedStore);
           const map = new Map<string, number>();
-          for (const entry of all) {
-            if (!isWellFormedEntry(entry)) continue;
-            const [bookId, timestamp] = entry;
-            if (typeof bookId !== "string" || typeof timestamp !== "number") continue;
-            map.set(bookId, timestamp);
+          for (const key of allKeys) {
+            if (typeof key !== "string") continue;
+            const timestamp = await get<unknown>(key, lastOpenedStore);
+            if (typeof timestamp !== "number") continue;
+            map.set(key, timestamp);
           }
           return map;
         },

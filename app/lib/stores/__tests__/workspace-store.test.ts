@@ -165,20 +165,21 @@ describe("WorkspaceService", () => {
       expect(map.size).toBe(0);
     });
 
-    it("skips malformed last-opened entries without throwing", async () => {
-      const layer = makeTestLayer();
+    it("does not use the idb-keyval entries fast path for last-opened timestamps", async () => {
+      const stores = makeTestStores();
+      const layer = makeTestLayer(stores);
       const run = <A, E>(e: Effect.Effect<A, E, WorkspaceService>) =>
         Effect.runPromise(Effect.provide(e, layer));
-      vi.mocked(entries).mockResolvedValueOnce([
-        undefined,
-        ["book-1", 1000],
-        ["bad-timestamp", "not-a-number"],
-        ["book-2", 2000],
-        ["missing-value"],
-      ] as any);
+      await set("book-1", 1000, stores.lastOpenedStore);
+      await set("bad-timestamp", "not-a-number", stores.lastOpenedStore);
+      await set("book-2", 2000, stores.lastOpenedStore);
+      vi.mocked(entries).mockRejectedValueOnce(
+        new TypeError("Cannot read properties of undefined (reading '0')"),
+      );
 
       const map = await run(WorkspaceService.pipe(Effect.andThen((s) => s.getLastOpenedMap())));
 
+      expect(entries).not.toHaveBeenCalled();
       expect(Array.from(map.entries())).toEqual([
         ["book-1", 1000],
         ["book-2", 2000],

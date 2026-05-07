@@ -4,6 +4,7 @@ import { Context, Effect, Layer, Schema } from "effect";
 import type { SerializedDockview } from "dockview";
 import { WorkspaceError, DecodeError } from "~/lib/errors";
 import type { LayoutMode } from "~/lib/settings";
+import { isWellFormedEntry } from "~/lib/sync/idb-entry";
 
 // --- Schema ---
 
@@ -192,8 +193,15 @@ export function makeWorkspaceService(stores: WorkspaceServiceStores): WorkspaceS
     getLastOpenedMap: () =>
       Effect.tryPromise({
         try: async () => {
-          const all = await entries<string, number>(lastOpenedStore);
-          return new Map(all);
+          const all = await entries<string, unknown>(lastOpenedStore);
+          const map = new Map<string, number>();
+          for (const entry of all) {
+            if (!isWellFormedEntry(entry)) continue;
+            const [bookId, timestamp] = entry;
+            if (typeof bookId !== "string" || typeof timestamp !== "number") continue;
+            map.set(bookId, timestamp);
+          }
+          return map;
         },
         catch: (cause) => new WorkspaceError({ operation: "getLastOpenedMap", cause }),
       }),

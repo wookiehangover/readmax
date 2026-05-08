@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import {
   BookOpen,
   CloudDownload,
+  MessageSquare,
   NotebookPen,
   Plus,
   ArrowUpDown,
@@ -86,6 +87,7 @@ export interface WorkspaceSidebarProps {
     layoutMode?: LayoutMode;
   }) => void;
   onOpenBook: (book: BookMeta) => void;
+  onOpenChat: (book: BookMeta) => void;
   onOpenNotebook: (book: BookMeta) => void;
   onFileInput: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }
@@ -100,6 +102,7 @@ export function WorkspaceSidebar({
   getActiveClusterId,
   onUpdateSettings,
   onOpenBook,
+  onOpenChat,
   onOpenNotebook,
   onFileInput,
 }: WorkspaceSidebarProps) {
@@ -125,13 +128,30 @@ export function WorkspaceSidebar({
     [otherBooks, filterQuery],
   );
 
-  // In focused mode + collapsed sidebar, the rail must show every open
-  // cluster (not just the one whose panels are currently mounted in
-  // dockview). Resolve each cluster bookId to a BookMeta from the lists the
-  // parent already passes; fall back to a stub if the book hasn't loaded
-  // yet so the rail still paints something clickable.
+  // In focused mode + collapsed sidebar, actions operate on the active
+  // cluster's book. Resolve it from the lists the parent already passes; fall
+  // back to a stub if the book hasn't loaded yet so buttons remain clickable.
   const isCollapsedFocused = collapsed && layoutMode === "focused";
   const activeClusterId = isCollapsedFocused ? getActiveClusterId() : null;
+  const activeClusterBook = useMemo(() => {
+    if (!isCollapsedFocused || !activeClusterId) return null;
+
+    const byId = new Map<string, BookMeta>();
+    for (const b of openBooks) byId.set(b.id, b);
+    for (const b of otherBooks) byId.set(b.id, b);
+
+    const existingBook = byId.get(activeClusterId);
+    if (existingBook) return existingBook;
+
+    const entry = getClusterEntries().find((cluster) => cluster.bookId === activeClusterId);
+    if (!entry) return null;
+
+    return {
+      id: entry.bookId,
+      title: entry.bookTitle,
+      author: "",
+    } as BookMeta;
+  }, [isCollapsedFocused, activeClusterId, openBooks, otherBooks, getClusterEntries]);
   const railOpenBooks = useMemo(() => {
     if (!isCollapsedFocused) return filteredOpenBooks;
     const byId = new Map<string, BookMeta>();
@@ -152,6 +172,12 @@ export function WorkspaceSidebar({
     // useMemo runs on every render anyway when version changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isCollapsedFocused, openBooks, otherBooks, getClusterEntries, activeClusterId]);
+
+  function handleOpenSearch(book: BookMeta) {
+    queueMicrotask(() => {
+      window.dispatchEvent(new CustomEvent("book-search:open", { detail: { bookId: book.id } }));
+    });
+  }
 
   return (
     <aside
@@ -244,7 +270,65 @@ export function WorkspaceSidebar({
         </div>
       )}
       <ScrollArea className="min-h-0 flex-1 scroll-fog-container" hideScrollbar>
-        {openBooks.length === 0 && otherBooks.length === 0 ? (
+        {isCollapsedFocused ? (
+          activeClusterBook && (
+            <TooltipProvider delay={400}>
+              <div className="flex flex-col items-center gap-1 p-1">
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        type="button"
+                        onClick={() => handleOpenSearch(activeClusterBook)}
+                        className="flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                      />
+                    }
+                  >
+                    <Search className="size-4" />
+                    <span className="sr-only">Open search</span>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" sideOffset={8}>
+                    Search
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        type="button"
+                        onClick={() => onOpenChat(activeClusterBook)}
+                        className="flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                      />
+                    }
+                  >
+                    <MessageSquare className="size-4" />
+                    <span className="sr-only">Open chat</span>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" sideOffset={8}>
+                    Chat
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        type="button"
+                        onClick={() => onOpenNotebook(activeClusterBook)}
+                        className="flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                      />
+                    }
+                  >
+                    <NotebookPen className="size-4" />
+                    <span className="sr-only">Open notebook</span>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" sideOffset={8}>
+                    Notebook
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            </TooltipProvider>
+          )
+        ) : openBooks.length === 0 && otherBooks.length === 0 ? (
           !collapsed && (
             <div className="p-4 text-xs text-muted-foreground space-y-4">
               <p>No books yet.</p>

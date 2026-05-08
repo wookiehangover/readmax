@@ -197,12 +197,12 @@ preflight() {
   [ -f "$WRANGLER_CONFIG" ] || die "Missing $WRANGLER_CONFIG at repo root."
 
   if [ "$DRY_RUN" -eq 1 ]; then
-    run pnpm exec wrangler whoami --format json
+    run pnpm exec wrangler whoami --json
     echo "[setup] Dry run: skipping wrangler authentication check."
     return 0
   fi
 
-  if ! whoami_output="$(run_capture pnpm exec wrangler whoami --format json)"; then
+  if ! whoami_output="$(run_capture pnpm exec wrangler whoami --json)"; then
     die "Wrangler is not authenticated. Run 'pnpm exec wrangler login' and retry."
   fi
   email="$(printf '%s' "$whoami_output" | jq -r '.user.email // .email // "unknown-email"')"
@@ -252,11 +252,17 @@ get_pg_url() {
 extract_id() {
   local input="$1"
   local id
-  id="$(printf '%s' "$input" | jq -r '.. | objects | .id? // empty' 2>/dev/null | head -n 1 || true)"
-  if [ -z "$id" ]; then
-    id="$(printf '%s' "$input" | grep -Eo '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}' | head -n 1 || true)"
-  fi
-  printf '%s' "$id"
+  while IFS= read -r id; do
+    if [ -n "$id" ] && [ "$id" != "$PLACEHOLDER_ID" ]; then
+      printf '%s' "$id"
+      return 0
+    fi
+  done < <(
+    {
+      printf '%s' "$input" | jq -r '.. | objects | .id? // empty' 2>/dev/null || true
+      printf '%s' "$input" | grep -Eo '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}' || true
+    } | awk '!seen[$0]++'
+  )
 }
 
 escape_sed_replacement() {
@@ -293,15 +299,12 @@ create_or_reuse_hyperdrive() {
   echo "[setup] Creating Hyperdrive config '$HYPERDRIVE_NAME' for $(mask_pg_url "$PG_URL")."
 
   if [ "$DRY_RUN" -eq 1 ]; then
-    run pnpm exec wrangler hyperdrive create "$HYPERDRIVE_NAME" --connection-string "$PG_URL" --format json
+    run pnpm exec wrangler hyperdrive create "$HYPERDRIVE_NAME" --connection-string "$PG_URL"
     echo "[setup] Dry run: would write the returned Hyperdrive id to $WRANGLER_CONFIG."
     return 0
   fi
 
-  if ! create_output="$(run_capture pnpm exec wrangler hyperdrive create "$HYPERDRIVE_NAME" --connection-string "$PG_URL" --format json)"; then
-    echo "[setup] Retrying Hyperdrive create without --format json."
-    create_output="$(run_capture pnpm exec wrangler hyperdrive create "$HYPERDRIVE_NAME" --connection-string "$PG_URL")"
-  fi
+  create_output="$(run_capture pnpm exec wrangler hyperdrive create "$HYPERDRIVE_NAME" --connection-string "$PG_URL")"
   resolved_id="$(extract_id "$create_output")"
   [ -n "$resolved_id" ] || die "Unable to find a Hyperdrive id in wrangler output."
   write_hyperdrive_id "$resolved_id"

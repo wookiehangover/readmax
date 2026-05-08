@@ -229,6 +229,17 @@ function WorkspaceBookReaderInner({
     panelRef,
   });
 
+  useEffect(() => {
+    const handleBookSearchOpen = (event: Event) => {
+      const detail = (event as CustomEvent<{ bookId?: string }>).detail;
+      if (detail?.bookId !== book.id) return;
+      handleSearchOpen();
+    };
+
+    window.addEventListener("book-search:open", handleBookSearchOpen);
+    return () => window.removeEventListener("book-search:open", handleBookSearchOpen);
+  }, [book.id, handleSearchOpen]);
+
   // Ref-based callback so useHighlights always calls the latest handleOpenNotebook
   const handleOpenNotebookRef = useRef<() => void>(() => {});
 

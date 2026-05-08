@@ -282,6 +282,10 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       openBook(book);
       setMobileOpen(false);
     },
+    onOpenChat: (book: BookMeta) => {
+      openChat(book);
+      setMobileOpen(false);
+    },
     onOpenNotebook: (book: BookMeta) => {
       openNotebook(book);
       setMobileOpen(false);

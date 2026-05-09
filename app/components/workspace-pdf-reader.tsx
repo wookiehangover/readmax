@@ -345,24 +345,33 @@ function WorkspacePdfReaderInner({
           </div>
         )}
         <div className="absolute right-2 flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => (searchOpen ? handleSearchClose() : handleSearchOpen())}
-            title="Search in book (Cmd+F)"
-            data-testid="pdf-search-btn"
-          >
-            <Search className="size-4" />
-            <span className="sr-only">Search in book</span>
-          </Button>
-          <Button variant="ghost" size="icon" onClick={handleOpenNotebook} title="Open Notebook">
-            <Notebook className="size-4" />
-            <span className="sr-only">Open Notebook</span>
-          </Button>
-          <Button variant="ghost" size="icon" onClick={handleOpenChat} title="Open Chat">
-            <MessageCircle className="size-4" />
-            <span className="sr-only">Open Chat</span>
-          </Button>
+          {isMobile && (
+            <>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => (searchOpen ? handleSearchClose() : handleSearchOpen())}
+                title="Search in book (Cmd+F)"
+                data-testid="pdf-search-btn"
+              >
+                <Search className="size-4" />
+                <span className="sr-only">Search in book</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleOpenNotebook}
+                title="Open Notebook"
+              >
+                <Notebook className="size-4" />
+                <span className="sr-only">Open Notebook</span>
+              </Button>
+              <Button variant="ghost" size="icon" onClick={handleOpenChat} title="Open Chat">
+                <MessageCircle className="size-4" />
+                <span className="sr-only">Open Chat</span>
+              </Button>
+            </>
+          )}
           {toc.length > 0 && (
             <Popover open={tocOpen} onOpenChange={setTocOpen}>
               <PopoverTrigger

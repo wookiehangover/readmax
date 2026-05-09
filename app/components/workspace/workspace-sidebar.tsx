@@ -4,13 +4,13 @@ import {
   BookOpen,
   CloudDownload,
   MessageSquare,
-  NotebookPen,
   Plus,
   ArrowUpDown,
   Settings,
   PanelLeft,
   PanelLeftClose,
   Search,
+  Notebook,
 } from "lucide-react";
 import { BookCover, FILTER_THRESHOLD } from "~/components/book-list";
 import { filterBooks } from "~/lib/workspace-utils";
@@ -296,6 +296,23 @@ export function WorkspaceSidebar({
                     render={
                       <button
                         type="button"
+                        onClick={() => onOpenNotebook(activeClusterBook)}
+                        className="flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                      />
+                    }
+                  >
+                    <Notebook className="size-4" />
+                    <span className="sr-only">Open notebook</span>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" sideOffset={8}>
+                    Notebook
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        type="button"
                         onClick={() => onOpenChat(activeClusterBook)}
                         className="flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
                       />
@@ -306,23 +323,6 @@ export function WorkspaceSidebar({
                   </TooltipTrigger>
                   <TooltipContent side="right" sideOffset={8}>
                     Chat
-                  </TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <button
-                        type="button"
-                        onClick={() => onOpenNotebook(activeClusterBook)}
-                        className="flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-                      />
-                    }
-                  >
-                    <NotebookPen className="size-4" />
-                    <span className="sr-only">Open notebook</span>
-                  </TooltipTrigger>
-                  <TooltipContent side="right" sideOffset={8}>
-                    Notebook
                   </TooltipContent>
                 </Tooltip>
               </div>
@@ -382,7 +382,7 @@ export function WorkspaceSidebar({
                           className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                           title="Open notebook"
                         >
-                          <NotebookPen className="size-3.5" />
+                          <Notebook className="size-3.5" />
                         </button>
                       </div>
                     )}
@@ -432,7 +432,7 @@ export function WorkspaceSidebar({
                         className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                         title="Open notebook"
                       >
-                        <NotebookPen className="size-3.5" />
+                        <Notebook className="size-3.5" />
                       </button>
                     </div>
                   </li>

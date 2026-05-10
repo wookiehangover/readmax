@@ -140,10 +140,9 @@ test.describe("PDF support", () => {
     await expect(pdfContainer).toBeVisible({ timeout: 15_000 });
     await expect(pdfContainer.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
 
-    // Click the search button
-    const searchBtn = page.locator("[data-testid='pdf-search-btn']");
-    await expect(searchBtn).toBeVisible({ timeout: 5_000 });
-    await searchBtn.click();
+    // Open search with keyboard shortcut
+    await page.getByTestId("pdf-prev").focus();
+    await page.keyboard.press("Meta+f");
 
     // Search bar should appear with input
     const searchInput = page.getByPlaceholder("Search in book…");
@@ -157,9 +156,9 @@ test.describe("PDF support", () => {
     await expect(pdfContainer).toBeVisible({ timeout: 15_000 });
     await expect(pdfContainer.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
 
-    // Open search
-    const searchBtn = page.locator("[data-testid='pdf-search-btn']");
-    await searchBtn.click();
+    // Open search with keyboard shortcut
+    await page.getByTestId("pdf-prev").focus();
+    await page.keyboard.press("Meta+f");
 
     // Search for "elephant" which is only on page 2
     const searchInput = page.getByPlaceholder("Search in book…");
@@ -177,8 +176,8 @@ test.describe("PDF support", () => {
     await expect(pdfContainer.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
 
     // Open search and search for "quick brown fox" which is on page 1
-    const searchBtn = page.locator("[data-testid='pdf-search-btn']");
-    await searchBtn.click();
+    await page.getByTestId("pdf-prev").focus();
+    await page.keyboard.press("Meta+f");
 
     const searchInput = page.getByPlaceholder("Search in book…");
     await searchInput.fill("quick brown fox");

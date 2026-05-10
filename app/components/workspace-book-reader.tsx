@@ -229,6 +229,17 @@ function WorkspaceBookReaderInner({
     panelRef,
   });
 
+  useEffect(() => {
+    const handleBookSearchOpen = (event: Event) => {
+      const detail = (event as CustomEvent<{ bookId?: string }>).detail;
+      if (detail?.bookId !== book.id) return;
+      handleSearchOpen();
+    };
+
+    window.addEventListener("book-search:open", handleBookSearchOpen);
+    return () => window.removeEventListener("book-search:open", handleBookSearchOpen);
+  }, [book.id, handleSearchOpen]);
+
   // Ref-based callback so useHighlights always calls the latest handleOpenNotebook
   const handleOpenNotebookRef = useRef<() => void>(() => {});
 
@@ -473,7 +484,9 @@ function WorkspaceBookReaderInner({
       .then(() => {
         queueMicrotask(() => {
           window.dispatchEvent(
-            new CustomEvent("sync:entity-updated", { detail: { entity: "notebook" } }),
+            new CustomEvent("sync:entity-updated", {
+              detail: { entity: "notebook" },
+            }),
           );
         });
       })
@@ -594,23 +607,37 @@ function WorkspaceBookReaderInner({
             </div>
           )}
           <div className="absolute right-2 flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleSearchOpen}
-              title="Search in book (Cmd+F)"
-            >
-              <Search className="size-4" />
-              <span className="sr-only">Search in book</span>
-            </Button>
-            <Button variant="ghost" size="icon" onClick={handleOpenNotebook} title="Open Notebook">
-              <Notebook className="size-4" />
-              <span className="sr-only">Open Notebook</span>
-            </Button>
-            <Button variant="ghost" size="icon" onClick={handleOpenChat} title="Chat about book">
-              <MessageSquare className="size-4" />
-              <span className="sr-only">Chat about book</span>
-            </Button>
+            {isMobile && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleSearchOpen}
+                  title="Search in book (Cmd+F)"
+                >
+                  <Search className="size-4" />
+                  <span className="sr-only">Search in book</span>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleOpenNotebook}
+                  title="Open Notebook"
+                >
+                  <Notebook className="size-4" />
+                  <span className="sr-only">Open Notebook</span>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleOpenChat}
+                  title="Chat about book"
+                >
+                  <MessageSquare className="size-4" />
+                  <span className="sr-only">Chat about book</span>
+                </Button>
+              </>
+            )}
             {toc.length > 0 && (
               <Popover open={tocOpen} onOpenChange={setTocOpen}>
                 <PopoverTrigger

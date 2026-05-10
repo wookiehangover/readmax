@@ -128,8 +128,9 @@ test.describe("Workspace route", () => {
   test("search bar opens and accepts input", async ({ page }) => {
     await uploadAndOpenBook(page);
 
-    // Click the search button
-    await page.getByRole("button", { name: "Search in book" }).first().click();
+    // Open search with keyboard shortcut
+    await page.getByRole("button", { name: "Previous page" }).first().focus();
+    await page.keyboard.press("Meta+f");
 
     // Verify search bar appears — it has an input with placeholder
     const searchInput = page.getByPlaceholder("Search in book…");

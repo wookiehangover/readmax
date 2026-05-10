@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
-import { X } from "lucide-react";
+import { BookOpen, X } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { BookCover } from "~/components/book-list";
 import { cn } from "~/lib/utils";
@@ -152,6 +152,17 @@ export function ClusterBar({
     onReorder(next);
   }
 
+  function handleOpenBookClick() {
+    window.dispatchEvent(
+      new window.KeyboardEvent("keydown", {
+        key: "k",
+        metaKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  }
+
   if (entries.length === 0) return null;
 
   const bookById = new Map<string, BookMeta>();
@@ -161,7 +172,7 @@ export function ClusterBar({
     <div
       role="tablist"
       aria-label="Open books"
-      className="flex items-center gap-1.5 overflow-x-auto h-11 border-b border-border/60 bg-background px-2 py-1.5"
+      className="flex h-11 items-center gap-1.5 overflow-x-auto scrollbar-none border-b border-border/60 bg-background px-2 py-1.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
     >
       {entries.map((entry, idx) => {
         const isActive = entry.bookId === activeId;
@@ -255,6 +266,17 @@ export function ClusterBar({
           </div>
         );
       })}
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        className="sticky right-0 ml-auto shrink-0 bg-background text-muted-foreground hover:text-foreground"
+        onClick={handleOpenBookClick}
+        title="Open book"
+        aria-label="Open book"
+      >
+        <BookOpen aria-hidden="true" />
+      </Button>
     </div>
   );
 }

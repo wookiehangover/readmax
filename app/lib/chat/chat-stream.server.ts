@@ -8,9 +8,10 @@ import {
   createUIMessageStreamResponse,
   generateId,
 } from "ai";
-import { gateway } from "@ai-sdk/gateway";
+import { createGateway } from "@ai-sdk/gateway";
 import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
+import { getEnv } from "~/lib/env.server";
 import { SE_BASE, parseSearchHtml } from "~/routes/api.standard-ebooks.search";
 import type { BookChapter } from "~/lib/epub/epub-text-extract";
 import { getOrBuildBookIndex, locateTextAnchor, searchBook } from "~/lib/orama-book-search";
@@ -58,6 +59,10 @@ interface CreateChatStreamResponseOptions {
 const CURRENT_CHAPTER_CONTEXT_CHARS = 8000;
 const VISIBLE_PAGE_CONTEXT_CHARS = 2000;
 const MAX_CHAT_STEPS = 20;
+
+const gateway = createGateway({
+  apiKey: getEnv().AI_GATEWAY_API_KEY
+})
 
 function truncateContext(text: string, limit: number): string {
   const trimmed = text.trim();

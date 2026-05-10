@@ -1,6 +1,11 @@
 import { generateText, type UIMessage } from "ai";
-import { gateway } from "@ai-sdk/gateway";
+import { createGateway } from "@ai-sdk/gateway";
 import { getSessionFromRequest } from "~/lib/database/auth-middleware";
+import { getEnv } from "~/lib/env.server";
+
+const gateway = createGateway({
+  apiKey: getEnv().AI_GATEWAY_API_KEY
+})
 
 interface ChatTitleRequestBody {
   messages: UIMessage[];

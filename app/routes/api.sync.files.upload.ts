@@ -55,7 +55,7 @@ async function readUploadBlob(request: Request): Promise<Blob> {
  */
 export async function action({ request }: { request: Request }) {
   const env = getEnv();
-  if (!env.DATABASE_URL && !env.HYPERDRIVE) {
+  if (!env.DATABASE_URL) {
     return Response.json({ error: "Sync not configured" }, { status: 503 });
   }
 

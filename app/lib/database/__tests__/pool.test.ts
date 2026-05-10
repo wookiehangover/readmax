@@ -26,20 +26,16 @@ describe("database pool", () => {
     else process.env.DATABASE_URL = originalDatabaseUrl;
   });
 
-  it("uses the Hyperdrive connection string when the binding is available", async () => {
+  it("uses the runtime DATABASE_URL when the env store is available", async () => {
     const { runWithEnv } = await import("~/lib/env.server");
     const { getDatabaseConnectionString, getPool } = await import("../pool");
 
-    runWithEnv(
-      { HYPERDRIVE: { connectionString: "postgres://hyperdrive" } as Hyperdrive },
-      {} as ExecutionContext,
-      () => {
-        expect(getDatabaseConnectionString()).toBe("postgres://hyperdrive");
-        getPool();
-      },
-    );
+    runWithEnv({ DATABASE_URL: "postgres://worker-runtime" }, {} as ExecutionContext, () => {
+      expect(getDatabaseConnectionString()).toBe("postgres://worker-runtime");
+      getPool();
+    });
 
-    expect(poolMock.configs).toEqual([{ connectionString: "postgres://hyperdrive" }]);
+    expect(poolMock.configs).toEqual([{ connectionString: "postgres://worker-runtime" }]);
   });
 
   it("falls back to DATABASE_URL in Node/dev/tests", async () => {

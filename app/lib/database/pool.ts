@@ -3,7 +3,6 @@ import type { Pool } from "pg";
 let pool: Pool | null = null;
 
 interface RuntimeEnv {
-  readonly HYPERDRIVE?: { readonly connectionString?: string };
   readonly DATABASE_URL?: string;
 }
 
@@ -14,7 +13,7 @@ interface PoolConfig {
 export function getDatabaseConnectionString() {
   const env = getRuntimeEnv();
 
-  return env.HYPERDRIVE?.connectionString ?? env.DATABASE_URL ?? getNodeDatabaseUrl();
+  return env.DATABASE_URL ?? getNodeDatabaseUrl();
 }
 
 export function getPool() {

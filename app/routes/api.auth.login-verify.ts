@@ -15,7 +15,7 @@ interface LoginVerifyBody {
 
 export async function action({ request }: { request: Request }) {
   const env = getEnv();
-  if (!env.DATABASE_URL && !env.HYPERDRIVE) {
+  if (!env.DATABASE_URL) {
     return Response.json({ error: "Auth not configured" }, { status: 503 });
   }
 

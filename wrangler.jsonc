@@ -25,14 +25,6 @@
     // TODO(optional secrets): set with `pnpm exec wrangler secret put ANTHROPIC_BASE_URL` if using a custom Anthropic endpoint.
     // "ANTHROPIC_BASE_URL": "",
   },
-  "hyperdrive": [
-    {
-      "binding": "HYPERDRIVE",
-      // TODO(hyperdrive): run `pnpm exec wrangler hyperdrive create` for the Postgres database and paste the resulting id here.
-      "id": "00000000-0000-0000-0000-000000000000",
-      "localConnectionString": "postgres://postgres:postgres@localhost:5432/readmaxxing",
-    },
-  ],
   "r2_buckets": [
     // Create these private buckets before deploy:
     //   pnpm exec wrangler r2 bucket create readmax-files

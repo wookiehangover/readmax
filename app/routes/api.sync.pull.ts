@@ -21,7 +21,7 @@ const SUPPORTED_ENTITY_TYPES: EntityType[] = [
 
 export async function loader({ request }: { request: Request }) {
   const env = getEnv();
-  if (!env.DATABASE_URL && !env.HYPERDRIVE) {
+  if (!env.DATABASE_URL) {
     return Response.json({ error: "Sync not configured" }, { status: 503 });
   }
 

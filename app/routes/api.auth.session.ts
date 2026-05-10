@@ -4,7 +4,7 @@ import { getEnv } from "~/lib/env.server";
 
 export async function loader({ request }: { request: Request }) {
   const env = getEnv();
-  if (!env.DATABASE_URL && !env.HYPERDRIVE) {
+  if (!env.DATABASE_URL) {
     return Response.json({ user: null }, { status: 401 });
   }
 

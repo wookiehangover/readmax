@@ -52,7 +52,7 @@ export function clearSessionCookie(headers: Headers): void {
 export async function getSessionFromRequest(request: Request): Promise<{ userId: string } | null> {
   // No database configured — auth is unavailable
   const env = getEnv();
-  if (!env.DATABASE_URL && !env.HYPERDRIVE) return null;
+  if (!env.DATABASE_URL) return null;
 
   const cookieHeader = request.headers.get("Cookie");
   if (!cookieHeader) return null;

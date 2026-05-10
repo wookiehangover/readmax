@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { Pool } from "pg";
+import { Pool, type PoolConfig } from "pg";
 
 export interface Env {
   readonly R2_FILES?: R2Bucket;
@@ -22,6 +22,7 @@ export interface Env {
 interface EnvContext {
   readonly env: Env;
   readonly ctx: ExecutionContext;
+  pgPool?: Pool;
 }
 
 const envStorage = new AsyncLocalStorage<EnvContext>();
@@ -29,7 +30,22 @@ const envStorage = new AsyncLocalStorage<EnvContext>();
 (globalThis as { __readmaxxingGetEnv?: () => Env }).__readmaxxingGetEnv = getEnv;
 (
   globalThis as {
-    __readmaxxingCreatePgPool?: (config: { readonly connectionString?: string }) => Pool;
+    __readmaxxingHasRuntimeEnvContext?: () => boolean;
+  }
+).__readmaxxingHasRuntimeEnvContext = hasRuntimeEnvContext;
+(
+  globalThis as {
+    __readmaxxingGetRuntimePgPool?: () => Pool | undefined;
+  }
+).__readmaxxingGetRuntimePgPool = getRuntimePgPool;
+(
+  globalThis as {
+    __readmaxxingSetRuntimePgPool?: (pool: Pool) => void;
+  }
+).__readmaxxingSetRuntimePgPool = setRuntimePgPool;
+(
+  globalThis as {
+    __readmaxxingCreatePgPool?: (config: PoolConfig) => Pool;
   }
 ).__readmaxxingCreatePgPool = (config) => new Pool(config);
 
@@ -46,6 +62,19 @@ export function getEnv(): Env {
 
 export function getExecutionContext(): ExecutionContext | undefined {
   return envStorage.getStore()?.ctx;
+}
+
+export function hasRuntimeEnvContext(): boolean {
+  return Boolean(envStorage.getStore());
+}
+
+export function getRuntimePgPool(): Pool | undefined {
+  return envStorage.getStore()?.pgPool;
+}
+
+export function setRuntimePgPool(pool: Pool): void {
+  const stored = envStorage.getStore();
+  if (stored) stored.pgPool = pool;
 }
 
 export function isDatabaseRuntimeAvailable(): boolean {

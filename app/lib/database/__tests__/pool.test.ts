@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const poolMock = vi.hoisted(() => ({
-  configs: [] as Array<{ connectionString?: string; maxUses?: number }>,
+  configs: [] as Array<{ connectionString?: string; max?: number; maxUses?: number }>,
 }));
 
 vi.mock("pg", () => ({
   Pool: class {
-    constructor(config: { connectionString?: string; maxUses?: number }) {
+    constructor(config: { connectionString?: string; max?: number; maxUses?: number }) {
       poolMock.configs.push(config);
     }
   },
@@ -36,7 +36,25 @@ describe("database pool", () => {
     });
 
     expect(poolMock.configs).toEqual([
-      { connectionString: "postgres://worker-runtime", maxUses: 1 },
+      { connectionString: "postgres://worker-runtime", max: 1, maxUses: 1 },
+    ]);
+  });
+
+  it("does not reuse pools across runtime request contexts", async () => {
+    const { runWithEnv } = await import("~/lib/env.server");
+    const { getPool } = await import("../pool");
+
+    runWithEnv({ DATABASE_URL: "postgres://worker-runtime" }, {} as ExecutionContext, () => {
+      getPool();
+      getPool();
+    });
+    runWithEnv({ DATABASE_URL: "postgres://worker-runtime" }, {} as ExecutionContext, () => {
+      getPool();
+    });
+
+    expect(poolMock.configs).toEqual([
+      { connectionString: "postgres://worker-runtime", max: 1, maxUses: 1 },
+      { connectionString: "postgres://worker-runtime", max: 1, maxUses: 1 },
     ]);
   });
 
@@ -49,6 +67,8 @@ describe("database pool", () => {
     expect(getDatabaseConnectionString()).toBe("postgres://node-dev");
     getPool();
 
-    expect(poolMock.configs).toEqual([{ connectionString: "postgres://node-dev", maxUses: 1 }]);
+    expect(poolMock.configs).toEqual([
+      { connectionString: "postgres://node-dev", max: 1, maxUses: 1 },
+    ]);
   });
 });

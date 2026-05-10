@@ -60,9 +60,16 @@ const CURRENT_CHAPTER_CONTEXT_CHARS = 8000;
 const VISIBLE_PAGE_CONTEXT_CHARS = 2000;
 const MAX_CHAT_STEPS = 20;
 
-const gateway = createGateway({
-  apiKey: getEnv().AI_GATEWAY_API_KEY
-})
+function getGatewayModel(modelId: string) {
+  const env = getEnv();
+  if (!env.AI_GATEWAY_API_KEY) {
+    throw new Error("Missing required environment variable: AI_GATEWAY_API_KEY");
+  }
+  return createGateway({
+    apiKey: env.AI_GATEWAY_API_KEY,
+    baseURL: env.AI_GATEWAY_BASE_URL,
+  })(modelId);
+}
 
 function truncateContext(text: string, limit: number): string {
   const trimmed = text.trim();
@@ -264,7 +271,7 @@ export async function createChatStreamResponse(
     originalMessages,
     execute: async ({ writer }) => {
       const result = streamText({
-        model: gateway("anthropic/claude-sonnet-4.6"),
+        model: getGatewayModel("anthropic/claude-sonnet-4.6"),
         system: buildSystemPrompt(systemPromptContext),
         messages: await convertToModelMessages(originalMessages),
         tools: {

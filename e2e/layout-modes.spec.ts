@@ -139,7 +139,8 @@ test.describe("Layout modes", () => {
     await expect(pills.nth(0)).toHaveAttribute("aria-selected", "true", { timeout: 5_000 });
 
     // Open reader search and focus its input → shortcut must be ignored.
-    await page.getByRole("button", { name: "Search in book" }).first().click();
+    await page.getByRole("button", { name: "Previous page" }).first().focus();
+    await page.keyboard.press("Meta+f");
     const searchInput = page.getByPlaceholder("Search in book…");
     await expect(searchInput).toBeVisible({ timeout: 5_000 });
     await searchInput.click();

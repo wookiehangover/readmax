@@ -15,7 +15,7 @@ Ebook reader web app. Users drag-and-drop `.epub` files, which are persisted in 
 - **Formatting**: oxfmt (no prettier)
 - **Effect system**: Effect.ts (`effect` package)
 - **Runtime**: Cloudflare Workers via `@cloudflare/vite-plugin` + `@react-router/cloudflare`
-- **Database**: Postgres via `pg` + `pg-sql`. In production the connection is brokered by Cloudflare Hyperdrive; locally it points at a normal `DATABASE_URL`
+- **Database**: Postgres via `pg` + `pg-sql`. In production the Worker connects directly over `cloudflare:sockets` using the `DATABASE_URL` secret; locally it points at a normal `DATABASE_URL`
 - **File storage**: Cloudflare R2, private buckets, server-proxied
 - **Chat runtime**: Cloudflare Agents SDK on top of Durable Objects
 - **Auth**: self-hosted WebAuthn passkeys via `@simplewebauthn/server` + `@simplewebauthn/browser`

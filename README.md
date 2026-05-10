@@ -2,7 +2,7 @@
 
 ## What is this
 
-A local-first ebook reader in the browser. Drag and drop `.epub` files to load them; books, reading positions, highlights, and notebooks live in IndexedDB and work fully offline. Sign in with a passkey to sync across devices and chat with an AI agent that has read access to your library and notebook. Built on React Router v7 + TypeScript on Cloudflare Workers, with R2 for file storage, Hyperdrive in front of Postgres, and Cloudflare Agents (Durable Objects) for chat sessions.
+A local-first ebook reader in the browser. Drag and drop `.epub` files to load them; books, reading positions, highlights, and notebooks live in IndexedDB and work fully offline. Sign in with a passkey to sync across devices and chat with an AI agent that has read access to your library and notebook. Built on React Router v7 + TypeScript on Cloudflare Workers, with R2 for file storage, direct Postgres connections via `pg` over `cloudflare:sockets`, and Cloudflare Agents (Durable Objects) for chat sessions.
 
 ## Stack
 
@@ -10,14 +10,14 @@ A local-first ebook reader in the browser. Drag and drop `.epub` files to load t
 - Tailwind CSS v4, shadcn/ui (Base UI, not Radix)
 - epubjs for parsing and rendering, idb-keyval for IndexedDB
 - Effect.ts for service-based DI and typed errors
-- Cloudflare Workers (runtime), R2 (private file + cover storage), Hyperdrive (Postgres proxy), Agents / Durable Objects (chat sessions)
-- PlanetScale Postgres reached through Hyperdrive in production, plain `pg` locally
+- Cloudflare Workers (runtime), R2 (private file + cover storage), direct `pg` over `cloudflare:sockets`, Agents / Durable Objects (chat sessions)
+- PlanetScale Postgres reached through `DATABASE_URL` in production and dev
 - WebAuthn passkeys via `@simplewebauthn/server` and `@simplewebauthn/browser`
 - pnpm, oxlint, oxfmt, Vitest, Playwright
 
 ## Local development
 
-Prerequisites: Node 20+, pnpm, and a local Postgres instance with a `readmaxxing` database. The app reads `DATABASE_URL` directly in dev; in production it goes through the `HYPERDRIVE` Worker binding.
+Prerequisites: Node 20+, pnpm, and a local Postgres instance with a `readmaxxing` database. The app reads `DATABASE_URL` directly in dev and as a Worker secret in production.
 
 ```bash
 pnpm install
@@ -64,7 +64,7 @@ The app is local-first for everything except chat. IndexedDB is the source of tr
 Cloudflare resource topology:
 
 - **Workers** — single Worker entry at `workers/app.ts` serving all routes and API endpoints.
-- **Hyperdrive** — `HYPERDRIVE` binding pools and caches connections to PlanetScale Postgres.
+- **Postgres** — PlanetScale Postgres is reached directly from the Worker through `pg` over `cloudflare:sockets`, using the `DATABASE_URL` Worker secret.
 - **R2** — `R2_FILES` (bucket `readmax-files`) and `R2_COVERS` (bucket `readmax-covers`). Both are private; reads go through authenticated `/api/sync/files/*` proxy routes.
 - **Agents / Durable Objects** — `AGENTS` namespace bound to the `ChatAgent` class. One Durable Object per chat session, holding stream state for SSE resume.
 
@@ -82,16 +82,20 @@ Use this flow for a fresh Cloudflare account when there is no Vercel Blob data t
    ```bash
    pnpm exec wrangler login
    ```
-2. Provision the private R2 buckets and Hyperdrive config declared in `wrangler.jsonc`:
+2. Provision the private R2 buckets declared in `wrangler.jsonc`:
    ```bash
-   SETUP_PG_URL="$PG_URL" pnpm setup:cloudflare
+   pnpm setup:cloudflare
    ```
-   The script is idempotent, reads bucket names from `wrangler.jsonc`, creates/reuses Hyperdrive, writes the resolved `hyperdrive[0].id` in place, and prints the required `wrangler secret put` commands. It does not configure public R2 access and does not run database migrations.
-3. Set the Worker secrets printed by the script.
+   The script is idempotent, reads bucket names from `wrangler.jsonc`, creates the missing private R2 buckets, and prints the required `wrangler secret put` commands. It does not configure public R2 access and does not run database migrations.
+3. Set the Worker secrets printed by the script, including the PlanetScale connection string:
+   ```bash
+   pnpm exec wrangler secret put DATABASE_URL
+   # format: postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require
+   ```
 4. Apply the Postgres schema once from your operator shell:
    ```bash
-   psql "$PG_URL" -f database/readmax/core.sql
-   for f in database/migrations/*.sql; do psql "$PG_URL" -f "$f"; done
+   psql "$DATABASE_URL" -f database/readmax/core.sql
+   for f in database/migrations/*.sql; do psql "$DATABASE_URL" -f "$f"; done
    ```
 5. Update `PUBLIC_SITE_URL` in `wrangler.jsonc` to the deployed origin.
 6. Validate and deploy:
@@ -108,16 +112,12 @@ For clean deploys, skip step 4 (the blob backfill) in the migration checklist be
      pnpm exec wrangler r2 bucket create readmax-files
      pnpm exec wrangler r2 bucket create readmax-covers
      ```
-   - Hyperdrive config pointing at the production Postgres connection string:
-     ```bash
-     pnpm exec wrangler hyperdrive create readmaxxing-pg --connection-string "$PG_URL"
-     ```
-     Paste the returned id into the `hyperdrive[0].id` field in `wrangler.jsonc`.
    - The Workers project, R2 bindings, and `ChatAgent` Durable Object migration are already declared in `wrangler.jsonc`; you only need a Workers slot in your account.
 
 2. **Set Worker secrets.**
 
    ```bash
+   pnpm exec wrangler secret put DATABASE_URL
    pnpm exec wrangler secret put WEBAUTHN_RP_ID
    pnpm exec wrangler secret put WEBAUTHN_RP_ORIGIN
    pnpm exec wrangler secret put AI_GATEWAY_API_KEY

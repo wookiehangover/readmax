@@ -5,11 +5,6 @@ IFS=$'\n\t'
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
 WRANGLER_CONFIG="wrangler.jsonc"
-PLACEHOLDER_ID="00000000-0000-0000-0000-000000000000"
-UNDASHED_PLACEHOLDER_ID="00000000000000000000000000000000"
-HYPERDRIVE_ID_PATTERN="[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
-HYPERDRIVE_NAME="readmaxxing-pg"
-PG_URL="${SETUP_PG_URL:-}"
 DRY_RUN=0
 ASSUME_YES=0
 CHECK_SECRETS=0
@@ -18,8 +13,6 @@ usage() {
   cat <<'USAGE'
 bash scripts/setup-cloudflare.sh [flags]
 
-  --pg-url <connection-string>   Postgres URL to seed Hyperdrive with (or env SETUP_PG_URL).
-  --hyperdrive-name <name>       Override Hyperdrive config name (default: readmaxxing-pg).
   --check-secrets                Read-only: report which Worker secrets are missing, exit.
   --yes                          Skip confirmation prompts (also honored when CI=1).
   --dry-run                      Print every wrangler command instead of running it.
@@ -32,33 +25,12 @@ die() {
   exit 1
 }
 
-mask_pg_url() {
-  local url="$1"
-  if [[ "$url" =~ ^([^:]+://)([^/@]+)@([^/?#]+)(.*)$ ]]; then
-    printf '%s...@%s%s' "${BASH_REMATCH[1]}" "${BASH_REMATCH[3]}" "${BASH_REMATCH[4]}"
-  else
-    printf '[masked-postgres-url]'
-  fi
-}
-
-mask_text() {
-  local text="$1"
-  local masked_pg
-  if [ -n "${PG_URL:-}" ]; then
-    masked_pg="$(mask_pg_url "$PG_URL")"
-    text="${text//$PG_URL/$masked_pg}"
-  fi
-  printf '%s' "$text"
-}
-
 format_command() {
   local out=""
   local arg
-  local masked
   local quoted
   for arg in "$@"; do
-    masked="$(mask_text "$arg")"
-    quoted="$(printf '%q' "$masked")"
+    quoted="$(printf '%q' "$arg")"
     out="$out $quoted"
   done
   printf '%s' "${out# }"
@@ -98,33 +70,15 @@ run_capture() {
   fi
   status=$?
   echo "[setup] Command failed: $(format_command "$@")" >&2
-  mask_text "$(cat "$stderr_file")" >&2
+  cat "$stderr_file" >&2
   echo >&2
   rm -f "$stdout_file" "$stderr_file"
   return "$status"
 }
 
-require_value() {
-  local flag="$1"
-  local value="${2:-}"
-  if [ -z "$value" ]; then
-    die "$flag requires a value."
-  fi
-}
-
 parse_args() {
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --pg-url)
-        require_value "$1" "${2:-}"
-        PG_URL="$2"
-        shift 2
-        ;;
-      --hyperdrive-name)
-        require_value "$1" "${2:-}"
-        HYPERDRIVE_NAME="$2"
-        shift 2
-        ;;
       --check-secrets)
         CHECK_SECRETS=1
         shift
@@ -238,104 +192,10 @@ create_r2_buckets() {
   done
 }
 
-get_pg_url() {
-  if [ -n "$PG_URL" ]; then
-    return 0
-  fi
-  if [ "${CI:-}" = "1" ]; then
-    die "A Postgres URL is required. Pass --pg-url or set SETUP_PG_URL."
-  fi
-  printf '[setup] Postgres connection string for Hyperdrive: '
-  read -r -s PG_URL
-  echo
-  [ -n "$PG_URL" ] || die "A Postgres URL is required to create Hyperdrive."
-}
-
-extract_id() {
-  local input="$1"
-  local id
-  while IFS= read -r id; do
-    if [ -n "$id" ] && ! is_placeholder_id "$id"; then
-      printf '%s' "$id"
-      return 0
-    fi
-  done < <(
-    {
-      # Human-readable wrangler output can contain extra hex; prefer the last
-      # 32-hex token from confirmation/id lines, then fall back to any id token.
-      printf '%s\n' "$input" | grep -Ei 'created|success|id' | grep_hyperdrive_ids | grep -E '^[0-9a-fA-F]{32}$' | tail -1 || true
-      printf '%s' "$input" | jq -r '.. | objects | .id? // empty' 2>/dev/null || true
-      printf '%s' "$input" | grep_hyperdrive_ids || true
-    } | awk '!seen[$0]++'
-  )
-}
-
-grep_hyperdrive_ids() {
-  grep -Eo "(^|[^0-9a-fA-F])($HYPERDRIVE_ID_PATTERN)([^0-9a-fA-F]|$)" | sed -E "s/^[^0-9a-fA-F]*($HYPERDRIVE_ID_PATTERN)[^0-9a-fA-F]*$/\\1/"
-}
-
-is_placeholder_id() {
-  [ "$1" = "$PLACEHOLDER_ID" ] || [ "$1" = "$UNDASHED_PLACEHOLDER_ID" ]
-}
-
-escape_sed_replacement() {
-  printf '%s' "$1" | sed 's/[\/&]/\\&/g'
-}
-
-write_hyperdrive_id() {
-  local new_id="$1"
-  local escaped_id
-  escaped_id="$(escape_sed_replacement "$new_id")"
-  echo "[setup] Writing Hyperdrive id to $WRANGLER_CONFIG."
-  echo "[exec] sed -i.bak '/\"binding\": \"HYPERDRIVE\"/,/}/ s/\"id\": \"[^\"]*\"/\"id\": \"$new_id\"/' $WRANGLER_CONFIG"
-  if [ "$DRY_RUN" -eq 0 ]; then
-    sed -i.bak "/\"binding\": \"HYPERDRIVE\"/,/}/ s/\"id\": \"[^\"]*\"/\"id\": \"$escaped_id\"/" "$WRANGLER_CONFIG"
-    rm -f "$WRANGLER_CONFIG.bak"
-  fi
-  run pnpm oxfmt "$WRANGLER_CONFIG"
-}
-
-create_or_reuse_hyperdrive() {
-  local current_id
-  local list_output
-  local existing_id
-  local create_output
-  local resolved_id
-  current_id="$(jsonc_query '.hyperdrive[0].id // ""')"
-
-  if [ -n "$current_id" ] && ! is_placeholder_id "$current_id"; then
-    echo "[setup] Reusing existing Hyperdrive id '$current_id'."
-    run pnpm exec wrangler hyperdrive get "$current_id"
-    echo "[skip] $WRANGLER_CONFIG already contains a real Hyperdrive id."
-    return 0
-  fi
-
-  list_output="$(run_capture pnpm exec wrangler hyperdrive list)"
-  existing_id="$(printf '%s' "$list_output" | grep -F "$HYPERDRIVE_NAME" | grep_hyperdrive_ids | grep -E '^[0-9a-fA-F]{32}$' | head -1 || true)"
-  if [ -n "$existing_id" ] && ! is_placeholder_id "$existing_id"; then
-    echo "[setup] Found existing Hyperdrive '$HYPERDRIVE_NAME' with id '$existing_id'. Reusing."
-    write_hyperdrive_id "$existing_id"
-    return 0
-  fi
-
-  get_pg_url
-  echo "[setup] Creating Hyperdrive config '$HYPERDRIVE_NAME' for $(mask_pg_url "$PG_URL")."
-
-  if [ "$DRY_RUN" -eq 1 ]; then
-    run pnpm exec wrangler hyperdrive create "$HYPERDRIVE_NAME" --connection-string "$PG_URL"
-    echo "[setup] Dry run: would write the returned Hyperdrive id to $WRANGLER_CONFIG."
-    return 0
-  fi
-
-  create_output="$(run_capture pnpm exec wrangler hyperdrive create "$HYPERDRIVE_NAME" --connection-string "$PG_URL")"
-  resolved_id="$(extract_id "$create_output")"
-  [ -n "$resolved_id" ] || die "Unable to find a Hyperdrive id in wrangler output."
-  write_hyperdrive_id "$resolved_id"
-}
-
 print_secret_commands() {
   cat <<'SECRETS'
 [setup] Required Worker secret commands:
+pnpm exec wrangler secret put DATABASE_URL          # postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require
 pnpm exec wrangler secret put WEBAUTHN_RP_ID
 pnpm exec wrangler secret put WEBAUTHN_RP_ORIGIN
 pnpm exec wrangler secret put AI_GATEWAY_API_KEY
@@ -356,7 +216,7 @@ check_secrets() {
   fi
   secret_output="$(run_capture pnpm exec wrangler secret list --format json)"
   names="$(printf '%s' "$secret_output" | jq -r 'if type == "array" then .[]?.name else .secrets[]?.name end')"
-  for secret in WEBAUTHN_RP_ID WEBAUTHN_RP_ORIGIN AI_GATEWAY_API_KEY ANTHROPIC_API_KEY; do
+  for secret in DATABASE_URL WEBAUTHN_RP_ID WEBAUTHN_RP_ORIGIN AI_GATEWAY_API_KEY ANTHROPIC_API_KEY; do
     if printf '%s\n' "$names" | grep -Fxq "$secret"; then
       echo "[skip] Secret '$secret' exists."
     else
@@ -374,10 +234,13 @@ print_next_steps() {
   cat <<'NEXT'
 [next] Next steps:
 [next] 1. Update PUBLIC_SITE_URL in wrangler.jsonc to the deployed origin.
-[next] 2. Apply the Postgres schema once:
-[next]    psql "$PG_URL" -f database/readmax/core.sql
-[next]    for f in database/migrations/*.sql; do psql "$PG_URL" -f "$f"; done
-[next] 3. Validate and deploy:
+[next] 2. Set DATABASE_URL with your PlanetScale Postgres connection string:
+[next]    pnpm exec wrangler secret put DATABASE_URL
+[next]    # format: postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require
+[next] 3. Apply the Postgres schema once from your operator shell:
+[next]    psql "$DATABASE_URL" -f database/readmax/core.sql
+[next]    for f in database/migrations/*.sql; do psql "$DATABASE_URL" -f "$f"; done
+[next] 4. Validate and deploy:
 [next]    pnpm exec wrangler deploy --dry-run
 [next]    pnpm exec wrangler deploy
 [next] Reminder: this script does not migrate Vercel Blob data. Use scripts/backfill-blob-to-r2.ts separately when you're ready to migrate.
@@ -392,7 +255,6 @@ main() {
     return 0
   fi
   create_r2_buckets
-  create_or_reuse_hyperdrive
   print_secret_commands
   print_next_steps
 }

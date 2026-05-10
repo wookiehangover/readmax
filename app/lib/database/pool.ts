@@ -1,13 +1,11 @@
-import type { Pool } from "pg";
+import type { Pool, PoolConfig } from "pg";
 
 let pool: Pool | null = null;
 
+const MAX_POOL_USES = 1;
+
 interface RuntimeEnv {
   readonly DATABASE_URL?: string;
-}
-
-interface PoolConfig {
-  readonly connectionString?: string;
 }
 
 export function getDatabaseConnectionString() {
@@ -20,6 +18,7 @@ export function getPool() {
   if (!pool) {
     pool = getPgPoolFactory()({
       connectionString: getDatabaseConnectionString(),
+      maxUses: MAX_POOL_USES,
     });
   }
   return pool;

@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const poolMock = vi.hoisted(() => ({
-  configs: [] as Array<{ connectionString?: string }>,
+  configs: [] as Array<{ connectionString?: string; maxUses?: number }>,
 }));
 
 vi.mock("pg", () => ({
   Pool: class {
-    constructor(config: { connectionString?: string }) {
+    constructor(config: { connectionString?: string; maxUses?: number }) {
       poolMock.configs.push(config);
     }
   },
@@ -35,7 +35,9 @@ describe("database pool", () => {
       getPool();
     });
 
-    expect(poolMock.configs).toEqual([{ connectionString: "postgres://worker-runtime" }]);
+    expect(poolMock.configs).toEqual([
+      { connectionString: "postgres://worker-runtime", maxUses: 1 },
+    ]);
   });
 
   it("falls back to DATABASE_URL in Node/dev/tests", async () => {
@@ -47,6 +49,6 @@ describe("database pool", () => {
     expect(getDatabaseConnectionString()).toBe("postgres://node-dev");
     getPool();
 
-    expect(poolMock.configs).toEqual([{ connectionString: "postgres://node-dev" }]);
+    expect(poolMock.configs).toEqual([{ connectionString: "postgres://node-dev", maxUses: 1 }]);
   });
 });

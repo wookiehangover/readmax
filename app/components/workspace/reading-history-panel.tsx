@@ -162,27 +162,27 @@ export function ReadingHistoryPanel({ params }: IDockviewPanelProps<ReadingHisto
                 <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                   {group.label}
                 </h3>
-                <ol className="flex flex-col">
-                  {group.entries.map((entry) => (
-                    <li key={entry.id} className="pb-2 last:pb-0">
-                      <button
-                        type="button"
-                        className="flex w-full cursor-pointer items-center gap-3 rounded-md px-2 py-2 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                <table className="w-full text-left text-sm">
+                  <tbody>
+                    {group.entries.map((entry) => (
+                      <tr
+                        key={entry.id}
+                        className="cursor-pointer transition-colors hover:bg-accent/50"
                         onClick={() => handleNavigateToEntry(entry.cfi)}
                       >
-                        <time className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+                        <td className="whitespace-nowrap py-1.5 pr-3 font-mono text-xs tabular-nums text-muted-foreground">
                           {formatTime(entry.timestamp)}
-                        </time>
-                        <span className="shrink-0 text-sm font-semibold tabular-nums">
-                          p. {entry.pageIndex ?? "—"}
-                        </span>
-                        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                        </td>
+                        <td className="whitespace-nowrap py-1.5 pr-3 font-semibold tabular-nums">
+                          p.&nbsp;{entry.pageIndex ?? "—"}
+                        </td>
+                        <td className="max-w-0 truncate py-1.5 text-xs text-muted-foreground">
                           {entry.chapterLabel ?? "Unknown chapter"}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ol>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </section>
             ))}
           </div>

@@ -6,6 +6,7 @@ import { Effect } from "effect";
 import { BookService } from "~/lib/stores/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { LocationCacheService } from "~/lib/stores/location-cache-store";
+import { ReadingHistoryService } from "~/lib/stores/reading-history-store";
 import { ReadingPositionService } from "~/lib/stores/position-store";
 import { resolveTheme } from "~/lib/settings";
 import type { ReaderLayout, Theme } from "~/lib/settings";
@@ -712,14 +713,13 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
             setTotalPages(epubLocTotal);
           }
           latestCfiRef.current = location.start.cfi;
-          setCurrentChapterLabel(
-            resolveCurrentChapterLabel({
-              toc: tocData,
-              book: bookRef.current,
-              currentSpineHref: location.start.href,
-              currentSpineIndex: location.start.index,
-            }),
-          );
+          const resolvedChapterLabel = resolveCurrentChapterLabel({
+            toc: tocData,
+            book: bookRef.current,
+            currentSpineHref: location.start.href,
+            currentSpineIndex: location.start.index,
+          });
+          setCurrentChapterLabel(resolvedChapterLabel);
 
           // Update chat context
           if (configRef.current.chatContextMap && location.start.index != null) {
@@ -758,6 +758,20 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
                 ),
             }).catch((err) => console.error("Failed to save reading position:", err));
           }, POSITION_SAVE_DEBOUNCE_MS);
+
+          AppRuntime.runPromise(
+            ReadingHistoryService.pipe(
+              Effect.andThen((s) =>
+                s.recordVisit(bookId, {
+                  cfi: location.start.cfi,
+                  chapterHref: location.start.href ?? null,
+                  chapterLabel: resolvedChapterLabel,
+                  percentage: location.start.percentage * 100,
+                  pageIndex: location.start.displayed.page,
+                }),
+              ),
+            ),
+          ).catch(console.error);
         },
       );
     }; // end init()

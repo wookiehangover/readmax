@@ -13,13 +13,11 @@ export interface ReadingHistoryEntry {
   readonly chapterLabel: string | null;
   readonly percentage: number;
   readonly pageIndex: number | null;
+  readonly totalPages: number | null;
   readonly timestamp: number;
 }
 
-export type ReadingHistoryVisitData = Omit<
-  ReadingHistoryEntry,
-  "id" | "bookId" | "timestamp"
->;
+export type ReadingHistoryVisitData = Omit<ReadingHistoryEntry, "id" | "bookId" | "timestamp">;
 
 export interface GetReadingHistoryOptions {
   readonly limit?: number;
@@ -65,6 +63,9 @@ function isReadingHistoryEntry(value: unknown): value is ReadingHistoryEntry {
     (entry.chapterLabel === null || typeof entry.chapterLabel === "string") &&
     typeof entry.percentage === "number" &&
     (entry.pageIndex === null || typeof entry.pageIndex === "number") &&
+    (entry.totalPages === undefined ||
+      entry.totalPages === null ||
+      typeof entry.totalPages === "number") &&
     typeof entry.timestamp === "number"
   );
 }
@@ -77,11 +78,7 @@ async function getEntriesForBook(
   const allEntries = await entries<string, unknown>(historyStore);
   const history: ReadingHistoryEntry[] = [];
   for (const [key, value] of allEntries) {
-    if (
-      !key.startsWith(prefix) ||
-      !isReadingHistoryEntry(value) ||
-      value.bookId !== bookId
-    ) {
+    if (!key.startsWith(prefix) || !isReadingHistoryEntry(value) || value.bookId !== bookId) {
       continue;
     }
     history.push(value);
@@ -137,9 +134,7 @@ export function makeReadingHistoryService(
         try: async () => {
           const prefix = makeBookKeyPrefix(bookId);
           const allEntries = await entries<string, unknown>(historyStore);
-          const keys = allEntries
-            .filter(([key]) => key.startsWith(prefix))
-            .map(([key]) => key);
+          const keys = allEntries.filter(([key]) => key.startsWith(prefix)).map(([key]) => key);
           await Promise.all(keys.map((key) => del(key, historyStore)));
           lastCfiByBook.delete(bookId);
         },

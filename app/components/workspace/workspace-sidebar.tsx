@@ -1,8 +1,8 @@
 import { useState, useMemo, useEffect } from "react";
 import { Link } from "react-router";
 import {
-  Activity,
   BookOpen,
+  ChartLine,
   CloudDownload,
   MessageSquare,
   Plus,
@@ -316,23 +316,6 @@ export function WorkspaceSidebar({
                     render={
                       <button
                         type="button"
-                        onClick={() => onOpenReadingHistory(activeClusterBook)}
-                        className="flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-                      />
-                    }
-                  >
-                    <Activity className="size-4" />
-                    <span className="sr-only">Open reading history</span>
-                  </TooltipTrigger>
-                  <TooltipContent side="right" sideOffset={8}>
-                    History
-                  </TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <button
-                        type="button"
                         onClick={() => onOpenChat(activeClusterBook)}
                         className="flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
                       />
@@ -343,6 +326,23 @@ export function WorkspaceSidebar({
                   </TooltipTrigger>
                   <TooltipContent side="right" sideOffset={8}>
                     Chat
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        type="button"
+                        onClick={() => onOpenReadingHistory(activeClusterBook)}
+                        className="flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                      />
+                    }
+                  >
+                    <ChartLine className="size-4" />
+                    <span className="sr-only">Open reading history</span>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" sideOffset={8}>
+                    History
                   </TooltipContent>
                 </Tooltip>
               </div>
@@ -393,7 +393,7 @@ export function WorkspaceSidebar({
                         className="absolute right-0.5 bottom-0.5 flex size-5 items-center justify-center rounded-full bg-card text-muted-foreground opacity-0 shadow-sm ring-1 ring-border/50 group-hover/book:opacity-100 hover:bg-accent hover:text-foreground"
                         title="Open reading history"
                       >
-                        <Activity className="size-3" />
+                        <ChartLine className="size-3" />
                       </button>
                     ) : (
                       <div className="absolute top-1/2 right-1 flex -translate-y-1/2 gap-0.5 opacity-0 group-hover/book:opacity-100">
@@ -419,7 +419,7 @@ export function WorkspaceSidebar({
                           className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                           title="Open reading history"
                         >
-                          <Activity className="size-3.5" />
+                          <ChartLine className="size-3.5" />
                         </button>
                       </div>
                     )}
@@ -477,7 +477,7 @@ export function WorkspaceSidebar({
                         className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                         title="Open reading history"
                       >
-                        <Activity className="size-3.5" />
+                        <ChartLine className="size-3.5" />
                       </button>
                     </div>
                   </li>

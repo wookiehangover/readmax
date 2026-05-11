@@ -183,7 +183,7 @@ export function ReadingHistoryPanel({ params }: IDockviewPanelProps<ReadingHisto
                         className="cursor-pointer transition-colors hover:bg-accent/50"
                         onClick={() => handleNavigateToEntry(entry.cfi)}
                       >
-                        <td className="w-0 whitespace-nowrap py-1.5 pr-3 text-xs tabular-nums text-muted-foreground">
+                        <td className="w-0 whitespace-nowrap py-1.5 pr-5 text-xs tabular-nums text-muted-foreground">
                           {formatTime(entry.timestamp)}
                         </td>
                         <td className="whitespace-nowrap py-1.5 pr-3 tabular-nums">

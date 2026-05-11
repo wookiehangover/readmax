@@ -23,6 +23,8 @@ import {
 } from "./stores";
 import type { EntityType } from "./types";
 
+const POSITION_MERGE_EPSILON_MS = 5;
+
 export async function mergeBookRecord(record: Record<string, unknown>): Promise<void> {
   const store = getBookStore();
   const remoteRecord = serverBookToLocal(record);
@@ -101,6 +103,12 @@ async function mergePositionRecord(record: Record<string, unknown>): Promise<voi
 
   if (!local) {
     await set(id, localRecord, store);
+    return;
+  }
+
+  const localUpdatedAt = (local as { updatedAt: number }).updatedAt;
+  const remoteUpdatedAt = localRecord.updatedAt;
+  if (Math.abs(remoteUpdatedAt - localUpdatedAt) <= POSITION_MERGE_EPSILON_MS) {
     return;
   }
 

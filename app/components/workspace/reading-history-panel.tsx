@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Effect } from "effect";
 import type { IDockviewPanelProps } from "dockview";
 import { BookOpen, Trash2 } from "lucide-react";
@@ -61,8 +61,11 @@ function formatProgress(percentage: number): string {
 }
 
 function formatEntryLocation(entry: ReadingHistoryEntry): string {
-  if (entry.pageIndex !== null) return `Page ${entry.pageIndex}`;
-  return `Location ${formatProgress(entry.percentage)}`;
+  if (entry.pageIndex !== null && entry.totalPages != null) {
+    return `${entry.pageIndex} / ${entry.totalPages}`;
+  }
+  if (entry.pageIndex !== null) return String(entry.pageIndex);
+  return formatProgress(entry.percentage);
 }
 
 function groupHistoryByDay(history: ReadingHistoryEntry[]): GroupedReadingHistory[] {
@@ -102,6 +105,19 @@ export function ReadingHistoryPanel({ params }: IDockviewPanelProps<ReadingHisto
 
   const entries = history ?? [];
   const groupedHistory = useMemo(() => groupHistoryByDay(entries), [entries]);
+
+  useEffect(() => {
+    function handleReadingHistoryUpdated(event: Event) {
+      const detail = (event as CustomEvent<{ readonly bookId?: string }>).detail;
+      if (detail?.bookId !== bookId) return;
+      setRefreshKey((key) => key + 1);
+    }
+
+    window.addEventListener("reading-history:updated", handleReadingHistoryUpdated);
+    return () => {
+      window.removeEventListener("reading-history:updated", handleReadingHistoryUpdated);
+    };
+  }, [bookId]);
 
   const handleClearHistory = useCallback(() => {
     if (entries.length === 0 || isClearing) return;
@@ -180,7 +196,7 @@ export function ReadingHistoryPanel({ params }: IDockviewPanelProps<ReadingHisto
                             <p className="truncate text-sm font-medium">
                               {entry.chapterLabel ?? "Unknown chapter"}
                             </p>
-                            <p className="text-xs text-muted-foreground">
+                            <p className="text-xs tabular-nums text-muted-foreground">
                               {formatEntryLocation(entry)}
                             </p>
                           </div>

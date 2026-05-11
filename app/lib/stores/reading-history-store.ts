@@ -115,6 +115,14 @@ export function makeReadingHistoryService(
 
           await set(makeHistoryKey(bookId, id), entry, historyStore);
           lastCfiByBook.set(bookId, data.cfi);
+
+          if (typeof window !== "undefined") {
+            queueMicrotask(() => {
+              window.dispatchEvent(
+                new CustomEvent("reading-history:updated", { detail: { bookId } }),
+              );
+            });
+          }
         },
         catch: (cause) => new ReadingHistoryError({ operation: "recordVisit", bookId, cause }),
       }),

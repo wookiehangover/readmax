@@ -460,7 +460,12 @@ function WorkspaceBookReaderInner({
         setLocalReaderLayout(update.readerLayout);
         if (cfi) {
           markNavigationInProgress();
-          queueMicrotask(() => renditionRef.current?.display(cfi));
+          queueMicrotask(() => {
+            renditionRef.current?.display(cfi).catch((error: unknown) => {
+              console.error("Failed to restore reader position after layout update", error);
+              navigationInProgressRef.current = false;
+            });
+          });
         }
       }
 

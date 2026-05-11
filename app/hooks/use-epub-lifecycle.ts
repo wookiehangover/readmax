@@ -613,10 +613,16 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
           if (layoutRef.current === "scroll") return;
           if (e.key === "ArrowLeft") {
             markNavigationInProgress();
-            rendition!.prev();
+            rendition!.prev().catch((err: unknown) => {
+              clearNavigationInProgress();
+              console.error("Failed to navigate to previous page", err);
+            });
           } else if (e.key === "ArrowRight") {
             markNavigationInProgress();
-            rendition!.next();
+            rendition!.next().catch((err: unknown) => {
+              clearNavigationInProgress();
+              console.error("Failed to navigate to next page", err);
+            });
           }
         });
       });
@@ -831,10 +837,16 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
       if (isEditableElement()) return;
       if (e.key === "ArrowLeft" && rendition) {
         markNavigationInProgress();
-        rendition.prev();
+        rendition.prev().catch((err: unknown) => {
+          clearNavigationInProgress();
+          console.error("Failed to navigate to previous page", err);
+        });
       } else if (e.key === "ArrowRight" && rendition) {
         markNavigationInProgress();
-        rendition.next();
+        rendition.next().catch((err: unknown) => {
+          clearNavigationInProgress();
+          console.error("Failed to navigate to next page", err);
+        });
       }
     };
     document.addEventListener("keydown", handleKeyDown);

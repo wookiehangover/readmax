@@ -439,14 +439,20 @@ function WorkspaceBookReaderInner({
     const rendition = renditionRef.current;
     if (!rendition) return;
     markNavigationInProgress();
-    rendition.prev();
-  }, [markNavigationInProgress]);
+    rendition.prev().catch((err: unknown) => {
+      navigationInProgressRef.current = false;
+      console.error("Failed to navigate to previous page", err);
+    });
+  }, [markNavigationInProgress, navigationInProgressRef]);
   const handleNext = useCallback(() => {
     const rendition = renditionRef.current;
     if (!rendition) return;
     markNavigationInProgress();
-    rendition.next();
-  }, [markNavigationInProgress]);
+    rendition.next().catch((err: unknown) => {
+      navigationInProgressRef.current = false;
+      console.error("Failed to navigate to next page", err);
+    });
+  }, [markNavigationInProgress, navigationInProgressRef]);
 
   const handleUpdateSettings = useCallback(
     (update: Partial<Settings>) => {

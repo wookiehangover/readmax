@@ -145,6 +145,14 @@ export function makeReadingHistoryService(
           const keys = allEntries.filter(([key]) => key.startsWith(prefix)).map(([key]) => key);
           await Promise.all(keys.map((key) => del(key, historyStore)));
           lastCfiByBook.delete(bookId);
+
+          if (typeof window !== "undefined") {
+            queueMicrotask(() => {
+              window.dispatchEvent(
+                new CustomEvent("reading-history:updated", { detail: { bookId } }),
+              );
+            });
+          }
         },
         catch: (cause) => new ReadingHistoryError({ operation: "clearHistory", bookId, cause }),
       }),

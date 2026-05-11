@@ -703,13 +703,15 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
           configRef.current.onRelocated?.();
           setBookProgress(location.start.percentage * 100);
           const epubLocTotal = (bookRef.current?.locations as any)?.total as number | undefined;
+          let historyPageIndex: number | null = null;
           if (epubLocTotal && epubLocTotal > 0) {
             const locIndex = bookRef.current!.locations.locationFromCfi(location.start.cfi);
             if (typeof locIndex === "number" && locIndex >= 0) {
-              setCurrentPage(locIndex + 1);
+              historyPageIndex = locIndex + 1;
             } else {
-              setCurrentPage(Math.max(1, Math.round(location.start.percentage * epubLocTotal)));
+              historyPageIndex = Math.max(1, Math.round(location.start.percentage * epubLocTotal));
             }
+            setCurrentPage(historyPageIndex);
             setTotalPages(epubLocTotal);
           }
           latestCfiRef.current = location.start.cfi;
@@ -767,7 +769,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
                   chapterHref: location.start.href ?? null,
                   chapterLabel: resolvedChapterLabel,
                   percentage: location.start.percentage * 100,
-                  pageIndex: location.start.displayed.page,
+                  pageIndex: historyPageIndex,
                   totalPages: epubLocTotal && epubLocTotal > 0 ? epubLocTotal : null,
                 }),
               ),

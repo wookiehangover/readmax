@@ -1,10 +1,10 @@
-# readmaxxing
+# Readmaxxing
 
-## What is this
+## Overview
 
 A local-first ebook reader in the browser. Drag and drop `.epub` files to load them; books, reading positions, highlights, and notebooks live in IndexedDB and work fully offline. Sign in with a passkey to sync across devices and chat with an AI agent that has read access to your library and notebook. Built on React Router v7 + TypeScript on Cloudflare Workers, with R2 for file storage, direct Postgres connections via `pg` over `cloudflare:sockets`, and Cloudflare Agents (Durable Objects) for chat sessions.
 
-## Stack
+## Tech stack
 
 - React Router v7 (framework mode), TypeScript
 - Tailwind CSS v4, shadcn/ui (Base UI, not Radix)
@@ -45,14 +45,14 @@ pnpm dev          # react-router dev (Vite, fastest inner loop)
 pnpm start        # wrangler dev against the built Worker (closer to prod)
 ```
 
-Tests, lint, and formatting:
+Tests, lint, types, and formatting:
 
 ```bash
 pnpm test         # vitest unit tests
 pnpm e2e          # playwright end-to-end tests
-pnpm oxlint       # lint
-pnpm oxfmt .      # format
+pnpm lint         # oxlint
 pnpm typecheck    # react-router typegen + tsc
+pnpm format       # oxfmt app/
 ```
 
 ## Architecture overview
@@ -74,47 +74,25 @@ See `AGENTS.md` for the full architecture rules — Effect.ts conventions, sync 
 
 Cloudflare is the only production runtime. There is no Node server.
 
-### First-time clean deploy (no Vercel data)
+### Clean deploy
 
 Use this flow for a fresh Cloudflare account when there is no Vercel Blob data to migrate.
 
 1. Log in to Wrangler:
+
    ```bash
    pnpm exec wrangler login
    ```
+
 2. Provision the private R2 buckets declared in `wrangler.jsonc`:
+
    ```bash
    pnpm setup:cloudflare
    ```
-   The script is idempotent, reads bucket names from `wrangler.jsonc`, creates the missing private R2 buckets, and prints the required `wrangler secret put` commands. It does not configure public R2 access and does not run database migrations.
-3. Set the Worker secrets printed by the script, including the PlanetScale connection string:
-   ```bash
-   pnpm exec wrangler secret put DATABASE_URL
-   # format: postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require
-   ```
-4. Apply the Postgres schema once from your operator shell:
-   ```bash
-   psql "$DATABASE_URL" -f database/readmax/core.sql
-   for f in database/migrations/*.sql; do psql "$DATABASE_URL" -f "$f"; done
-   ```
-5. Update `PUBLIC_SITE_URL` in `wrangler.jsonc` to the deployed origin.
-6. Validate and deploy:
-   ```bash
-   pnpm exec wrangler deploy --dry-run
-   pnpm exec wrangler deploy
-   ```
 
-For clean deploys, skip step 4 (the blob backfill) in the migration checklist below.
+   The setup script is idempotent. It reads bucket names from `wrangler.jsonc`, creates any missing private R2 buckets, and prints the required `wrangler secret put` commands. It does not configure public R2 access and does not run database migrations.
 
-1. **Provision Cloudflare resources.**
-   - Private R2 buckets (do not enable public access; reads are auth-proxied):
-     ```bash
-     pnpm exec wrangler r2 bucket create readmax-files
-     pnpm exec wrangler r2 bucket create readmax-covers
-     ```
-   - The Workers project, R2 bindings, and `ChatAgent` Durable Object migration are already declared in `wrangler.jsonc`; you only need a Workers slot in your account.
-
-2. **Set Worker secrets.**
+3. Set the Worker secrets printed by the setup script, including the production Postgres connection string:
 
    ```bash
    pnpm exec wrangler secret put DATABASE_URL
@@ -122,21 +100,53 @@ For clean deploys, skip step 4 (the blob backfill) in the migration checklist be
    pnpm exec wrangler secret put WEBAUTHN_RP_ORIGIN
    pnpm exec wrangler secret put AI_GATEWAY_API_KEY
    pnpm exec wrangler secret put ANTHROPIC_API_KEY
-   pnpm exec wrangler secret put ANTHROPIC_BASE_URL   # optional
+   pnpm exec wrangler secret put ANTHROPIC_BASE_URL # optional
    ```
 
-3. **Set non-secret vars.** `PUBLIC_SITE_URL` and `WEBAUTHN_RP_NAME` live in the `vars` block of `wrangler.jsonc`; update `PUBLIC_SITE_URL` to the deployed origin before shipping.
+   `DATABASE_URL` should use the production Postgres URL, for example:
 
-4. **(Only if migrating from a previous Vercel + Vercel Blob deployment.)** Run the one-shot backfill that copies legacy Vercel Blob objects into R2 and rewrites `readmax.book.file_blob_url` / `cover_blob_url` to `r2://...` references. Always dry-run first:
+   ```text
+   postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require
+   ```
+
+4. Apply the Postgres schema once from your operator shell:
+
+   ```bash
+   psql "$DATABASE_URL" -f database/readmax/core.sql
+   for f in database/migrations/*.sql; do psql "$DATABASE_URL" -f "$f"; done
+   ```
+
+5. Update `PUBLIC_SITE_URL` in `wrangler.jsonc` to the deployed origin.
+
+6. Validate the Worker package and deploy:
+
+   ```bash
+   pnpm build
+   pnpm exec wrangler deploy --dry-run
+   pnpm exec wrangler deploy
+   ```
+
+### Migrating from Vercel Blob
+
+Only use this checklist when migrating data from an older Vercel + Vercel Blob deployment. For clean deploys, skip this section.
+
+1. Provision Cloudflare resources as described in [Clean deploy](#clean-deploy).
+2. Set Worker secrets and update non-secret vars in `wrangler.jsonc`.
+3. Dry-run the one-shot backfill that copies legacy Vercel Blob objects into R2 and rewrites book file and cover URLs to `r2://...` references:
 
    ```bash
    pnpm exec tsx scripts/backfill-blob-to-r2.ts --dry-run --audit-csv migration.csv
+   ```
+
+4. Run the backfill for real:
+
+   ```bash
    pnpm exec tsx scripts/backfill-blob-to-r2.ts --audit-csv migration.csv
    ```
 
-   See [Migration script reference](#migration-script-reference) for flags.
+   See [Migration script reference](#migration-script-reference) for all available flags.
 
-5. **(Only if step 4 was needed.) Mandatory pre-deploy gate.** Confirm no legacy storage URLs remain in production:
+5. Confirm no legacy storage URLs remain in production:
 
    ```sql
    SELECT count(*)
@@ -147,16 +157,15 @@ For clean deploys, skip step 4 (the blob backfill) in the migration checklist be
 
    The count must be `0` before proceeding.
 
-6. **Build and deploy.**
+6. Validate and deploy:
 
    ```bash
    pnpm build
+   pnpm exec wrangler deploy --dry-run
    pnpm exec wrangler deploy
    ```
 
-   Use `pnpm exec wrangler deploy --dry-run` first to validate Worker packaging.
-
-7. **Cut DNS over** to the Worker route once health checks pass.
+7. Cut DNS over to the Worker route once health checks pass.
 
 ## Migration script reference
 

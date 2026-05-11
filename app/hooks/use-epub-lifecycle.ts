@@ -65,6 +65,8 @@ export interface UseEpubLifecycleConfig {
 export interface UseEpubLifecycleReturn {
   bookRef: React.MutableRefObject<EpubBook | null>;
   renditionRef: React.MutableRefObject<Rendition | null>;
+  navigationInProgressRef: React.MutableRefObject<boolean>;
+  markNavigationInProgress: () => void;
   toc: TocEntry[];
   currentChapterLabel: string | null;
   bookProgress: number;
@@ -391,6 +393,8 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
   const renditionRef = config.renditionRef ?? internalRenditionRef;
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestCfiRef = useRef<string | null>(null);
+  const navigationInProgressRef = useRef(false);
+  const navigationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const warnedBrokenTocBookIdsRef = useRef<Set<string>>(new Set());
 
   const [toc, setToc] = useState<TocEntry[]>([]);
@@ -407,6 +411,23 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
   // Use a ref for the full config so optional callbacks don't trigger re-init
   const configRef = useRef(config);
   configRef.current = config;
+
+  const clearNavigationInProgress = useCallback(() => {
+    navigationInProgressRef.current = false;
+    if (navigationTimeoutRef.current) {
+      clearTimeout(navigationTimeoutRef.current);
+      navigationTimeoutRef.current = null;
+    }
+  }, []);
+
+  const markNavigationInProgress = useCallback(() => {
+    navigationInProgressRef.current = true;
+    if (navigationTimeoutRef.current) clearTimeout(navigationTimeoutRef.current);
+    navigationTimeoutRef.current = setTimeout(() => {
+      navigationInProgressRef.current = false;
+      navigationTimeoutRef.current = null;
+    }, 3000);
+  }, []);
 
   const flushPositionSave = useCallback(() => {
     if (saveTimerRef.current) {
@@ -427,11 +448,18 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     }
   }, [bookId, panelId]);
 
-  const navigateToCfi = useCallback((cfi: string) => {
-    renditionRef.current?.display(cfi).catch((err: unknown) => {
-      console.warn("CFI navigation failed:", err);
-    });
-  }, []);
+  const navigateToCfi = useCallback(
+    (cfi: string) => {
+      const rendition = renditionRef.current;
+      if (!rendition) return;
+      markNavigationInProgress();
+      rendition.display(cfi).catch((err: unknown) => {
+        clearNavigationInProgress();
+        console.warn("CFI navigation failed:", err);
+      });
+    },
+    [clearNavigationInProgress, markNavigationInProgress],
+  );
 
   const navigateToTocHref = useCallback(
     (href: string) => {
@@ -441,10 +469,15 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
         return;
       }
 
-      const tryDisplay = (target: string | number) =>
-        (typeof target === "number" ? rendition.display(target) : rendition.display(target))
+      const tryDisplay = (target: string | number) => {
+        markNavigationInProgress();
+        return (typeof target === "number" ? rendition.display(target) : rendition.display(target))
           .then(() => true)
-          .catch(() => false);
+          .catch(() => {
+            clearNavigationInProgress();
+            return false;
+          });
+      };
 
       void (async () => {
         if (await tryDisplay(href)) {
@@ -472,7 +505,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
         }
       })();
     },
-    [bookId, bookRef, renditionRef, toc],
+    [bookId, bookRef, clearNavigationInProgress, markNavigationInProgress, renditionRef, toc],
   );
 
   // Main epub lifecycle effect
@@ -575,8 +608,13 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
             return;
           }
           if (layoutRef.current === "scroll") return;
-          if (e.key === "ArrowLeft") rendition!.prev();
-          else if (e.key === "ArrowRight") rendition!.next();
+          if (e.key === "ArrowLeft") {
+            markNavigationInProgress();
+            rendition!.prev();
+          } else if (e.key === "ArrowRight") {
+            markNavigationInProgress();
+            rendition!.next();
+          }
         });
       });
 
@@ -715,6 +753,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
             setTotalPages(epubLocTotal);
           }
           latestCfiRef.current = location.start.cfi;
+          clearNavigationInProgress();
           const resolvedChapterLabel = resolveCurrentChapterLabel({
             toc: tocData,
             book: bookRef.current,
@@ -786,8 +825,13 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
         const panel = configRef.current.panelRef.current;
         if (!panel?.contains(document.activeElement) && document.activeElement !== panel) return;
       }
-      if (e.key === "ArrowLeft") rendition?.prev();
-      else if (e.key === "ArrowRight") rendition?.next();
+      if (e.key === "ArrowLeft" && rendition) {
+        markNavigationInProgress();
+        rendition.prev();
+      } else if (e.key === "ArrowRight" && rendition) {
+        markNavigationInProgress();
+        rendition.next();
+      }
     };
     document.addEventListener("keydown", handleKeyDown);
 
@@ -799,6 +843,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
       cancelled = true;
       document.removeEventListener("keydown", handleKeyDown);
       flushPositionSave();
+      clearNavigationInProgress();
       setToc([]);
       setCurrentChapterLabel(null);
       configRef.current.onCleanupToc?.();
@@ -815,6 +860,8 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     registerSelectionHandler,
     flushPositionSave,
     navigateToCfi,
+    clearNavigationInProgress,
+    markNavigationInProgress,
     panelId,
   ]);
 
@@ -850,6 +897,8 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
   return {
     bookRef,
     renditionRef,
+    navigationInProgressRef,
+    markNavigationInProgress,
     toc,
     currentChapterLabel,
     bookProgress,

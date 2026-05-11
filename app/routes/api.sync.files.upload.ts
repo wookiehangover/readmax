@@ -34,16 +34,38 @@ function pathSegment(value: string): string {
   return encodeURIComponent(value);
 }
 
-async function readUploadBlob(request: Request): Promise<Blob> {
-  const contentType = normalizeContentType(request.headers.get("content-type"));
-  if (contentType === "multipart/form-data") {
-    const form = await request.formData();
+type UploadInput = {
+  readonly body: Blob | ReadableStream;
+  readonly contentType: string;
+  readonly size: number | null;
+};
+
+async function readUploadInput(
+  request: Request,
+  requestContentType: string,
+): Promise<Response | UploadInput> {
+  if (requestContentType === "multipart/form-data") {
+    let form: FormData;
+    try {
+      form = await request.formData();
+    } catch {
+      return Response.json({ error: "Invalid multipart upload" }, { status: 400 });
+    }
     const value = form.get("file") ?? form.get("blob");
-    if (!(value instanceof Blob)) throw new Error("Multipart upload must include a file field");
-    return value;
+    if (!(value instanceof Blob)) {
+      return Response.json(
+        { error: "Multipart upload must include a file field" },
+        { status: 400 },
+      );
+    }
+    return { body: value, contentType: normalizeContentType(value.type), size: value.size };
   }
 
-  return request.blob();
+  if (!request.body) {
+    return Response.json({ error: "Upload body is required" }, { status: 400 });
+  }
+
+  return { body: request.body, contentType: requestContentType, size: null };
 }
 
 /**
@@ -85,9 +107,11 @@ export async function action({ request }: { request: Request }) {
     return Response.json({ error: "R2 storage is not configured" }, { status: 500 });
   }
 
-  const declaredLength = Number(request.headers.get("content-length") ?? "0");
+  const requestContentType = normalizeContentType(request.headers.get("content-type"));
+  const declaredLengthHeader = request.headers.get("content-length");
+  const declaredLength = declaredLengthHeader ? Number(declaredLengthHeader) : null;
   const maxBytes = type === "cover" ? MAX_COVER_BYTES : MAX_FILE_BYTES;
-  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+  if (declaredLength !== null && Number.isFinite(declaredLength) && declaredLength > maxBytes) {
     return Response.json({ error: "Upload exceeds maximum size" }, { status: 413 });
   }
 
@@ -97,15 +121,18 @@ export async function action({ request }: { request: Request }) {
       return Response.json({ error: "Book not found" }, { status: 404 });
     }
 
-    const blob = await readUploadBlob(request);
-    if (blob.size === 0) {
+    const upload = await readUploadInput(request, requestContentType);
+    if (upload instanceof Response) return upload;
+
+    const uploadSize = upload.size ?? declaredLength;
+    if (uploadSize === 0) {
       return Response.json({ error: "Upload body is required" }, { status: 400 });
     }
-    if (blob.size > maxBytes) {
+    if (uploadSize !== null && Number.isFinite(uploadSize) && uploadSize > maxBytes) {
       return Response.json({ error: "Upload exceeds maximum size" }, { status: 413 });
     }
 
-    const contentType = normalizeContentType(blob.type || request.headers.get("content-type"));
+    const contentType = upload.contentType;
     const allowedTypes = type === "cover" ? COVER_CONTENT_TYPES : FILE_CONTENT_TYPES;
     if (!allowedTypes.includes(contentType)) {
       return Response.json({ error: "Unsupported content type" }, { status: 415 });
@@ -116,7 +143,7 @@ export async function action({ request }: { request: Request }) {
     const key = `${type === "cover" ? "covers" : "books"}/${pathSegment(userId)}/${pathSegment(bookId)}/${fileName}`;
     const storageUrl = r2StorageUrl(type, key);
 
-    await bucket.put(key, blob, {
+    await bucket.put(key, upload.body, {
       httpMetadata: {
         contentType,
         contentDisposition: type === "cover" ? "inline" : `attachment; filename="${fileName}"`,
@@ -134,9 +161,7 @@ export async function action({ request }: { request: Request }) {
 
     return Response.json({ key, url: storageUrl });
   } catch (error) {
-    return Response.json(
-      { error: error instanceof Error ? error.message : "Upload failed" },
-      { status: 400 },
-    );
+    console.error("Sync file upload failed", error);
+    return Response.json({ error: "Upload failed" }, { status: 500 });
   }
 }

@@ -525,7 +525,7 @@ export async function createChatStreamResponse(
                   urlPath: b.urlPath,
                   url: `${SE_BASE}${b.urlPath}`,
                 }));
-              return { books, totalResults: data.totalPages * 12 };
+              return { books, totalResults: data.totalPages * 6 };
             },
           }),
         },

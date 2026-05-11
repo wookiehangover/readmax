@@ -89,7 +89,6 @@ export class ChatAgent extends Agent<Env> {
       consumeSseStream: ({ stream }) => {
         const consumePromise = this.consumeAndStoreStream(streamId, stream);
         this.waitUntil(consumePromise);
-        return consumePromise;
       },
     });
   }

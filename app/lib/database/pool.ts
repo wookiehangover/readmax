@@ -1,5 +1,9 @@
 import type { Pool, PoolConfig } from "pg";
 
+// Database helpers depend on a bootstrap step installing the pg Pool factory.
+// Workers install it through getEnv(); Node scripts/tests must call
+// installPgPoolFactory() before touching database helpers.
+
 let pool: Pool | null = null;
 
 const MAX_POOL_SIZE = 1;
@@ -71,7 +75,11 @@ function setRuntimePgPoolInContext(newPool: Pool) {
 function getPgPoolFactory() {
   const factory = getRuntimeGlobals().__readmaxxingCreatePgPool;
 
-  if (!factory) throw new Error("Postgres pool factory is not initialized");
+  if (!factory) {
+    throw new Error(
+      "Postgres pool factory not installed — call installPgPoolFactory() before using the database (Workers: via getEnv() bootstrap; scripts: explicitly).",
+    );
+  }
 
   return factory;
 }

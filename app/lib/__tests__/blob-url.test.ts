@@ -24,6 +24,7 @@ describe("storage references", () => {
   it("returns null for unsupported or malformed references", () => {
     expect(parseStoredBlobReference("https://example.com/foo.jpg", "cover")).toBeNull();
     expect(parseStoredBlobReference("")).toBeNull();
+    expect(parseStoredBlobReference("/", "file")).toBeNull();
   });
 });
 

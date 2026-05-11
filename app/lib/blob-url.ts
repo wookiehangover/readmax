@@ -33,10 +33,12 @@ export function parseStoredBlobReference(
     }
   } catch {
     if (expectedType && !value.includes("://")) {
+      const key = value.replace(/^\/+/, "");
+      if (!key) return null;
       return {
         kind: "r2",
         bucket: R2_BUCKET_BY_TYPE[expectedType],
-        key: value.replace(/^\/+/, ""),
+        key,
       };
     }
   }

@@ -768,6 +768,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
                   chapterLabel: resolvedChapterLabel,
                   percentage: location.start.percentage * 100,
                   pageIndex: location.start.displayed.page,
+                  totalPages: epubLocTotal && epubLocTotal > 0 ? epubLocTotal : null,
                 }),
               ),
             ),

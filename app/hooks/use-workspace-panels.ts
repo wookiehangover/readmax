@@ -28,6 +28,7 @@ export interface UseWorkspacePanelsResult {
   readonly openBook: (book: BookMeta) => void;
   readonly openNotebook: (book: BookMeta) => void;
   readonly openChat: (book: BookMeta) => void;
+  readonly openReadingHistory: (book: BookMeta) => void;
   readonly openStandardEbooks: () => void;
   readonly closeBookPanels: (bookId: string) => void;
 }
@@ -299,6 +300,31 @@ export function useWorkspacePanels({
     [apiRef, focusedClustersRef, focusedOrderRef, isMobileRef, layoutModeRef, ws],
   );
 
+  const openReadingHistory = useCallback(
+    (book: BookMeta) => {
+      const api = apiRef.current;
+      if (!api) return;
+
+      const panelId = `history-${book.id}`;
+      const existing = api.panels.find((p) => p.id === panelId);
+      if (existing) {
+        existing.focus();
+        return;
+      }
+
+      const position = !isMobileRef.current ? findRightGroupPosition(api, book.id) : undefined;
+      api.addPanel({
+        id: panelId,
+        component: "reading-history",
+        title: truncateTitle(`History: ${book.title}`),
+        params: { bookId: book.id, bookTitle: book.title },
+        renderer: "always",
+        ...(position ? { position } : {}),
+      });
+    },
+    [apiRef, isMobileRef],
+  );
+
   const openStandardEbooks = useCallback(() => {
     const api = apiRef.current;
     if (!api) return;
@@ -337,5 +363,12 @@ export function useWorkspacePanels({
     [apiRef, focusedClustersRef, focusedOrderRef, ws],
   );
 
-  return { openBook, openNotebook, openChat, openStandardEbooks, closeBookPanels };
+  return {
+    openBook,
+    openNotebook,
+    openChat,
+    openReadingHistory,
+    openStandardEbooks,
+    closeBookPanels,
+  };
 }

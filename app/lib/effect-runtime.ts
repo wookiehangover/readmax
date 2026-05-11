@@ -4,6 +4,7 @@ import { BookServiceLive } from "~/lib/stores/book-store";
 import { EpubServiceLive } from "~/lib/epub/epub-service";
 import { LocationCacheServiceLive } from "~/lib/stores/location-cache-store";
 import { ReadingPositionServiceLive } from "~/lib/stores/position-store";
+import { ReadingHistoryServiceLive } from "~/lib/stores/reading-history-store";
 import { StandardEbooksServiceLive } from "~/lib/standard-ebooks";
 import { WorkspaceServiceLive } from "~/lib/stores/workspace-store";
 import { ChatServiceLive } from "~/lib/stores/chat-store";
@@ -21,6 +22,7 @@ export const AppLayer = Layer.mergeAll(
   AnnotationServiceLive,
   LocationCacheServiceLive,
   ReadingPositionServiceLive,
+  ReadingHistoryServiceLive,
   StandardEbooksServiceLive,
   WorkspaceServiceLive,
   ChatServiceLive,

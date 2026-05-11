@@ -9,6 +9,7 @@ import { LocationCacheService } from "~/lib/stores/location-cache-store";
 import { ReadingPositionService } from "~/lib/stores/position-store";
 import { resolveTheme } from "~/lib/settings";
 import type { ReaderLayout, Theme } from "~/lib/settings";
+import { isEditableElement } from "~/lib/dom-utils";
 import {
   registerThemeColors,
   getThemeColorCss,
@@ -53,7 +54,7 @@ export interface UseEpubLifecycleConfig {
   onSearchOpen?: () => void;
   /** Called on each relocated event (e.g. to flash toolbar on mobile). */
   onRelocated?: () => void;
-  /** Scope keyboard arrow-key handler to a specific panel element. */
+  /** Panel element for reader search shortcut scoping. */
   panelRef?: React.RefObject<HTMLDivElement | null>;
   /** Optional external bookRef — if provided, the hook uses it instead of creating its own. */
   bookRef?: React.MutableRefObject<EpubBook | null>;
@@ -765,10 +766,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     // Keyboard navigation on the parent document
     const handleKeyDown = (e: KeyboardEvent) => {
       if (layoutRef.current === "scroll") return;
-      if (configRef.current.panelRef) {
-        const panel = configRef.current.panelRef.current;
-        if (!panel?.contains(document.activeElement) && document.activeElement !== panel) return;
-      }
+      if (isEditableElement()) return;
       if (e.key === "ArrowLeft") rendition?.prev();
       else if (e.key === "ArrowRight") rendition?.next();
     };

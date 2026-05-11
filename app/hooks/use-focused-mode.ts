@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { DockviewApi, AddPanelPositionOptions } from "dockview";
 import { useWorkspace } from "~/lib/context/workspace-context";
+import { isEditableElement } from "~/lib/dom-utils";
 import { truncateTitle } from "~/lib/workspace-utils";
 import { clampFocusedSplitRatio, type LayoutMode } from "~/lib/settings";
 
@@ -55,15 +56,6 @@ export interface UseFocusedModeResult {
    * is restored.
    */
   readonly enforceSingleFocusedCluster: () => void;
-}
-
-function isEditableElement(): boolean {
-  const el = document.activeElement;
-  if (!el) return false;
-  const tag = el.tagName.toLowerCase();
-  if (tag === "input" || tag === "textarea") return true;
-  if ((el as HTMLElement).isContentEditable) return true;
-  return false;
 }
 
 /**

@@ -1,17 +1,9 @@
 import { useEffect } from "react";
 import type { DockviewApi } from "dockview";
+import { isEditableElement } from "~/lib/dom-utils";
 import type { Settings } from "~/lib/settings";
 
 const SIDEBAR_TRANSITION_MS = 270;
-
-function isEditableElement(): boolean {
-  const el = document.activeElement;
-  if (!el) return false;
-  const tag = el.tagName.toLowerCase();
-  if (tag === "input" || tag === "textarea") return true;
-  if ((el as HTMLElement).isContentEditable) return true;
-  return false;
-}
 
 export interface UseWorkspaceShortcutsParams {
   readonly apiRef: React.MutableRefObject<DockviewApi | null>;

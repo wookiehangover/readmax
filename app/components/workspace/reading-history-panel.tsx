@@ -79,6 +79,7 @@ export function ReadingHistoryPanel({ params }: IDockviewPanelProps<ReadingHisto
   const { bookId, bookTitle } = params;
   const { navigateInCluster } = useWorkspace();
   const [refreshKey, setRefreshKey] = useState(0);
+  const [pendingEntries, setPendingEntries] = useState<ReadingHistoryEntry[]>([]);
   const [isClearing, setIsClearing] = useState(false);
 
   const {
@@ -90,14 +91,29 @@ export function ReadingHistoryPanel({ params }: IDockviewPanelProps<ReadingHisto
     [bookId, refreshKey],
   );
 
-  const entries = history ?? [];
+  const entries = useMemo(() => [...pendingEntries, ...(history ?? [])], [pendingEntries, history]);
   const groupedHistory = useMemo(() => groupHistoryByDay(entries), [entries]);
 
   useEffect(() => {
+    setPendingEntries([]);
+  }, [bookId, history, refreshKey]);
+
+  useEffect(() => {
     function handleReadingHistoryUpdated(event: Event) {
-      const detail = (event as CustomEvent<{ readonly bookId?: string }>).detail;
+      const detail = (
+        event as CustomEvent<{
+          readonly bookId?: string;
+          readonly entry?: ReadingHistoryEntry;
+        }>
+      ).detail;
       if (detail?.bookId !== bookId) return;
-      setRefreshKey((key) => key + 1);
+      const { entry } = detail;
+      if (entry) {
+        setPendingEntries((prev) => [entry, ...prev]);
+      } else {
+        setPendingEntries([]);
+        setRefreshKey((key) => key + 1);
+      }
     }
 
     window.addEventListener("reading-history:updated", handleReadingHistoryUpdated);
@@ -113,7 +129,6 @@ export function ReadingHistoryPanel({ params }: IDockviewPanelProps<ReadingHisto
     setIsClearing(true);
     AppRuntime.runPromise(ReadingHistoryService.pipe(Effect.andThen((s) => s.clearHistory(bookId))))
       .then(() => {
-        setRefreshKey((key) => key + 1);
         setIsClearing(false);
       })
       .catch((err: unknown) => {

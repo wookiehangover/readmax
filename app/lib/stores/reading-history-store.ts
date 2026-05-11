@@ -119,7 +119,7 @@ export function makeReadingHistoryService(
           if (typeof window !== "undefined") {
             queueMicrotask(() => {
               window.dispatchEvent(
-                new CustomEvent("reading-history:updated", { detail: { bookId } }),
+                new CustomEvent("reading-history:updated", { detail: { bookId, entry } }),
               );
             });
           }

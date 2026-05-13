@@ -265,6 +265,8 @@ function WorkspaceBookReaderInner({
     navigateToTocHref,
     flushPositionSave,
     latestCfiRef,
+    navigationInProgressRef,
+    markNavigationInProgress,
   } = useEpubLifecycle({
     bookId: book.id,
     containerRef,
@@ -381,7 +383,7 @@ function WorkspaceBookReaderInner({
           // rendition manager may not be initialized yet
           return;
         }
-        if (cfiBeforeResize) {
+        if (cfiBeforeResize && !navigationInProgressRef.current) {
           renditionRef.current.display(cfiBeforeResize).catch(() => {});
         }
       });
@@ -419,7 +421,7 @@ function WorkspaceBookReaderInner({
           // rendition manager may not be initialized yet
           return;
         }
-        if (cfiBeforeResize) {
+        if (cfiBeforeResize && !navigationInProgressRef.current) {
           renditionRef.current.display(cfiBeforeResize).catch(() => {});
         }
       });
@@ -431,10 +433,26 @@ function WorkspaceBookReaderInner({
       dimensionsDisposable.dispose();
       if (resizeRafId !== null) cancelAnimationFrame(resizeRafId);
     };
-  }, [panelApi, settings.theme, flushPositionSave]);
+  }, [panelApi, settings.theme, flushPositionSave, navigationInProgressRef]);
 
-  const handlePrev = useCallback(() => renditionRef.current?.prev(), []);
-  const handleNext = useCallback(() => renditionRef.current?.next(), []);
+  const handlePrev = useCallback(() => {
+    const rendition = renditionRef.current;
+    if (!rendition) return;
+    markNavigationInProgress();
+    rendition.prev().catch((err: unknown) => {
+      navigationInProgressRef.current = false;
+      console.error("Failed to navigate to previous page", err);
+    });
+  }, [markNavigationInProgress, navigationInProgressRef]);
+  const handleNext = useCallback(() => {
+    const rendition = renditionRef.current;
+    if (!rendition) return;
+    markNavigationInProgress();
+    rendition.next().catch((err: unknown) => {
+      navigationInProgressRef.current = false;
+      console.error("Failed to navigate to next page", err);
+    });
+  }, [markNavigationInProgress, navigationInProgressRef]);
 
   const handleUpdateSettings = useCallback(
     (update: Partial<Settings>) => {
@@ -446,7 +464,15 @@ function WorkspaceBookReaderInner({
       if (update.readerLayout !== undefined && update.readerLayout !== localReaderLayout) {
         const cfi = renditionRef.current?.location?.start?.cfi;
         setLocalReaderLayout(update.readerLayout);
-        if (cfi) queueMicrotask(() => renditionRef.current?.display(cfi));
+        if (cfi) {
+          markNavigationInProgress();
+          queueMicrotask(() => {
+            renditionRef.current?.display(cfi).catch((error: unknown) => {
+              console.error("Failed to restore reader position after layout update", error);
+              navigationInProgressRef.current = false;
+            });
+          });
+        }
       }
 
       // Persist overrides in dockview panel params so they survive layout save/restore
@@ -461,7 +487,7 @@ function WorkspaceBookReaderInner({
         }
       }
     },
-    [localReaderLayout, panelApi],
+    [localReaderLayout, markNavigationInProgress, panelApi],
   );
 
   const handleSaveHighlight = useCallback(async () => {

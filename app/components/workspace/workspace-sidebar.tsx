@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { Link } from "react-router";
 import {
   BookOpen,
+  ChartLine,
   CloudDownload,
   MessageSquare,
   Plus,
@@ -89,6 +90,7 @@ export interface WorkspaceSidebarProps {
   onOpenBook: (book: BookMeta) => void;
   onOpenChat: (book: BookMeta) => void;
   onOpenNotebook: (book: BookMeta) => void;
+  onOpenReadingHistory: (book: BookMeta) => void;
   onFileInput: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }
 
@@ -104,6 +106,7 @@ export function WorkspaceSidebar({
   onOpenBook,
   onOpenChat,
   onOpenNotebook,
+  onOpenReadingHistory,
   onFileInput,
 }: WorkspaceSidebarProps) {
   const ws = useWorkspace();
@@ -325,6 +328,23 @@ export function WorkspaceSidebar({
                     Chat
                   </TooltipContent>
                 </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        type="button"
+                        onClick={() => onOpenReadingHistory(activeClusterBook)}
+                        className="flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                      />
+                    }
+                  >
+                    <ChartLine className="size-4" />
+                    <span className="sr-only">Open reading history</span>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" sideOffset={8}>
+                    History
+                  </TooltipContent>
+                </Tooltip>
               </div>
             </TooltipProvider>
           )
@@ -366,7 +386,16 @@ export function WorkspaceSidebar({
                         </div>
                       </TooltipContent>
                     </Tooltip>
-                    {!collapsed && (
+                    {collapsed ? (
+                      <button
+                        type="button"
+                        onClick={() => onOpenReadingHistory(book)}
+                        className="absolute right-0.5 bottom-0.5 flex size-5 items-center justify-center rounded-full bg-card text-muted-foreground opacity-0 shadow-sm ring-1 ring-border/50 group-hover/book:opacity-100 hover:bg-accent hover:text-foreground"
+                        title="Open reading history"
+                      >
+                        <ChartLine className="size-3" />
+                      </button>
+                    ) : (
                       <div className="absolute top-1/2 right-1 flex -translate-y-1/2 gap-0.5 opacity-0 group-hover/book:opacity-100">
                         <button
                           type="button"
@@ -383,6 +412,14 @@ export function WorkspaceSidebar({
                           title="Open notebook"
                         >
                           <Notebook className="size-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onOpenReadingHistory(book)}
+                          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                          title="Open reading history"
+                        >
+                          <ChartLine className="size-3.5" />
                         </button>
                       </div>
                     )}
@@ -433,6 +470,14 @@ export function WorkspaceSidebar({
                         title="Open notebook"
                       >
                         <Notebook className="size-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onOpenReadingHistory(book)}
+                        className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                        title="Open reading history"
+                      >
+                        <ChartLine className="size-3.5" />
                       </button>
                     </div>
                   </li>

@@ -10,7 +10,7 @@ import { ReadingHistoryService } from "~/lib/stores/reading-history-store";
 import { ReadingPositionService } from "~/lib/stores/position-store";
 import { registerActiveReader, unregisterActiveReader } from "~/lib/sync/active-readers";
 import { resolveTheme } from "~/lib/settings";
-import type { ReaderLayout, Theme } from "~/lib/settings";
+import type { ReaderLayout, Theme, TextAlign } from "~/lib/settings";
 import { isEditableElement } from "~/lib/dom-utils";
 import {
   registerThemeColors,
@@ -37,6 +37,7 @@ export interface UseEpubLifecycleConfig {
   fontFamily: string;
   fontSize: number;
   lineHeight: number;
+  textAlign: TextAlign;
   theme: Theme;
   loadAndApplyHighlights: (rendition: Rendition) => Promise<void>;
   registerSelectionHandler: (rendition: Rendition) => void;
@@ -382,6 +383,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     fontFamily,
     fontSize,
     lineHeight,
+    textAlign,
     theme,
     loadAndApplyHighlights,
     registerSelectionHandler,
@@ -407,8 +409,8 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
 
   const layoutRef = useRef(readerLayout);
   layoutRef.current = readerLayout;
-  const typographyRef = useRef({ fontFamily, fontSize, lineHeight });
-  typographyRef.current = { fontFamily, fontSize, lineHeight };
+  const typographyRef = useRef({ fontFamily, fontSize, lineHeight, textAlign });
+  typographyRef.current = { fontFamily, fontSize, lineHeight, textAlign };
 
   // Use a ref for the full config so optional callbacks don't trigger re-init
   const configRef = useRef(config);
@@ -578,6 +580,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
           typographyRef.current.fontFamily,
           typographyRef.current.fontSize,
           typographyRef.current.lineHeight,
+          typographyRef.current.textAlign,
         );
         doc.head.appendChild(style);
 
@@ -896,7 +899,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
   useEffect(() => {
     const rendition = renditionRef.current;
     if (!rendition) return;
-    const css = getTypographyCss(fontFamily, fontSize, lineHeight);
+    const css = getTypographyCss(fontFamily, fontSize, lineHeight, textAlign);
     const contents = (rendition as any).getContents() as any[];
     contents.forEach((content: any) => {
       const doc = content.document;
@@ -909,7 +912,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
       }
       style.textContent = css;
     });
-  }, [fontFamily, fontSize, lineHeight]);
+  }, [fontFamily, fontSize, lineHeight, textAlign]);
 
   return {
     bookRef,

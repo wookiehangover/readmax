@@ -14,7 +14,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
-import type { ReaderLayout, PdfLayout, Settings } from "~/lib/settings";
+import type { ReaderLayout, PdfLayout, Settings, TextAlign } from "~/lib/settings";
 
 interface ReaderSettingsMenuProps {
   settings: Settings;
@@ -61,6 +61,14 @@ const fontSections = [
     ],
   },
 ] as const;
+
+const textAlignOptions: { value: string; label: string; actualValue: TextAlign }[] = [
+  { value: "default", label: "Default", actualValue: undefined },
+  { value: "left", label: "Left", actualValue: "left" },
+  { value: "center", label: "Center", actualValue: "center" },
+  { value: "right", label: "Right", actualValue: "right" },
+  { value: "justify", label: "Justify", actualValue: "justify" },
+];
 
 export function ReaderSettingsMenu({ settings, onUpdateSettings, isPdf }: ReaderSettingsMenuProps) {
   return (
@@ -189,6 +197,32 @@ export function ReaderSettingsMenu({ settings, onUpdateSettings, isPdf }: Reader
               </div>
             </DropdownMenuItem>
           </DropdownMenuGroup>
+        )}
+
+        {!isPdf && (
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              Align:{" "}
+              {textAlignOptions.find((opt) => opt.actualValue === settings.textAlign)?.label ||
+                "Default"}
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              <DropdownMenuRadioGroup
+                value={settings.textAlign ?? "default"}
+                onValueChange={(value) =>
+                  onUpdateSettings({
+                    textAlign: value === "default" ? undefined : (value as TextAlign),
+                  })
+                }
+              >
+                {textAlignOptions.map((option) => (
+                  <DropdownMenuRadioItem key={option.value} value={option.value}>
+                    {option.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
         )}
       </DropdownMenuContent>
     </DropdownMenu>

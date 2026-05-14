@@ -99,13 +99,40 @@ describe("legacy migration", () => {
       expect(syncedRaw).not.toHaveProperty(k);
     }
     expect(syncedRaw.theme).toBe("dark");
-    expect(syncedRaw.updatedAt).toBe(1000);
+    // updatedAt is removed to prevent legacy timestamps from blocking LWW merges
+    expect(syncedRaw.updatedAt).toBeUndefined();
 
     const localRaw = JSON.parse(localStorage.getItem(LOCAL_UI_STORAGE_KEY)!);
     expect(localRaw.fontSize).toBe(120);
     expect(localRaw.sidebarCollapsed).toBe(true);
     expect(localRaw.layoutMode).toBe("freeform");
     expect(localRaw.libraryView).toBe("table");
+  });
+
+  it("removes updatedAt timestamp during migration to prevent LWW conflicts", () => {
+    // Simulate legacy case: fontSize change bumped updatedAt to 5000
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        theme: "light",
+        colorTheme: "default",
+        fontSize: 120,
+        lineHeight: 1.8,
+        updatedAt: 5000,
+      }),
+    );
+
+    getSettings();
+
+    const syncedRaw = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
+    // After migration, updatedAt should be removed so remote synced settings
+    // can be applied even if they have older timestamps
+    expect(syncedRaw.updatedAt).toBeUndefined();
+    expect(syncedRaw.theme).toBe("light");
+    expect(syncedRaw.colorTheme).toBe("default");
+    // UI fields should be in local bucket
+    expect(syncedRaw.fontSize).toBeUndefined();
+    expect(syncedRaw.lineHeight).toBeUndefined();
   });
 
   it("is idempotent when run twice", () => {

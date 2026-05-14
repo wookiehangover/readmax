@@ -155,6 +155,11 @@ function readRaw(key: string): Record<string, unknown> | null {
  * local-only bucket, leaving only synced fields behind. Idempotent: if the
  * local bucket already has a key, that value wins and the legacy copy is
  * pruned.
+ *
+ * IMPORTANT: Also removes the `updatedAt` timestamp from the synced bucket
+ * when local-only fields are migrated. This prevents a legacy timestamp
+ * (bumped by a font change under the old schema) from causing LWW merges to
+ * ignore newer remote theme/colorTheme updates.
  */
 function migrateLegacySettings(): void {
   const legacy = readRaw(STORAGE_KEY);
@@ -175,6 +180,11 @@ function migrateLegacySettings(): void {
   for (const [k, v] of Object.entries(legacy)) {
     if (!localKeySet.has(k)) pruned[k] = v;
   }
+
+  // Remove updatedAt to prevent legacy timestamps from blocking remote synced
+  // setting updates. The next remote pull will establish a fresh baseline.
+  delete pruned.updatedAt;
+
   localStorage.setItem(STORAGE_KEY, JSON.stringify(pruned));
 }
 

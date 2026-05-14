@@ -198,11 +198,12 @@ export function ReaderSettingsMenu({ settings, onUpdateSettings, isPdf }: Reader
           </DropdownMenuGroup>
         )}
 
-        {!isPdf && <DropdownMenuSeparator />}
-
         {!isPdf && (
           <DropdownMenuSub>
-            <DropdownMenuSubTrigger>Alignment</DropdownMenuSubTrigger>
+            <DropdownMenuSubTrigger>
+              Align:{" "}
+              {textAlignOptions.find((opt) => opt.value === settings.textAlign)?.label || "Left"}
+            </DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
               <DropdownMenuRadioGroup
                 value={settings.textAlign}

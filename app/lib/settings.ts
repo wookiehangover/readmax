@@ -8,7 +8,7 @@ export type PdfLayout = "original" | "fit-height" | "fit-width" | "two-page" | "
 export type WorkspaceSortBy = "title" | "author" | "recent";
 export type LibraryView = "grid" | "table";
 export type LayoutMode = "focused" | "freeform";
-export type TextAlign = "left" | "center" | "right" | "justify";
+export type TextAlign = "left" | "center" | "right" | "justify" | undefined;
 
 // --- Schema ---
 
@@ -84,9 +84,15 @@ export const LocalUISettingsSchema = Schema.Struct({
   fontFamily: Schema.optionalWith(Schema.String, { default: () => "Literata" }),
   fontSize: Schema.optionalWith(LegacyFontSize, { default: () => 100 }),
   lineHeight: Schema.optionalWith(Schema.Number, { default: () => 1.6 }),
-  textAlign: Schema.optionalWith(Schema.Literal("left", "center", "right", "justify"), {
-    default: () => "left" as const,
-  }),
+  textAlign: Schema.optional(
+    Schema.Union(
+      Schema.Literal("left"),
+      Schema.Literal("center"),
+      Schema.Literal("right"),
+      Schema.Literal("justify"),
+      Schema.Undefined,
+    ),
+  ),
 });
 
 /** Backward-compatible merged shape exposed to call sites. */
@@ -131,7 +137,7 @@ const defaultSettings: Settings = {
   fontFamily: "Literata",
   fontSize: 100,
   lineHeight: 1.6,
-  textAlign: "left",
+  textAlign: undefined,
   sidebarCollapsed: false,
   workspaceSortBy: "recent",
   libraryView: "grid",

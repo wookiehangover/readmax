@@ -36,7 +36,7 @@ export interface PanelTypographyParams {
   fontFamily?: string;
   fontSize?: number;
   lineHeight?: number;
-  textAlign?: import("~/lib/settings").TextAlign;
+  textAlign?: "left" | "center" | "right" | "justify";
   readerLayout?: ReaderLayout;
   pdfLayout?: PdfLayout;
 }

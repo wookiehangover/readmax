@@ -14,6 +14,13 @@ export function getTypographyCss(
   textAlign: TextAlign,
 ): string {
   const fallback = getFontFallback(fontFamily);
+  const textAlignCss = textAlign
+    ? `
+    p, div, span, li, td, th, blockquote, pre {
+      text-align: ${textAlign} !important;
+    }`
+    : "";
+
   return `
     @font-face {
       font-family: "Geist";
@@ -37,10 +44,7 @@ export function getTypographyCss(
       font-family: "${fontFamily}", ${fallback} !important;
       font-size: ${fontSize}% !important;
       line-height: ${lineHeight} !important;
-    }
-    p, div, span, li, td, th, blockquote, pre {
-      text-align: ${textAlign} !important;
-    }
+    }${textAlignCss}
   `;
 }
 

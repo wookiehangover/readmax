@@ -62,11 +62,12 @@ const fontSections = [
   },
 ] as const;
 
-const textAlignOptions: { value: TextAlign; label: string }[] = [
-  { value: "left", label: "Left" },
-  { value: "center", label: "Center" },
-  { value: "right", label: "Right" },
-  { value: "justify", label: "Justify" },
+const textAlignOptions: { value: string; label: string; actualValue: TextAlign }[] = [
+  { value: "", label: "Default", actualValue: undefined },
+  { value: "left", label: "Left", actualValue: "left" },
+  { value: "center", label: "Center", actualValue: "center" },
+  { value: "right", label: "Right", actualValue: "right" },
+  { value: "justify", label: "Justify", actualValue: "justify" },
 ];
 
 export function ReaderSettingsMenu({ settings, onUpdateSettings, isPdf }: ReaderSettingsMenuProps) {
@@ -202,12 +203,17 @@ export function ReaderSettingsMenu({ settings, onUpdateSettings, isPdf }: Reader
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>
               Align:{" "}
-              {textAlignOptions.find((opt) => opt.value === settings.textAlign)?.label || "Left"}
+              {textAlignOptions.find((opt) => opt.actualValue === settings.textAlign)?.label ||
+                "Default"}
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
               <DropdownMenuRadioGroup
-                value={settings.textAlign}
-                onValueChange={(value) => onUpdateSettings({ textAlign: value as TextAlign })}
+                value={settings.textAlign ?? ""}
+                onValueChange={(value) =>
+                  onUpdateSettings({
+                    textAlign: value === "" ? undefined : (value as TextAlign),
+                  })
+                }
               >
                 {textAlignOptions.map((option) => (
                   <DropdownMenuRadioItem key={option.value} value={option.value}>

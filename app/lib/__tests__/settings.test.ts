@@ -27,6 +27,7 @@ const defaultSettings: Settings = {
   fontFamily: "Literata",
   fontSize: 100,
   lineHeight: 1.6,
+  textAlign: "left",
   sidebarCollapsed: false,
   workspaceSortBy: "recent",
   libraryView: "grid",

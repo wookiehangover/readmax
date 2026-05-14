@@ -1,4 +1,4 @@
-import type { ReaderLayout } from "~/lib/settings";
+import type { ReaderLayout, TextAlign } from "~/lib/settings";
 
 export function getFontFallback(fontFamily: string): string {
   if (fontFamily === "Geist") return "sans-serif";
@@ -7,7 +7,12 @@ export function getFontFallback(fontFamily: string): string {
   return "serif";
 }
 
-export function getTypographyCss(fontFamily: string, fontSize: number, lineHeight: number): string {
+export function getTypographyCss(
+  fontFamily: string,
+  fontSize: number,
+  lineHeight: number,
+  textAlign: TextAlign,
+): string {
   const fallback = getFontFallback(fontFamily);
   return `
     @font-face {
@@ -32,6 +37,9 @@ export function getTypographyCss(fontFamily: string, fontSize: number, lineHeigh
       font-family: "${fontFamily}", ${fallback} !important;
       font-size: ${fontSize}% !important;
       line-height: ${lineHeight} !important;
+    }
+    p, div, span, li, td, th, blockquote, pre {
+      text-align: ${textAlign} !important;
     }
   `;
 }

@@ -27,22 +27,27 @@ describe("getFontFallback", () => {
 
 describe("getTypographyCss", () => {
   it("includes font-family with fallback", () => {
-    const css = getTypographyCss("Literata", 100, 1.6);
+    const css = getTypographyCss("Literata", 100, 1.6, "left");
     expect(css).toContain('"Literata", serif !important');
   });
 
   it("includes font-size percentage", () => {
-    const css = getTypographyCss("Literata", 120, 1.6);
+    const css = getTypographyCss("Literata", 120, 1.6, "left");
     expect(css).toContain("font-size: 120% !important");
   });
 
   it("includes line-height", () => {
-    const css = getTypographyCss("Literata", 100, 1.8);
+    const css = getTypographyCss("Literata", 100, 1.8, "left");
     expect(css).toContain("line-height: 1.8 !important");
   });
 
+  it("includes text-align", () => {
+    const css = getTypographyCss("Literata", 100, 1.6, "justify");
+    expect(css).toContain("text-align: justify !important");
+  });
+
   it("includes @font-face declarations for Geist, Geist Mono, and Berkeley Mono", () => {
-    const css = getTypographyCss("Literata", 100, 1.6);
+    const css = getTypographyCss("Literata", 100, 1.6, "left");
     expect(css).toContain("@font-face");
     expect(css).toContain('"Geist"');
     expect(css).toContain('"Geist Mono"');
@@ -50,7 +55,7 @@ describe("getTypographyCss", () => {
   });
 
   it("uses correct fallback for monospace fonts", () => {
-    const css = getTypographyCss("Geist Mono", 100, 1.6);
+    const css = getTypographyCss("Geist Mono", 100, 1.6, "left");
     expect(css).toContain('"Geist Mono", monospace !important');
   });
 });

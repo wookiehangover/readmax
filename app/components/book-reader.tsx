@@ -88,6 +88,7 @@ export function BookReader({ book }: BookReaderProps) {
       fontFamily: settings.fontFamily,
       fontSize: settings.fontSize,
       lineHeight: settings.lineHeight,
+      textAlign: settings.textAlign,
       theme: settings.theme,
       loadAndApplyHighlights,
       registerSelectionHandler,

@@ -36,6 +36,7 @@ export interface PanelTypographyParams {
   fontFamily?: string;
   fontSize?: number;
   lineHeight?: number;
+  textAlign?: import("~/lib/settings").TextAlign;
   readerLayout?: ReaderLayout;
   pdfLayout?: PdfLayout;
 }
@@ -201,6 +202,9 @@ function WorkspaceBookReaderInner({
   const [localLineHeight, setLocalLineHeight] = useState<number>(
     () => panelTypography?.lineHeight ?? settings.lineHeight,
   );
+  const [localTextAlign, setLocalTextAlign] = useState<import("~/lib/settings").TextAlign>(
+    () => panelTypography?.textAlign ?? settings.textAlign,
+  );
   const [localReaderLayout, setLocalReaderLayout] = useState<ReaderLayout>(
     () => panelTypography?.readerLayout ?? settings.readerLayout,
   );
@@ -274,6 +278,7 @@ function WorkspaceBookReaderInner({
     fontFamily: localFontFamily,
     fontSize: localFontSize,
     lineHeight: localLineHeight,
+    textAlign: localTextAlign,
     theme: settings.theme,
     loadAndApplyHighlights,
     registerSelectionHandler,
@@ -461,6 +466,7 @@ function WorkspaceBookReaderInner({
       if (update.fontFamily !== undefined) setLocalFontFamily(update.fontFamily);
       if (update.fontSize !== undefined) setLocalFontSize(update.fontSize);
       if (update.lineHeight !== undefined) setLocalLineHeight(update.lineHeight);
+      if (update.textAlign !== undefined) setLocalTextAlign(update.textAlign);
       if (update.readerLayout !== undefined && update.readerLayout !== localReaderLayout) {
         const cfi = renditionRef.current?.location?.start?.cfi;
         setLocalReaderLayout(update.readerLayout);
@@ -481,6 +487,7 @@ function WorkspaceBookReaderInner({
         if (update.fontFamily !== undefined) paramUpdates.fontFamily = update.fontFamily;
         if (update.fontSize !== undefined) paramUpdates.fontSize = update.fontSize;
         if (update.lineHeight !== undefined) paramUpdates.lineHeight = update.lineHeight;
+        if (update.textAlign !== undefined) paramUpdates.textAlign = update.textAlign;
         if (update.readerLayout !== undefined) paramUpdates.readerLayout = update.readerLayout;
         if (Object.keys(paramUpdates).length > 0) {
           panelApi.updateParameters(paramUpdates);

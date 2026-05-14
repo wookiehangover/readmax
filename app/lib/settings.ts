@@ -8,6 +8,7 @@ export type PdfLayout = "original" | "fit-height" | "fit-width" | "two-page" | "
 export type WorkspaceSortBy = "title" | "author" | "recent";
 export type LibraryView = "grid" | "table";
 export type LayoutMode = "focused" | "freeform";
+export type TextAlign = "left" | "center" | "right" | "justify";
 
 // --- Schema ---
 
@@ -83,6 +84,9 @@ export const LocalUISettingsSchema = Schema.Struct({
   fontFamily: Schema.optionalWith(Schema.String, { default: () => "Literata" }),
   fontSize: Schema.optionalWith(LegacyFontSize, { default: () => 100 }),
   lineHeight: Schema.optionalWith(Schema.Number, { default: () => 1.6 }),
+  textAlign: Schema.optionalWith(Schema.Literal("left", "center", "right", "justify"), {
+    default: () => "left" as const,
+  }),
 });
 
 /** Backward-compatible merged shape exposed to call sites. */
@@ -111,6 +115,7 @@ export const LOCAL_UI_SETTINGS_KEYS = [
   "fontFamily",
   "fontSize",
   "lineHeight",
+  "textAlign",
 ] as const satisfies readonly (keyof LocalUISettings)[];
 
 const decodeSynced = Schema.decodeUnknownSync(SyncedSettingsSchema);
@@ -126,6 +131,7 @@ const defaultSettings: Settings = {
   fontFamily: "Literata",
   fontSize: 100,
   lineHeight: 1.6,
+  textAlign: "left",
   sidebarCollapsed: false,
   workspaceSortBy: "recent",
   libraryView: "grid",

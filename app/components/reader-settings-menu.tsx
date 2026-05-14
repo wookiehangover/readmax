@@ -14,7 +14,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
-import type { ReaderLayout, PdfLayout, Settings } from "~/lib/settings";
+import type { ReaderLayout, PdfLayout, Settings, TextAlign } from "~/lib/settings";
 
 interface ReaderSettingsMenuProps {
   settings: Settings;
@@ -61,6 +61,13 @@ const fontSections = [
     ],
   },
 ] as const;
+
+const textAlignOptions: { value: TextAlign; label: string }[] = [
+  { value: "left", label: "Left" },
+  { value: "center", label: "Center" },
+  { value: "right", label: "Right" },
+  { value: "justify", label: "Justify" },
+];
 
 export function ReaderSettingsMenu({ settings, onUpdateSettings, isPdf }: ReaderSettingsMenuProps) {
   return (
@@ -189,6 +196,26 @@ export function ReaderSettingsMenu({ settings, onUpdateSettings, isPdf }: Reader
               </div>
             </DropdownMenuItem>
           </DropdownMenuGroup>
+        )}
+
+        {!isPdf && <DropdownMenuSeparator />}
+
+        {!isPdf && (
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>Alignment</DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              <DropdownMenuRadioGroup
+                value={settings.textAlign}
+                onValueChange={(value) => onUpdateSettings({ textAlign: value as TextAlign })}
+              >
+                {textAlignOptions.map((option) => (
+                  <DropdownMenuRadioItem key={option.value} value={option.value}>
+                    {option.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
         )}
       </DropdownMenuContent>
     </DropdownMenu>

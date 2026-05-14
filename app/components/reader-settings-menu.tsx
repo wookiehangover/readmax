@@ -63,7 +63,7 @@ const fontSections = [
 ] as const;
 
 const textAlignOptions: { value: string; label: string; actualValue: TextAlign }[] = [
-  { value: "", label: "Default", actualValue: undefined },
+  { value: "default", label: "Default", actualValue: undefined },
   { value: "left", label: "Left", actualValue: "left" },
   { value: "center", label: "Center", actualValue: "center" },
   { value: "right", label: "Right", actualValue: "right" },
@@ -208,10 +208,10 @@ export function ReaderSettingsMenu({ settings, onUpdateSettings, isPdf }: Reader
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
               <DropdownMenuRadioGroup
-                value={settings.textAlign ?? ""}
+                value={settings.textAlign ?? "default"}
                 onValueChange={(value) =>
                   onUpdateSettings({
-                    textAlign: value === "" ? undefined : (value as TextAlign),
+                    textAlign: value === "default" ? undefined : (value as TextAlign),
                   })
                 }
               >

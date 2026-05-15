@@ -177,16 +177,16 @@ export function ReadingHistoryPanel({ params }: IDockviewPanelProps<ReadingHisto
                 <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                   {group.label}
                 </h3>
-                <table className="w-full text-left text-sm">
+                <table className="w-full table-fixed text-left text-sm">
                   <thead>
                     <tr>
-                      <th className="w-0 pb-1 text-left text-[10px] font-normal text-muted-foreground/60">
+                      <th className="w-[120px] pb-1 text-left text-[10px] font-normal text-muted-foreground/60">
                         Time
                       </th>
-                      <th className="pb-1 text-left text-[10px] font-normal text-muted-foreground/60">
+                      <th className="w-16 pb-1 text-left text-[10px] font-normal text-muted-foreground/60">
                         Page
                       </th>
-                      <th className="pb-1 text-left text-[10px] font-normal text-muted-foreground/60">
+                      <th className="w-auto pb-1 text-left text-[10px] font-normal text-muted-foreground/60">
                         Chapter
                       </th>
                     </tr>
@@ -198,10 +198,10 @@ export function ReadingHistoryPanel({ params }: IDockviewPanelProps<ReadingHisto
                         className="cursor-pointer transition-colors hover:bg-accent/50"
                         onClick={() => handleNavigateToEntry(entry.cfi)}
                       >
-                        <td className="w-0 whitespace-nowrap py-1.5 pr-5 text-xs tabular-nums text-muted-foreground">
+                        <td className="w-[120px] whitespace-nowrap py-1.5 pr-5 text-xs tabular-nums text-muted-foreground">
                           {formatTime(entry.timestamp)}
                         </td>
-                        <td className="whitespace-nowrap py-1.5 pr-3 tabular-nums">
+                        <td className="w-16 whitespace-nowrap py-1.5 pr-3 tabular-nums">
                           {entry.pageIndex ?? "—"}
                         </td>
                         <td className="max-w-0 truncate py-1.5 text-xs text-muted-foreground">

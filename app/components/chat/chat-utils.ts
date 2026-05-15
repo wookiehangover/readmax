@@ -86,7 +86,7 @@ export function stripSuggestedPrompts(text: string): string {
  *   (`sessionId`, `bookId`, `visibleText`, `currentChapterIndex`). The server
  *   loads prior history from Postgres, so we don't ship the full message list.
  * - `reconnectToStream` is redirected to the custom resume endpoint
- *   `/api/chat/resume/:sessionId`, which replays an in-flight Redis stream.
+ *   `/api/chat/resume/:sessionId`, which replays an in-flight Agent stream.
  * - The custom `fetch` wrapper retries once on a 404 from `/api/chat`, which
  *   handles the brand-new-session race: `ChatService.createSession` writes
  *   to IDB and enqueues a change for sync-push, but the first `POST /api/chat`
